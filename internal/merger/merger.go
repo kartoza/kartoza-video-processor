@@ -70,8 +70,8 @@ func (m *Merger) reportPercent(step ProcessingStep, percent float64) {
 }
 
 // runFFmpegWithProgress runs an FFmpeg command and reports progress
-// durationMs is the expected duration in milliseconds for calculating percentage
-func (m *Merger) runFFmpegWithProgress(step ProcessingStep, durationMs int64, args ...string) error {
+// durationUs is the expected duration in microseconds for calculating percentage
+func (m *Merger) runFFmpegWithProgress(step ProcessingStep, durationUs int64, args ...string) error {
 	// Add progress pipe to args
 	progressArgs := append([]string{"-progress", "pipe:1", "-nostats"}, args...)
 
@@ -91,16 +91,41 @@ func (m *Merger) runFFmpegWithProgress(step ProcessingStep, durationMs int64, ar
 		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
 
+	// Report initial progress
+	m.reportPercent(step, 0)
+
 	// Parse progress output
+	// FFmpeg outputs progress in key=value format, one per line
+	// We're looking for out_time_us (microseconds) or out_time_ms (milliseconds)
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "out_time_ms=") {
-			timeStr := strings.TrimPrefix(line, "out_time_ms=")
-			if timeMs, err := strconv.ParseInt(timeStr, 10, 64); err == nil && durationMs > 0 {
-				percent := float64(timeMs) / float64(durationMs) * 100
+
+		// Try out_time_us first (microseconds) - this is the standard format
+		if strings.HasPrefix(line, "out_time_us=") {
+			timeStr := strings.TrimPrefix(line, "out_time_us=")
+			if timeUs, err := strconv.ParseInt(timeStr, 10, 64); err == nil && durationUs > 0 {
+				percent := float64(timeUs) / float64(durationUs) * 100
 				if percent > 100 {
 					percent = 100
+				}
+				if percent < 0 {
+					percent = 0
+				}
+				m.reportPercent(step, percent)
+			}
+		} else if strings.HasPrefix(line, "out_time_ms=") {
+			// Fallback to out_time_ms (milliseconds)
+			timeStr := strings.TrimPrefix(line, "out_time_ms=")
+			if timeMs, err := strconv.ParseInt(timeStr, 10, 64); err == nil && durationUs > 0 {
+				// Convert ms to us for comparison
+				timeUs := timeMs * 1000
+				percent := float64(timeUs) / float64(durationUs) * 100
+				if percent > 100 {
+					percent = 100
+				}
+				if percent < 0 {
+					percent = 0
 				}
 				m.reportPercent(step, percent)
 			}
@@ -114,13 +139,13 @@ func (m *Merger) runFFmpegWithProgress(step ProcessingStep, durationMs int64, ar
 	return nil
 }
 
-// getVideoDurationMs returns the duration of a video in milliseconds
-func getVideoDurationMs(filepath string) int64 {
+// getVideoDurationUs returns the duration of a video in microseconds
+func getVideoDurationUs(filepath string) int64 {
 	meta, err := webcam.GetFullVideoInfo(filepath)
 	if err != nil {
 		return 0
 	}
-	return int64(meta.Duration * 1000)
+	return int64(meta.Duration * 1000000) // Convert seconds to microseconds
 }
 
 // MergeOptions contains options for merging recordings
@@ -240,7 +265,7 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 // mergeVideoAudio merges video and audio using ffmpeg
 func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string) error {
 	// Get video duration for progress calculation
-	durationMs := getVideoDurationMs(videoFile)
+	durationUs := getVideoDurationUs(videoFile)
 
 	// CRF 0 = completely lossless, preset veryslow = best quality/compression
 	// AAC at 320k for highest audio quality
@@ -257,7 +282,7 @@ func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string) error 
 		outputFile,
 	}
 
-	return m.runFFmpegWithProgress(StepMerging, durationMs, args...)
+	return m.runFFmpegWithProgress(StepMerging, durationUs, args...)
 }
 
 // YouTube Shorts recommended dimensions
@@ -395,7 +420,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 	}
 
 	// Get video duration for progress calculation
-	durationMs := getVideoDurationMs(videoFile)
+	durationUs := getVideoDurationUs(videoFile)
 
 	args := append(inputs,
 		"-filter_complex", filterComplex,
@@ -411,7 +436,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		outputFile,
 	)
 
-	return m.runFFmpegWithProgress(StepCreatingVertical, durationMs, args...)
+	return m.runFFmpegWithProgress(StepCreatingVertical, durationUs, args...)
 }
 
 // copyLogoToOutputDir copies a logo file to the output directory
