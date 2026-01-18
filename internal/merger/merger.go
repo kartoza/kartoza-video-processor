@@ -255,15 +255,17 @@ func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string) error 
 	// Get video duration for progress calculation
 	durationUs := getVideoDurationUs(videoFile)
 
-	// CRF 0 = completely lossless, preset veryslow = best quality/compression
+	// CRF 18 = high quality, preset medium = good speed/quality balance
+	// 30fps for smaller files and faster encoding
 	// AAC at 320k for highest audio quality
 	args := []string{
 		"-y",
 		"-i", videoFile,
 		"-i", audioFile,
 		"-c:v", "libx264",
-		"-preset", "veryslow",
-		"-crf", "0",
+		"-preset", "medium",
+		"-crf", "18",
+		"-r", "30",
 		"-c:a", "aac",
 		"-b:a", "320k",
 		"-shortest",
@@ -415,8 +417,9 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		"-map", "[outv]",
 		"-map", "2:a",
 		"-c:v", "libx264",
-		"-preset", "veryslow",
-		"-crf", "18", // Use CRF 18 for high quality (CRF 0 creates huge files)
+		"-preset", "medium",
+		"-crf", "18",
+		"-r", "30", // 30fps for smaller files and faster encoding
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "320k",
