@@ -539,12 +539,30 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		}
 	})
 
-	mergeResult, err := m.Merge(merger.MergeOptions{
+	// Build merge options
+	mergeOpts := merger.MergeOptions{
 		VideoFile:      videoFile,
 		AudioFile:      audioFile,
 		WebcamFile:     webcamFile,
 		CreateVertical: r.createVertical && webcamFile != "",
-	})
+	}
+
+	// Add logo options from config
+	if r.config != nil {
+		mergeOpts.ProductLogo1 = r.config.ProductLogo1Path
+		mergeOpts.ProductLogo2 = r.config.ProductLogo2Path
+		mergeOpts.CompanyLogo = r.config.CompanyLogoPath
+		// Check if any logos are configured
+		mergeOpts.AddLogos = mergeOpts.ProductLogo1 != "" || mergeOpts.ProductLogo2 != "" || mergeOpts.CompanyLogo != ""
+	}
+
+	// Get video title and output directory from recording info
+	if r.recordingInfo != nil {
+		mergeOpts.VideoTitle = r.recordingInfo.Metadata.Title
+		mergeOpts.OutputDir = r.recordingInfo.Files.FolderPath
+	}
+
+	mergeResult, err := m.Merge(mergeOpts)
 
 	if err != nil {
 		notify.Error("Recording Error", "Failed to merge recordings")

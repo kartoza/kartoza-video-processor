@@ -333,11 +333,14 @@ Product Logo: 2 - to be shown in the top right of the webcam view in vertical mo
 Company Logo: - Shown as a lower third and will have the video title drawn onto it.
 copies of these resources should be written into the project folder during processing and ffmpeg should be used to overlay them onto the video during the rendering workflow.
 
-**Summary:** Added logo configuration options:
+**Summary:** Added logo configuration options with filepicker and FFmpeg overlay:
 1. Added ProductLogo1Path, ProductLogo2Path, CompanyLogoPath to Config struct
-2. Added three new text input fields to Options screen for logo paths
-3. Product Logo 1: For top-left corner overlay
-4. Product Logo 2: For top-right corner overlay
-5. Company Logo: For lower third with video title overlay
-6. Logo paths are saved to config.json
-7. Note: FFmpeg overlay implementation will be done in merger during processing
+2. Replaced text inputs with interactive filepicker widget for selecting logos
+3. Filepicker filters for image files (.png, .jpg, .jpeg)
+4. Press Enter/Space to open filepicker, C to clear a logo, ESC to cancel
+5. Product Logo 1: For top-left corner overlay in webcam area of vertical video
+6. Product Logo 2: For top-right corner overlay in webcam area of vertical video
+7. Company Logo: For lower third with video title text overlay
+8. During processing, logos are copied to the recording folder
+9. FFmpeg filter complex overlays logos onto the vertical video
+10. Logo options are saved to and loaded from config.json

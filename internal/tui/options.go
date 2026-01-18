@@ -1,14 +1,22 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-video-processor/internal/config"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 )
+
+// filePickerResultMsg is sent when a file is selected from the filepicker
+type filePickerResultMsg struct {
+	path string
+}
 
 // OptionsField represents which field is focused in options
 type OptionsField int
@@ -22,6 +30,16 @@ const (
 	OptionsFieldProductLogo2
 	OptionsFieldCompanyLogo
 	OptionsFieldSave
+)
+
+// LogoType identifies which logo is being selected
+type LogoType int
+
+const (
+	LogoNone LogoType = iota
+	LogoProduct1
+	LogoProduct2
+	LogoCompany
 )
 
 // OptionsModel handles the options screen
@@ -40,11 +58,18 @@ type OptionsModel struct {
 	focusedField OptionsField
 
 	// Inputs
-	newTopicInput      textinput.Model
-	presenterInput     textinput.Model
-	productLogo1Input  textinput.Model
-	productLogo2Input  textinput.Model
-	companyLogoInput   textinput.Model
+	newTopicInput  textinput.Model
+	presenterInput textinput.Model
+
+	// Logo paths (displayed as text, selected via filepicker)
+	productLogo1Path string
+	productLogo2Path string
+	companyLogoPath  string
+
+	// Filepicker for logo selection
+	filepicker       filepicker.Model
+	showFilepicker   bool
+	selectingLogoFor LogoType
 
 	// State
 	message string
@@ -76,43 +101,29 @@ func NewOptionsModel() *OptionsModel {
 		presenterInput.SetValue(cfg.DefaultPresenter)
 	}
 
-	// Product Logo 1 input (top-left)
-	productLogo1Input := textinput.New()
-	productLogo1Input.Placeholder = "/path/to/logo1.png"
-	productLogo1Input.CharLimit = 255
-	productLogo1Input.Width = 40
-	if cfg.ProductLogo1Path != "" {
-		productLogo1Input.SetValue(cfg.ProductLogo1Path)
-	}
-
-	// Product Logo 2 input (top-right)
-	productLogo2Input := textinput.New()
-	productLogo2Input.Placeholder = "/path/to/logo2.png"
-	productLogo2Input.CharLimit = 255
-	productLogo2Input.Width = 40
-	if cfg.ProductLogo2Path != "" {
-		productLogo2Input.SetValue(cfg.ProductLogo2Path)
-	}
-
-	// Company Logo input (lower third)
-	companyLogoInput := textinput.New()
-	companyLogoInput.Placeholder = "/path/to/company_logo.png"
-	companyLogoInput.CharLimit = 255
-	companyLogoInput.Width = 40
-	if cfg.CompanyLogoPath != "" {
-		companyLogoInput.SetValue(cfg.CompanyLogoPath)
-	}
+	// Initialize filepicker for image files
+	fp := filepicker.New()
+	fp.AllowedTypes = []string{".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"}
+	fp.ShowHidden = false
+	fp.ShowPermissions = false
+	fp.ShowSize = true
+	// Start in home directory
+	home, _ := os.UserHomeDir()
+	fp.CurrentDirectory = home
 
 	return &OptionsModel{
-		config:            cfg,
-		topics:            topics,
-		selectedTopic:     0,
-		focusedField:      OptionsFieldTopicList,
-		newTopicInput:     newTopicInput,
-		presenterInput:    presenterInput,
-		productLogo1Input: productLogo1Input,
-		productLogo2Input: productLogo2Input,
-		companyLogoInput:  companyLogoInput,
+		config:           cfg,
+		topics:           topics,
+		selectedTopic:    0,
+		focusedField:     OptionsFieldTopicList,
+		newTopicInput:    newTopicInput,
+		presenterInput:   presenterInput,
+		productLogo1Path: cfg.ProductLogo1Path,
+		productLogo2Path: cfg.ProductLogo2Path,
+		companyLogoPath:  cfg.CompanyLogoPath,
+		filepicker:       fp,
+		showFilepicker:   false,
+		selectingLogoFor: LogoNone,
 	}
 }
 
@@ -125,10 +136,52 @@ func (m *OptionsModel) Init() tea.Cmd {
 func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// Handle filepicker if active
+	if m.showFilepicker {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.String() == "esc" {
+				m.showFilepicker = false
+				m.selectingLogoFor = LogoNone
+				return m, nil
+			}
+		}
+
+		var cmd tea.Cmd
+		m.filepicker, cmd = m.filepicker.Update(msg)
+
+		// Check if a file was selected
+		if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
+			// Store the selected path based on which logo we're selecting
+			switch m.selectingLogoFor {
+			case LogoProduct1:
+				m.productLogo1Path = path
+			case LogoProduct2:
+				m.productLogo2Path = path
+			case LogoCompany:
+				m.companyLogoPath = path
+			}
+			m.showFilepicker = false
+			m.selectingLogoFor = LogoNone
+			m.message = "Logo selected: " + filepath.Base(path)
+			return m, nil
+		}
+
+		// Check if a file was disabled (invalid type)
+		if didSelect, path := m.filepicker.DidSelectDisabledFile(msg); didSelect {
+			m.message = "Invalid file type: " + filepath.Base(path)
+			return m, cmd
+		}
+
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Update filepicker size
+		m.filepicker.Height = m.height - 10
 
 	case tea.KeyMsg:
 		// Clear messages on any key
@@ -162,7 +215,7 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 				return m, nil
 			}
 
-		case "enter":
+		case "enter", " ":
 			switch m.focusedField {
 			case OptionsFieldAddTopic:
 				m.addTopic()
@@ -170,11 +223,40 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 			case OptionsFieldRemoveTopic:
 				m.removeTopic()
 				return m, nil
+			case OptionsFieldProductLogo1:
+				m.showFilepicker = true
+				m.selectingLogoFor = LogoProduct1
+				return m, m.filepicker.Init()
+			case OptionsFieldProductLogo2:
+				m.showFilepicker = true
+				m.selectingLogoFor = LogoProduct2
+				return m, m.filepicker.Init()
+			case OptionsFieldCompanyLogo:
+				m.showFilepicker = true
+				m.selectingLogoFor = LogoCompany
+				return m, m.filepicker.Init()
 			case OptionsFieldSave:
 				m.save()
 				return m, nil
 			default:
 				m.nextField()
+				return m, nil
+			}
+
+		case "c":
+			// Clear logo path if on a logo field
+			switch m.focusedField {
+			case OptionsFieldProductLogo1:
+				m.productLogo1Path = ""
+				m.message = "Product Logo 1 cleared"
+				return m, nil
+			case OptionsFieldProductLogo2:
+				m.productLogo2Path = ""
+				m.message = "Product Logo 2 cleared"
+				return m, nil
+			case OptionsFieldCompanyLogo:
+				m.companyLogoPath = ""
+				m.message = "Company Logo cleared"
 				return m, nil
 			}
 
@@ -196,21 +278,6 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 	case OptionsFieldDefaultPresenter:
 		var cmd tea.Cmd
 		m.presenterInput, cmd = m.presenterInput.Update(msg)
-		cmds = append(cmds, cmd)
-
-	case OptionsFieldProductLogo1:
-		var cmd tea.Cmd
-		m.productLogo1Input, cmd = m.productLogo1Input.Update(msg)
-		cmds = append(cmds, cmd)
-
-	case OptionsFieldProductLogo2:
-		var cmd tea.Cmd
-		m.productLogo2Input, cmd = m.productLogo2Input.Update(msg)
-		cmds = append(cmds, cmd)
-
-	case OptionsFieldCompanyLogo:
-		var cmd tea.Cmd
-		m.companyLogoInput, cmd = m.companyLogoInput.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
@@ -241,9 +308,6 @@ func (m *OptionsModel) prevField() {
 func (m *OptionsModel) unfocusAll() {
 	m.newTopicInput.Blur()
 	m.presenterInput.Blur()
-	m.productLogo1Input.Blur()
-	m.productLogo2Input.Blur()
-	m.companyLogoInput.Blur()
 }
 
 // focusCurrent focuses the current field
@@ -253,12 +317,6 @@ func (m *OptionsModel) focusCurrent() {
 		m.newTopicInput.Focus()
 	case OptionsFieldDefaultPresenter:
 		m.presenterInput.Focus()
-	case OptionsFieldProductLogo1:
-		m.productLogo1Input.Focus()
-	case OptionsFieldProductLogo2:
-		m.productLogo2Input.Focus()
-	case OptionsFieldCompanyLogo:
-		m.companyLogoInput.Focus()
 	}
 }
 
@@ -311,9 +369,9 @@ func (m *OptionsModel) removeTopic() {
 func (m *OptionsModel) save() {
 	m.config.Topics = m.topics
 	m.config.DefaultPresenter = strings.TrimSpace(m.presenterInput.Value())
-	m.config.ProductLogo1Path = strings.TrimSpace(m.productLogo1Input.Value())
-	m.config.ProductLogo2Path = strings.TrimSpace(m.productLogo2Input.Value())
-	m.config.CompanyLogoPath = strings.TrimSpace(m.companyLogoInput.Value())
+	m.config.ProductLogo1Path = m.productLogo1Path
+	m.config.ProductLogo2Path = m.productLogo2Path
+	m.config.CompanyLogoPath = m.companyLogoPath
 
 	if err := config.Save(m.config); err != nil {
 		m.err = err
@@ -325,6 +383,11 @@ func (m *OptionsModel) save() {
 
 // View renders the options screen
 func (m *OptionsModel) View() string {
+	// If filepicker is shown, render it instead
+	if m.showFilepicker {
+		return m.renderFilepicker()
+	}
+
 	// Styles
 	sectionStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -412,36 +475,49 @@ func (m *OptionsModel) View() string {
 	// Logo Settings Section
 	logoSection := sectionStyle.Render("Logo Settings")
 
+	// Helper to format logo path for display
+	formatLogoPath := func(path string) string {
+		if path == "" {
+			return "(not set - press Enter to browse)"
+		}
+		// Show just the filename, or truncate if too long
+		name := filepath.Base(path)
+		if len(name) > 40 {
+			name = name[:37] + "..."
+		}
+		return name
+	}
+
 	// Product Logo 1 (top-left)
-	logo1Style := inactiveStyle
+	logo1Style := inactiveStyle.Width(44)
 	if m.focusedField == OptionsFieldProductLogo1 {
-		logo1Style = activeStyle
+		logo1Style = activeStyle.Width(44)
 	}
 	logo1Row := lipgloss.JoinHorizontal(lipgloss.Center,
 		labelStyle.Width(20).Render("Product Logo 1: "),
-		logo1Style.Render(m.productLogo1Input.View()),
+		logo1Style.Render(formatLogoPath(m.productLogo1Path)),
 	)
 	logo1Hint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (top-left corner)")
 
 	// Product Logo 2 (top-right)
-	logo2Style := inactiveStyle
+	logo2Style := inactiveStyle.Width(44)
 	if m.focusedField == OptionsFieldProductLogo2 {
-		logo2Style = activeStyle
+		logo2Style = activeStyle.Width(44)
 	}
 	logo2Row := lipgloss.JoinHorizontal(lipgloss.Center,
 		labelStyle.Width(20).Render("Product Logo 2: "),
-		logo2Style.Render(m.productLogo2Input.View()),
+		logo2Style.Render(formatLogoPath(m.productLogo2Path)),
 	)
 	logo2Hint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (top-right corner)")
 
 	// Company Logo (lower third)
-	companyLogoStyle := inactiveStyle
+	companyLogoStyle := inactiveStyle.Width(44)
 	if m.focusedField == OptionsFieldCompanyLogo {
-		companyLogoStyle = activeStyle
+		companyLogoStyle = activeStyle.Width(44)
 	}
 	companyLogoRow := lipgloss.JoinHorizontal(lipgloss.Center,
 		labelStyle.Width(20).Render("Company Logo: "),
-		companyLogoStyle.Render(m.companyLogoInput.View()),
+		companyLogoStyle.Render(formatLogoPath(m.companyLogoPath)),
 	)
 	companyLogoHint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (lower third with title)")
 
@@ -470,6 +546,7 @@ func (m *OptionsModel) View() string {
 		Foreground(ColorGray).
 		Italic(true)
 	topicHint := hintStyle.Render("j/k to navigate • d to delete • enter to select")
+	logoHint := hintStyle.Render("enter/space to browse • c to clear")
 
 	// Build the view
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -485,6 +562,7 @@ func (m *OptionsModel) View() string {
 		presenterRow,
 		"",
 		logoSection,
+		logoHint,
 		logo1Row,
 		logo1Hint,
 		logo2Row,
@@ -496,4 +574,44 @@ func (m *OptionsModel) View() string {
 		"",
 		statusLine,
 	)
+}
+
+// renderFilepicker renders the file picker overlay
+func (m *OptionsModel) renderFilepicker() string {
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorOrange).
+		MarginBottom(1)
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	var title string
+	switch m.selectingLogoFor {
+	case LogoProduct1:
+		title = "Select Product Logo 1 (top-left)"
+	case LogoProduct2:
+		title = "Select Product Logo 2 (top-right)"
+	case LogoCompany:
+		title = "Select Company Logo (lower third)"
+	default:
+		title = "Select Logo"
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		titleStyle.Render(title),
+		"",
+		m.filepicker.View(),
+		"",
+		hintStyle.Render("↑/↓ navigate • enter select • esc cancel"),
+		hintStyle.Render("Allowed types: .png, .jpg, .jpeg"),
+	)
+
+	// Center on screen
+	if m.width > 0 && m.height > 0 {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+	}
+	return content
 }
