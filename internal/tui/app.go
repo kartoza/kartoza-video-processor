@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kartoza/kartoza-video-processor/internal/config"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 	"github.com/kartoza/kartoza-video-processor/internal/monitor"
 	"github.com/kartoza/kartoza-video-processor/internal/recorder"
@@ -47,10 +50,49 @@ type AppModel struct {
 	processing      *ProcessingState
 	processingFrame int
 	metadata        models.RecordingMetadata
+	recordingInfo   *models.RecordingInfo
+	outputDir       string
 
 	// External recording detection
 	externalRecordingActive bool
 	externalRecordingPIDs   []string
+}
+
+// countRecordings counts the number of valid recordings in the screencasts folder
+func countRecordings() int {
+	videosDir := config.GetDefaultVideosDir()
+
+	if _, err := os.Stat(videosDir); os.IsNotExist(err) {
+		return 0
+	}
+
+	entries, err := os.ReadDir(videosDir)
+	if err != nil {
+		return 0
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Check if folder has recording.json
+		infoPath := filepath.Join(videosDir, entry.Name(), "recording.json")
+		if _, err := os.Stat(infoPath); err == nil {
+			count++
+		}
+	}
+
+	return count
+}
+
+// updateGlobalAppState updates the global app state for header display
+func updateGlobalAppState(isRecording bool, blinkOn bool, status string) {
+	GlobalAppState.IsRecording = isRecording
+	GlobalAppState.BlinkOn = blinkOn
+	GlobalAppState.Status = status
+	GlobalAppState.TotalRecordings = countRecordings()
 }
 
 // checkExternalRecording checks if wl-screenrec processes are running externally
@@ -101,6 +143,16 @@ func NewAppModel() AppModel {
 	// Create menu and set external recording state
 	menu := NewMenuModel()
 	menu.SetExternalRecording(externalActive, externalPIDs)
+
+	// Initialize global app state
+	GlobalAppState.TotalRecordings = countRecordings()
+	if status.IsRecording {
+		GlobalAppState.IsRecording = true
+		GlobalAppState.Status = "Recording"
+	} else {
+		GlobalAppState.IsRecording = false
+		GlobalAppState.Status = "Ready"
+	}
 
 	return AppModel{
 		screen:                  initialScreen,
@@ -277,6 +329,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateReady
 		m.screen = ScreenMenu
 		m.processing.Reset()
+		// Update global state - recording complete, refresh count
+		updateGlobalAppState(false, true, "Ready")
 		return m, updateStatus(m.recorder)
 
 	case processingErrorMsg:
@@ -497,7 +551,71 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 	if m.countdownNum < 0 {
 		// Countdown finished, start recording
 		m.state = stateRecording
-		if err := m.recorder.Start(); err != nil {
+
+		// Generate folder name and create recording directory
+		m.metadata.GenerateFolderName()
+		baseDir := config.GetDefaultVideosDir()
+		m.outputDir = filepath.Join(baseDir, m.metadata.FolderName)
+
+		// Create the recording directory
+		if err := os.MkdirAll(m.outputDir, 0755); err != nil {
+			m.err = fmt.Errorf("failed to create recording directory: %w", err)
+			m.state = stateReady
+			m.screen = ScreenMenu
+			return m, nil
+		}
+
+		// Get monitor info for recording
+		monitorName, _ := monitor.GetMouseMonitor()
+		if m.recordingSetup != nil && m.recordingSetup.selectedMonitor >= 0 && m.recordingSetup.selectedMonitor < len(m.recordingSetup.monitors) {
+			monitorName = m.recordingSetup.monitors[m.recordingSetup.selectedMonitor].Name
+		}
+		monitorResolution := ""
+		for _, mon := range m.monitors {
+			if mon.Name == monitorName {
+				monitorResolution = fmt.Sprintf("%dx%d", mon.Width, mon.Height)
+				break
+			}
+		}
+
+		// Create RecordingInfo and save initial metadata
+		m.recordingInfo = models.NewRecordingInfo(m.metadata, monitorName, monitorResolution)
+		m.recordingInfo.Files.FolderPath = m.outputDir
+
+		// Set recording settings from setup form
+		if m.recordingSetup != nil {
+			m.recordingInfo.Settings.AudioEnabled = m.recordingSetup.recordAudio
+			m.recordingInfo.Settings.WebcamEnabled = m.recordingSetup.recordWebcam
+		}
+
+		// Save initial recording.json
+		if err := m.recordingInfo.Save(); err != nil {
+			m.err = fmt.Errorf("failed to save recording metadata: %w", err)
+			m.state = stateReady
+			m.screen = ScreenMenu
+			return m, nil
+		}
+
+		// Set up recorder options
+		opts := recorder.Options{
+			OutputDir:      m.outputDir,
+			Monitor:        monitorName,
+			Metadata:       &m.metadata,
+			RecordingInfo:  m.recordingInfo,
+			CreateVertical: m.recordingSetup != nil && m.recordingSetup.verticalVideo,
+		}
+
+		// Set audio/webcam/screen options from setup
+		if m.recordingSetup != nil {
+			opts.NoAudio = !m.recordingSetup.recordAudio
+			opts.NoWebcam = !m.recordingSetup.recordWebcam
+			// If recordScreen is false, we shouldn't record at all (this is a safety check)
+			if !m.recordingSetup.recordScreen {
+				opts.Monitor = "" // This will cause an error if no webcam/audio
+			}
+		}
+
+		if err := m.recorder.StartWithOptions(opts); err != nil {
 			m.err = err
 			m.state = stateReady
 			m.screen = ScreenMenu
@@ -589,13 +707,11 @@ func (m AppModel) View() string {
 // renderRecordingScreen renders the recording screen
 func (m AppModel) renderRecordingScreen() string {
 	// Update global app state for header
-	GlobalAppState.IsRecording = m.status.IsRecording
-	GlobalAppState.BlinkOn = m.blinkOn
+	status := "Ready"
 	if m.status.IsRecording {
-		GlobalAppState.Status = "Recording"
-	} else {
-		GlobalAppState.Status = "Ready"
+		status = "Recording"
 	}
+	updateGlobalAppState(m.status.IsRecording, m.blinkOn, status)
 
 	// Get current monitor with cursor
 	cursorMonitor, _ := monitor.GetMouseMonitor()

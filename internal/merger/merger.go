@@ -57,10 +57,12 @@ type MergeOptions struct {
 	CreateVertical bool
 }
 
-// MergeResult contains the paths to merged files
+// MergeResult contains the paths to merged files and processing info
 type MergeResult struct {
-	MergedFile   string
-	VerticalFile string
+	MergedFile       string
+	VerticalFile     string
+	DenoiseApplied   bool
+	NormalizeApplied bool
 }
 
 // Merge merges video and audio recordings
@@ -82,6 +84,7 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 			notify.Warning("Noise Reduction Warning", "Skipping noise reduction")
 		} else {
 			currentAudio = denoisedAudio
+			result.DenoiseApplied = true
 			m.reportProgress(StepDenoising, true, false, nil)
 		}
 	} else {
@@ -112,6 +115,7 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 			notify.Warning("Audio Normalization Warning", "Using original audio")
 			normalizedAudio = currentAudio
 		} else {
+			result.NormalizeApplied = true
 			m.reportProgress(StepNormalizing, true, false, nil)
 		}
 	} else {

@@ -299,13 +299,13 @@ func (m Model) View() string {
 	}
 
 	// Update global app state for header
+	status := "Ready"
+	if m.status.IsRecording {
+		status = "Recording"
+	}
 	GlobalAppState.IsRecording = m.status.IsRecording
 	GlobalAppState.BlinkOn = m.blinkOn
-	if m.status.IsRecording {
-		GlobalAppState.Status = "Recording"
-	} else {
-		GlobalAppState.Status = "Ready"
-	}
+	GlobalAppState.Status = status
 
 	// Get current monitor with cursor
 	cursorMonitor, _ := monitor.GetMouseMonitor()

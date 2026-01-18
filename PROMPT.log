@@ -291,3 +291,27 @@ I still cannot start the recording
 2. The AppModel.Update() function was returning early for ScreenRecordingSetup before reaching the message handler
 3. Fixed by moving recordingSetupCompleteMsg and backToMenuMsg handlers to the top of Update() function
 4. Now these messages are handled before any screen-specific processing
+
+---
+
+**Prompt:** the screen recording is not being placed into the subfolder of the Screencasts folder as I requests. Before the recording starts, a folder should be created using the naming convention Videono-TitleCaseVideoTitle with no spaces in the folder name. the various products should be placed into this folder when they are recorded. the output folder should also have the metadata json written to it as I previously requested.
+
+**Summary:** Implemented recording folder structure and metadata:
+1. Before recording starts, a folder is created in ~/Videos/Screencasts with format: NNN-sanitized-title (e.g., "001-my-tutorial")
+2. All recording products (screen.mp4, audio.wav, webcam.mp4) are saved to this folder
+3. recording.json is created at start with initial metadata (title, description, topic, presenter, number)
+4. recording.json is updated when recording stops with end time and file sizes
+5. recording.json is updated after processing with merged file paths and processing info
+6. Added RecordingInfo to recorder Options to pass metadata through the recording pipeline
+7. MergeResult now includes DenoiseApplied and NormalizeApplied flags for processing tracking
+
+---
+
+**Prompt:** after the recording completes, the recording status in the status bar area should reflect this
+
+**Summary:** Updated status bar to reflect recording state:
+1. Added countRecordings() function to count valid recordings in Screencasts folder
+2. Added updateGlobalAppState() helper to update all status bar fields consistently
+3. TotalRecordings count is initialized at startup and refreshed after processing completes
+4. Status shows "Recording" during recording, "Processing" during post-processing, "Ready" otherwise
+5. Recording indicator blinks during active recording

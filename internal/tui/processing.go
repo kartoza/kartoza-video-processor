@@ -164,6 +164,10 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int) 
 		return ""
 	}
 
+	// Update global app state to show Processing status
+	GlobalAppState.IsRecording = false
+	GlobalAppState.Status = "Processing"
+
 	// Title
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).

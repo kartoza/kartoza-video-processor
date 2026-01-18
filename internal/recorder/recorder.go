@@ -21,14 +21,17 @@ import (
 
 // Options for starting a recording
 type Options struct {
-	Monitor      string
-	NoAudio      bool
-	NoWebcam     bool
-	HWAccel      bool
-	OutputDir    string
-	WebcamDevice string
-	WebcamFPS    int
-	AudioDevice  string
+	Monitor        string
+	NoAudio        bool
+	NoWebcam       bool
+	HWAccel        bool
+	OutputDir      string
+	WebcamDevice   string
+	WebcamFPS      int
+	AudioDevice    string
+	Metadata       *models.RecordingMetadata
+	RecordingInfo  *models.RecordingInfo
+	CreateVertical bool
 }
 
 // recorderInstance holds a single recorder's state
@@ -50,6 +53,10 @@ type Recorder struct {
 	video  *recorderInstance
 	audio  *recorderInstance
 	webcam *recorderInstance
+
+	// Recording metadata
+	recordingInfo  *models.RecordingInfo
+	createVertical bool
 
 	// Synchronization
 	startBarrier chan struct{}
@@ -149,11 +156,14 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		}
 	}
 
-	// Generate filenames with synchronized timestamp
-	timestamp := time.Now().Format("20060102-150405")
-	videoFile := filepath.Join(outputDir, fmt.Sprintf("screenrecording-%s-%s.mp4", monitorName, timestamp))
-	audioFile := filepath.Join(outputDir, fmt.Sprintf("screenrecording-%s-%s.wav", monitorName, timestamp))
-	webcamFile := filepath.Join(outputDir, fmt.Sprintf("screenrecording-webcam-%s-%s.mp4", monitorName, timestamp))
+	// Store recording info and settings
+	r.recordingInfo = opts.RecordingInfo
+	r.createVertical = opts.CreateVertical
+
+	// Generate simplified filenames (no timestamp needed since they're in unique folder)
+	videoFile := filepath.Join(outputDir, "screen.mp4")
+	audioFile := filepath.Join(outputDir, "audio.wav")
+	webcamFile := filepath.Join(outputDir, "webcam.mp4")
 
 	// Initialize recorder instances
 	r.video = &recorderInstance{name: monitorName, file: videoFile}
@@ -162,6 +172,19 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 	}
 	if !opts.NoWebcam {
 		r.webcam = &recorderInstance{name: "webcam", file: webcamFile}
+	}
+
+	// Update recording info with file paths
+	if r.recordingInfo != nil {
+		r.recordingInfo.Files.VideoFile = videoFile
+		if r.audio != nil {
+			r.recordingInfo.Files.AudioFile = audioFile
+		}
+		if r.webcam != nil {
+			r.recordingInfo.Files.WebcamFile = webcamFile
+		}
+		// Save updated file paths
+		r.recordingInfo.Save()
 	}
 
 	// Create synchronization primitives
@@ -449,6 +472,13 @@ func (r *Recorder) Stop() error {
 	// Wait for files to be fully written
 	time.Sleep(2 * time.Second)
 
+	// Update recording info with end time and file sizes
+	if r.recordingInfo != nil {
+		r.recordingInfo.SetEndTime(time.Now())
+		r.recordingInfo.UpdateFileSizes()
+		r.recordingInfo.Save()
+	}
+
 	// Merge recordings in background
 	go r.processRecordings()
 
@@ -479,11 +509,19 @@ type ProgressUpdate struct {
 func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 	defer close(progressChan)
 
-	videoFile := readPath(config.VideoPathFile)
-	audioFile := readPath(config.AudioPathFile)
-	webcamFile := readPath(config.WebcamPathFile)
+	// Get file paths from recording info or fallback to path files
+	var videoFile, audioFile, webcamFile string
+	if r.recordingInfo != nil {
+		videoFile = r.recordingInfo.Files.VideoFile
+		audioFile = r.recordingInfo.Files.AudioFile
+		webcamFile = r.recordingInfo.Files.WebcamFile
+	} else {
+		videoFile = readPath(config.VideoPathFile)
+		audioFile = readPath(config.AudioPathFile)
+		webcamFile = readPath(config.WebcamPathFile)
+	}
 
-	if videoFile == "" || audioFile == "" {
+	if videoFile == "" && audioFile == "" {
 		return
 	}
 
@@ -501,15 +539,33 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		}
 	})
 
-	_, err := m.Merge(merger.MergeOptions{
+	mergeResult, err := m.Merge(merger.MergeOptions{
 		VideoFile:      videoFile,
 		AudioFile:      audioFile,
 		WebcamFile:     webcamFile,
-		CreateVertical: webcamFile != "",
+		CreateVertical: r.createVertical && webcamFile != "",
 	})
 
 	if err != nil {
 		notify.Error("Recording Error", "Failed to merge recordings")
+		if r.recordingInfo != nil {
+			r.recordingInfo.Processing.Errors = append(r.recordingInfo.Processing.Errors, err.Error())
+		}
+	}
+
+	// Update recording info with merged file paths and processing info
+	if r.recordingInfo != nil {
+		if mergeResult.MergedFile != "" {
+			r.recordingInfo.Files.MergedFile = mergeResult.MergedFile
+		}
+		if mergeResult.VerticalFile != "" {
+			r.recordingInfo.Files.VerticalFile = mergeResult.VerticalFile
+		}
+		r.recordingInfo.Processing.DenoiseApplied = mergeResult.DenoiseApplied
+		r.recordingInfo.Processing.NormalizeApplied = mergeResult.NormalizeApplied
+		r.recordingInfo.Processing.VerticalCreated = mergeResult.VerticalFile != ""
+		r.recordingInfo.UpdateFileSizes()
+		r.recordingInfo.Save()
 	}
 
 	// Clean up path files
