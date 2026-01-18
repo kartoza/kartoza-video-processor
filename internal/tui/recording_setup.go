@@ -47,22 +47,22 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 	titleInput := textinput.New()
 	titleInput.Placeholder = "My Tutorial Video"
 	titleInput.CharLimit = 100
-	titleInput.Width = 40
+	titleInput.Width = 50
 	titleInput.Focus()
 
 	presenterInput := textinput.New()
 	presenterInput.Placeholder = "Your Name"
 	presenterInput.CharLimit = 100
-	presenterInput.Width = 40
+	presenterInput.Width = 50
 	if cfg.DefaultPresenter != "" {
 		presenterInput.SetValue(cfg.DefaultPresenter)
 	}
 
 	descInput := textarea.New()
-	descInput.Placeholder = "Brief description of this recording..."
-	descInput.CharLimit = 500
-	descInput.SetWidth(40)
-	descInput.SetHeight(2)
+	descInput.Placeholder = "Description of this recording..."
+	descInput.CharLimit = 2000
+	descInput.SetWidth(50)
+	descInput.SetHeight(6)
 	descInput.ShowLineNumbers = false
 
 	topics := cfg.Topics
@@ -91,6 +91,14 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Resize description to fill remaining space
+		// Header ~3, title+folder ~3, presenter ~2, topic ~2, button ~2, footer ~2 = ~14 lines used
+		descHeight := m.height - 18
+		if descHeight < 3 {
+			descHeight = 3
+		}
+		m.descriptionInput.SetHeight(descHeight)
+		m.descriptionInput.SetWidth(m.width - 16) // Leave room for label
 
 	case tea.KeyMsg:
 		m.validationMsg = ""
