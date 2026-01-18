@@ -298,29 +298,21 @@ func (m Model) View() string {
 		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame)
 	}
 
-	// Build header state
-	headerState := &HeaderState{
-		IsRecording: m.status.IsRecording,
-		BlinkOn:     m.blinkOn,
-	}
-
+	// Update global app state for header
+	GlobalAppState.IsRecording = m.status.IsRecording
+	GlobalAppState.BlinkOn = m.blinkOn
 	if m.status.IsRecording {
-		headerState.Duration = time.Since(m.status.StartTime).Round(time.Second).String()
-		headerState.Monitor = m.status.Monitor
+		GlobalAppState.Status = "Recording"
+	} else {
+		GlobalAppState.Status = "Ready"
 	}
 
 	// Get current monitor with cursor
 	cursorMonitor, _ := monitor.GetMouseMonitor()
-	if cursorMonitor != "" && !m.status.IsRecording {
-		headerState.Monitor = cursorMonitor
-	}
 
 	// Render header
-	screenTitle := "Ready"
-	if m.status.IsRecording {
-		screenTitle = "Recording"
-	}
-	header := RenderHeader(screenTitle, headerState)
+	screenTitle := "Recording"
+	header := RenderHeader(screenTitle)
 
 	// Render main content
 	content := m.renderContent(cursorMonitor)

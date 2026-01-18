@@ -248,3 +248,32 @@
 6. "Go Live!" button (renamed from "Start Recording")
 7. Space toggles checkboxes, left/right changes selections
 8. Vim navigation (j/k/h/l) and arrow keys supported
+for the video creation screen lets rather go with no outlines around widgets and just a nice clean two column layout
+use huh
+when the application starts it should check if there are already wl-record processes and show a warning that recording is disabled until the active recording session is stopped
+I still want the labels left and the widgets right
+and please make every form compliant to my requirements of app name - title, motto (latin save the moment), status bar (with line above and below)
+the screen recording form should have ALL of the widgets:
+
+
+  - Title, Number, Topic - inline text inputs and select
+  - Record Audio/Webcam/Screen - inline Yes/No confirms
+  - Monitor - inline select (only shows when Record Screen is Yes)
+  - Vertical Video, Add Logos - inline Yes/No confirms
+  - Description - full-width text area (not inline, as it needs more space)
+  - Go Live! / Cancel - confirmation buttons
+
+I am not able to tab between fields. Also use our kartoza colours not huh default colours
+its still stuck in the title widget. I tried enter, tab, arrows
+lets rewind to the initial requirements a little. I asked that there is a standard (ie DRY implementation) of the page header which always is of the form:
+
+Application Name - Page Title
+Application Motto
+--------------------------------
+Recording: Off | Total Recordings: 10 | Status: Processing
+--------------------------------
+
+
+These should all be centerd on hte screen and the same header used on every page. The dry function will take the page title as a parameter
+next, the recording page has two footers
+the widgets should all be perfectly aligned in a column, can you split the screen into two halves with the labels on the left half and the widgets on the right

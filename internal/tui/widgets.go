@@ -24,24 +24,40 @@ var (
 const HeaderWidth = 60
 
 // ========================================
-// Header State for dynamic updates
+// Global Application State for Header
 // ========================================
 
-// HeaderState contains the dynamic state for the header
-type HeaderState struct {
-	IsRecording   bool
-	Monitor       string
-	Duration      string
-	BlinkOn       bool // For blinking status indicator
+// AppState contains the global application state shown in all headers
+type AppState struct {
+	IsRecording     bool
+	TotalRecordings int
+	Status          string // e.g., "Ready", "Processing", "Recording"
+	BlinkOn         bool   // For blinking recording indicator
+}
+
+// Global app state - updated by the main app model
+var GlobalAppState = &AppState{
+	IsRecording:     false,
+	TotalRecordings: 0,
+	Status:          "Ready",
+	BlinkOn:         true,
 }
 
 // ========================================
-// Header Rendering
+// Header Rendering (DRY Implementation)
 // ========================================
 
-// RenderHeader renders the standard application header
-// screenTitle should be the name of the current screen (e.g., "Main", "Recording")
-func RenderHeader(screenTitle string, state *HeaderState) string {
+// RenderHeader renders the standard application header for ALL pages
+// pageTitle is the name of the current page (e.g., "Main Menu", "New Recording")
+//
+// Format:
+//
+//	Kartoza Video Processor - Page Title
+//	Serva Momentum
+//	────────────────────────────────────────────────────────────
+//	Recording: Off | Total Recordings: 10 | Status: Ready
+//	────────────────────────────────────────────────────────────
+func RenderHeader(pageTitle string) string {
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(ColorOrange).
@@ -56,6 +72,7 @@ func RenderHeader(screenTitle string, state *HeaderState) string {
 
 	dividerStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
+		Align(lipgloss.Center).
 		Width(HeaderWidth)
 
 	statusStyle := lipgloss.NewStyle().
@@ -63,93 +80,45 @@ func RenderHeader(screenTitle string, state *HeaderState) string {
 		Align(lipgloss.Center).
 		Width(HeaderWidth)
 
-	title := titleStyle.Render("Kartoza Video Processor - " + screenTitle)
-	motto := mottoStyle.Render("capture your screen")
+	// Line 1: Application Name - Page Title
+	title := titleStyle.Render(fmt.Sprintf("Kartoza Video Processor - %s", pageTitle))
+
+	// Line 2: Motto
+	motto := mottoStyle.Render("Serva Momentum")
+
+	// Line 3: Divider
 	divider := dividerStyle.Render("────────────────────────────────────────────────────────────")
 
-	// Build status line if state is provided
-	var status string
-	if state != nil {
-		recorderState := "Ready"
-		stateColor := ColorGray
-		if state.IsRecording {
-			// Blink the dot when recording is active
-			if state.BlinkOn {
-				recorderState = "● REC"
-			} else {
-				recorderState = "○ REC"
-			}
-			stateColor = ColorRed
+	// Line 4: Status bar
+	recordingStatus := "Off"
+	recordingColor := ColorGray
+	if GlobalAppState.IsRecording {
+		if GlobalAppState.BlinkOn {
+			recordingStatus = "● On"
+		} else {
+			recordingStatus = "○ On"
 		}
-
-		recorderStateStyled := lipgloss.NewStyle().
-			Foreground(stateColor).
-			Bold(true).
-			Render(recorderState)
-
-		monitorInfo := state.Monitor
-		if monitorInfo == "" {
-			monitorInfo = "Auto"
-		}
-
-		durationInfo := state.Duration
-		if durationInfo == "" {
-			durationInfo = "00:00:00"
-		}
-
-		statusLine := fmt.Sprintf("Status: %s  |  Monitor: %s  |  Duration: %s",
-			recorderStateStyled,
-			monitorInfo,
-			durationInfo,
-		)
-		status = statusStyle.Render(statusLine)
+		recordingColor = ColorRed
 	}
 
-	if state != nil {
-		return lipgloss.JoinVertical(
-			lipgloss.Center,
-			title,
-			motto,
-			divider,
-			status,
-			divider,
-		)
-	}
+	recordingStyled := lipgloss.NewStyle().
+		Foreground(recordingColor).
+		Bold(GlobalAppState.IsRecording).
+		Render(recordingStatus)
+
+	statusLine := fmt.Sprintf("Recording: %s  |  Total Recordings: %d  |  Status: %s",
+		recordingStyled,
+		GlobalAppState.TotalRecordings,
+		GlobalAppState.Status,
+	)
+	status := statusStyle.Render(statusLine)
 
 	return lipgloss.JoinVertical(
 		lipgloss.Center,
 		title,
 		motto,
 		divider,
-	)
-}
-
-// RenderSimpleHeader renders a header without the full status bar
-func RenderSimpleHeader(screenTitle string) string {
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorOrange).
-		Align(lipgloss.Center).
-		Width(HeaderWidth)
-
-	mottoStyle := lipgloss.NewStyle().
-		Italic(true).
-		Foreground(ColorGray).
-		Align(lipgloss.Center).
-		Width(HeaderWidth)
-
-	dividerStyle := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Width(HeaderWidth)
-
-	title := titleStyle.Render("Kartoza Video Processor - " + screenTitle)
-	motto := mottoStyle.Render("capture your screen")
-	divider := dividerStyle.Render("────────────────────────────────────────────────────────────")
-
-	return lipgloss.JoinVertical(
-		lipgloss.Center,
-		title,
-		motto,
+		status,
 		divider,
 	)
 }

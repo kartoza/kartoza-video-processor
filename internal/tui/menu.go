@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -29,6 +32,10 @@ type MenuModel struct {
 	menuItems    []menuItem
 	width        int
 	height       int
+
+	// External recording warning
+	externalRecordingActive bool
+	externalRecordingPIDs   []string
 }
 
 // NewMenuModel creates a new menu model
@@ -118,7 +125,7 @@ func (m *MenuModel) handleSelection(action MenuItem) tea.Cmd {
 // View renders the menu
 func (m *MenuModel) View() string {
 	// Render header
-	header := RenderSimpleHeader("Main Menu")
+	header := RenderHeader("Main Menu")
 
 	// Render menu items
 	menu := m.renderMenuItems()
@@ -146,6 +153,28 @@ func (m *MenuModel) renderMenuItems() string {
 		Foreground(ColorGray).
 		Padding(0, 2)
 
+	var sections []string
+
+	// Show warning if external recording is active
+	if m.externalRecordingActive {
+		warningStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true).
+			Padding(0, 2).
+			MarginBottom(1)
+
+		warningBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorRed).
+			Padding(0, 2).
+			MarginBottom(1)
+
+		pidsStr := strings.Join(m.externalRecordingPIDs, ", ")
+		warningText := fmt.Sprintf("⚠ External wl-screenrec detected (PID: %s)\nNew recordings disabled until stopped.", pidsStr)
+		sections = append(sections, warningBoxStyle.Render(warningStyle.Render(warningText)))
+		sections = append(sections, "")
+	}
+
 	var items []string
 	for i, item := range m.menuItems {
 		prefix := "  "
@@ -165,7 +194,8 @@ func (m *MenuModel) renderMenuItems() string {
 		items = append(items, rendered)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, items...)
+	sections = append(sections, lipgloss.JoinVertical(lipgloss.Left, items...))
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 // SelectedAction returns the currently selected action
@@ -174,6 +204,20 @@ func (m *MenuModel) SelectedAction() MenuItem {
 		return m.menuItems[m.selectedItem].action
 	}
 	return MenuNewRecording
+}
+
+// SetExternalRecording updates the external recording state and disables New Recording if needed
+func (m *MenuModel) SetExternalRecording(active bool, pids []string) {
+	m.externalRecordingActive = active
+	m.externalRecordingPIDs = pids
+
+	// Disable "New Recording" if external recording is active
+	for i := range m.menuItems {
+		if m.menuItems[i].action == MenuNewRecording {
+			m.menuItems[i].enabled = !active
+			break
+		}
+	}
 }
 
 // menuActionMsg is sent when a menu item is selected

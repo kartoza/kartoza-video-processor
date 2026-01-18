@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -45,6 +47,34 @@ type AppModel struct {
 	processing      *ProcessingState
 	processingFrame int
 	metadata        models.RecordingMetadata
+
+	// External recording detection
+	externalRecordingActive bool
+	externalRecordingPIDs   []string
+}
+
+// checkExternalRecording checks if wl-screenrec processes are running externally
+func checkExternalRecording() (bool, []string) {
+	// Use pgrep to find wl-screenrec processes
+	cmd := exec.Command("pgrep", "-a", "wl-screenrec")
+	output, err := cmd.Output()
+	if err != nil {
+		// pgrep returns exit code 1 if no processes found
+		return false, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var pids []string
+	for _, line := range lines {
+		if line != "" {
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				pids = append(pids, parts[0])
+			}
+		}
+	}
+
+	return len(pids) > 0, pids
 }
 
 // NewAppModel creates a new application model
@@ -65,20 +95,29 @@ func NewAppModel() AppModel {
 		initialState = stateRecording
 	}
 
+	// Check for external wl-screenrec processes
+	externalActive, externalPIDs := checkExternalRecording()
+
+	// Create menu and set external recording state
+	menu := NewMenuModel()
+	menu.SetExternalRecording(externalActive, externalPIDs)
+
 	return AppModel{
-		screen:          initialScreen,
-		menu:            NewMenuModel(),
-		recordingSetup:  NewRecordingSetupModel(),
-		options:         NewOptionsModel(),
-		history:         NewHistoryModel(),
-		recorder:        rec,
-		spinner:         s,
-		blinkOn:         true,
-		state:           initialState,
-		status:          status,
-		countdownNum:    5,
-		processing:      NewProcessingState(),
-		processingFrame: 0,
+		screen:                  initialScreen,
+		menu:                    menu,
+		recordingSetup:          NewRecordingSetupModel(),
+		options:                 NewOptionsModel(),
+		history:                 NewHistoryModel(),
+		recorder:                rec,
+		spinner:                 s,
+		blinkOn:                 true,
+		state:                   initialState,
+		status:                  status,
+		countdownNum:            5,
+		processing:              NewProcessingState(),
+		processingFrame:         0,
+		externalRecordingActive: externalActive,
+		externalRecordingPIDs:   externalPIDs,
 	}
 }
 
@@ -95,12 +134,37 @@ func (m AppModel) Init() tea.Cmd {
 
 // Update handles messages
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// If on recording setup screen, pass messages to the form
+	if m.screen == ScreenRecordingSetup {
+		// Handle escape to go back (before passing to form)
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			if key.Matches(keyMsg, key.NewBinding(key.WithKeys("esc"))) {
+				m.screen = ScreenMenu
+				return m, nil
+			}
+			if key.Matches(keyMsg, key.NewBinding(key.WithKeys("ctrl+c"))) {
+				return m, tea.Quit
+			}
+		}
+
+		// Pass message to the form
+		newSetup, cmd := m.recordingSetup.Update(msg)
+		m.recordingSetup = newSetup
+
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.menu.width = msg.Width
 		m.menu.height = msg.Height
+		// Also update recording setup dimensions
+		if m.recordingSetup != nil {
+			m.recordingSetup.width = msg.Width
+			m.recordingSetup.height = msg.Height
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -109,6 +173,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if m.state != stateCountdown {
+			// Re-check for external recordings
+			externalActive, externalPIDs := checkExternalRecording()
+			if m.externalRecordingActive != externalActive {
+				m.externalRecordingActive = externalActive
+				m.externalRecordingPIDs = externalPIDs
+				m.menu.SetExternalRecording(externalActive, externalPIDs)
+			}
+
 			return m, tea.Batch(
 				tickCmd(),
 				updateStatus(m.recorder),
@@ -498,29 +570,21 @@ func (m AppModel) View() string {
 
 // renderRecordingScreen renders the recording screen
 func (m AppModel) renderRecordingScreen() string {
-	// Build header state
-	headerState := &HeaderState{
-		IsRecording: m.status.IsRecording,
-		BlinkOn:     m.blinkOn,
-	}
-
+	// Update global app state for header
+	GlobalAppState.IsRecording = m.status.IsRecording
+	GlobalAppState.BlinkOn = m.blinkOn
 	if m.status.IsRecording {
-		headerState.Duration = time.Since(m.status.StartTime).Round(time.Second).String()
-		headerState.Monitor = m.status.Monitor
+		GlobalAppState.Status = "Recording"
+	} else {
+		GlobalAppState.Status = "Ready"
 	}
 
 	// Get current monitor with cursor
 	cursorMonitor, _ := monitor.GetMouseMonitor()
-	if cursorMonitor != "" && !m.status.IsRecording {
-		headerState.Monitor = cursorMonitor
-	}
 
 	// Render header
-	screenTitle := "Ready"
-	if m.status.IsRecording {
-		screenTitle = "Recording"
-	}
-	header := RenderHeader(screenTitle, headerState)
+	screenTitle := "Recording"
+	header := RenderHeader(screenTitle)
 
 	// Render main content
 	content := m.renderRecordingContent(cursorMonitor)
@@ -730,7 +794,7 @@ func (m AppModel) renderCountdownView() string {
 
 // renderRecordingSetupScreen renders the recording setup screen
 func (m AppModel) renderRecordingSetupScreen() string {
-	header := RenderSimpleHeader("New Recording")
+	header := RenderHeader("New Recording")
 
 	// Render the setup form
 	content := lipgloss.NewStyle().
@@ -753,7 +817,7 @@ func (m AppModel) renderHistoryScreen() string {
 
 // renderOptionsScreen renders the options screen
 func (m AppModel) renderOptionsScreen() string {
-	header := RenderSimpleHeader("Options")
+	header := RenderHeader("Options")
 
 	content := lipgloss.NewStyle().
 		Width(HeaderWidth).

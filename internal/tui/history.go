@@ -411,7 +411,7 @@ func (h *HistoryModel) View() string {
 
 // renderListView renders the list mode view
 func (h *HistoryModel) renderListView() string {
-	header := RenderSimpleHeader("Recording History")
+	header := RenderHeader("Recording History")
 
 	if h.loading {
 		loadingStyle := lipgloss.NewStyle().
@@ -565,7 +565,7 @@ func (h *HistoryModel) renderDetailView() string {
 	}
 
 	rec := h.selectedRecording
-	header := RenderSimpleHeader("Recording Details")
+	header := RenderHeader("Recording Details")
 
 	// Styles
 	labelStyle := lipgloss.NewStyle().
@@ -748,7 +748,7 @@ func (h *HistoryModel) renderEditView() string {
 	}
 
 	rec := h.selectedRecording
-	header := RenderSimpleHeader("Edit Recording")
+	header := RenderHeader("Edit Recording")
 
 	// Styles
 	labelStyle := lipgloss.NewStyle().

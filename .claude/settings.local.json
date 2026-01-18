@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(nix develop:*)",
-      "Bash(git -C /home/timlinux/dev/go/kartoza-video-processor commit -m \"$(cat <<''EOF''\nFix dependency versions and add go.sum\n\n- Update charmbracelet/bubbles to v0.21.1-0.20250623103423-23b8fd6302d7\n- Update charmbracelet/lipgloss to v1.1.1-0.20250404203927-76690c660834\n- Generate go.sum for reproducible builds\n- Add flake.lock for Nix reproducibility\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git -C /home/timlinux/dev/go/kartoza-video-processor commit -m \"$(cat <<''EOF''\nFix dependency versions and add go.sum\n\n- Update charmbracelet/bubbles to v0.21.1-0.20250623103423-23b8fd6302d7\n- Update charmbracelet/lipgloss to v1.1.1-0.20250404203927-76690c660834\n- Generate go.sum for reproducible builds\n- Add flake.lock for Nix reproducibility\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(go get:*)",
+      "Bash(go build:*)"
     ],
     "deny": [],
     "ask": []
