@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -17,11 +15,10 @@ import (
 type RecordingSetupField int
 
 const (
-	FieldCounter RecordingSetupField = iota
-	FieldTitle
-	FieldDescription
-	FieldTopic
+	FieldTitle RecordingSetupField = iota
 	FieldPresenter
+	FieldTopic
+	FieldDescription
 	FieldStart
 )
 
@@ -30,137 +27,92 @@ type RecordingSetupModel struct {
 	width  int
 	height int
 
-	// Current focused field
-	focusedField RecordingSetupField
-
-	// Text inputs
-	counterInput     textinput.Model
+	focusedField     RecordingSetupField
 	titleInput       textinput.Model
 	presenterInput   textinput.Model
 	descriptionInput textarea.Model
 
-	// Counter value
 	recordingNumber int
-
-	// Topic selection
-	topics        []models.Topic
-	selectedTopic int
-
-	// Configuration
-	config *config.Config
-
-	// Error/validation state
-	err            error
-	validationMsg  string
-	successMessage string
+	topics          []models.Topic
+	selectedTopic   int
+	config          *config.Config
+	validationMsg   string
 }
 
 // NewRecordingSetupModel creates a new recording setup model
 func NewRecordingSetupModel() *RecordingSetupModel {
 	cfg, _ := config.Load()
-
-	// Get the next recording number
 	recordingNumber := config.GetCurrentRecordingNumber()
 
-	// Counter input (editable, defaults to next number)
-	counterInput := textinput.New()
-	counterInput.Placeholder = "001"
-	counterInput.CharLimit = 6
-	counterInput.Width = 6
-	counterInput.SetValue(fmt.Sprintf("%d", recordingNumber))
-
-	// Title input (required)
 	titleInput := textinput.New()
-	titleInput.Placeholder = "Enter recording title"
+	titleInput.Placeholder = "My Tutorial Video"
 	titleInput.CharLimit = 100
 	titleInput.Width = 40
+	titleInput.Focus()
 
-	// Presenter input
 	presenterInput := textinput.New()
-	presenterInput.Placeholder = "Enter presenter name"
+	presenterInput.Placeholder = "Your Name"
 	presenterInput.CharLimit = 100
 	presenterInput.Width = 40
 	if cfg.DefaultPresenter != "" {
 		presenterInput.SetValue(cfg.DefaultPresenter)
 	}
 
-	// Description textarea
 	descInput := textarea.New()
-	descInput.Placeholder = "Optional description..."
-	descInput.CharLimit = 2000
+	descInput.Placeholder = "Brief description of this recording..."
+	descInput.CharLimit = 500
 	descInput.SetWidth(40)
-	descInput.SetHeight(3)
+	descInput.SetHeight(2)
 	descInput.ShowLineNumbers = false
 
-	// Get topics from config or use defaults
 	topics := cfg.Topics
 	if len(topics) == 0 {
 		topics = models.DefaultTopics()
 	}
 
 	return &RecordingSetupModel{
-		focusedField:     FieldTitle, // Start on title since it's required
-		counterInput:     counterInput,
-		recordingNumber:  recordingNumber,
+		focusedField:     FieldTitle,
 		titleInput:       titleInput,
 		presenterInput:   presenterInput,
 		descriptionInput: descInput,
+		recordingNumber:  recordingNumber,
 		topics:           topics,
 		selectedTopic:    0,
 		config:           cfg,
 	}
 }
 
-// Init initializes the model
 func (m *RecordingSetupModel) Init() tea.Cmd {
-	m.focusCurrent()
 	return textinput.Blink
 }
 
-// Update handles messages
 func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 
 	case tea.KeyMsg:
-		// Clear validation messages on key press
 		m.validationMsg = ""
-		m.err = nil
 
 		switch msg.String() {
-		case "tab":
-			m.nextField()
-			return m, nil
-
-		case "shift+tab":
-			m.prevField()
-			return m, nil
-
-		case "down", "j":
-			// In description field, let it handle internally
+		case "tab", "down":
 			if m.focusedField == FieldDescription {
-				var cmd tea.Cmd
-				m.descriptionInput, cmd = m.descriptionInput.Update(msg)
-				return m, cmd
+				// Let textarea handle down if it has content
+				if strings.Contains(m.descriptionInput.Value(), "\n") {
+					var cmd tea.Cmd
+					m.descriptionInput, cmd = m.descriptionInput.Update(msg)
+					return m, cmd
+				}
 			}
 			m.nextField()
 			return m, nil
 
-		case "up", "k":
-			// In description field, let it handle internally
-			if m.focusedField == FieldDescription {
-				var cmd tea.Cmd
-				m.descriptionInput, cmd = m.descriptionInput.Update(msg)
-				return m, cmd
-			}
+		case "shift+tab", "up":
 			m.prevField()
 			return m, nil
 
-		case "left", "h":
+		case "left":
 			if m.focusedField == FieldTopic {
 				m.selectedTopic--
 				if m.selectedTopic < 0 {
@@ -168,10 +120,8 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 				}
 				return m, nil
 			}
-			// Let text inputs handle left arrow
-			return m.updateCurrentInput(msg)
 
-		case "right", "l":
+		case "right":
 			if m.focusedField == FieldTopic {
 				m.selectedTopic++
 				if m.selectedTopic >= len(m.topics) {
@@ -179,110 +129,79 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 				}
 				return m, nil
 			}
-			// Let text inputs handle right arrow
-			return m.updateCurrentInput(msg)
 
 		case "enter":
 			if m.focusedField == FieldStart {
-				// Validate and return
 				if m.Validate() {
 					return m, func() tea.Msg { return recordingSetupCompleteMsg{} }
 				}
 				return m, nil
 			}
-			// If in description, allow newlines
-			if m.focusedField == FieldDescription {
-				var cmd tea.Cmd
-				m.descriptionInput, cmd = m.descriptionInput.Update(msg)
-				return m, cmd
-			}
-			// Otherwise move to next field
 			m.nextField()
 			return m, nil
 		}
 
-		// Update the focused input
-		return m.updateCurrentInput(msg)
+		// Update focused input
+		var cmd tea.Cmd
+		switch m.focusedField {
+		case FieldTitle:
+			m.titleInput, cmd = m.titleInput.Update(msg)
+		case FieldPresenter:
+			m.presenterInput, cmd = m.presenterInput.Update(msg)
+		case FieldDescription:
+			m.descriptionInput, cmd = m.descriptionInput.Update(msg)
+		}
+		return m, cmd
 	}
 
-	return m, tea.Batch(cmds...)
+	return m, nil
 }
 
-// updateCurrentInput updates the currently focused input
-func (m *RecordingSetupModel) updateCurrentInput(msg tea.KeyMsg) (*RecordingSetupModel, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch m.focusedField {
-	case FieldCounter:
-		m.counterInput, cmd = m.counterInput.Update(msg)
-	case FieldTitle:
-		m.titleInput, cmd = m.titleInput.Update(msg)
-	case FieldDescription:
-		m.descriptionInput, cmd = m.descriptionInput.Update(msg)
-	case FieldPresenter:
-		m.presenterInput, cmd = m.presenterInput.Update(msg)
-	}
-
-	return m, cmd
-}
-
-// nextField moves to the next field
 func (m *RecordingSetupModel) nextField() {
-	m.unfocusAll()
+	m.blurAll()
 	m.focusedField++
 	if m.focusedField > FieldStart {
-		m.focusedField = FieldCounter
+		m.focusedField = FieldTitle
 	}
 	m.focusCurrent()
 }
 
-// prevField moves to the previous field
 func (m *RecordingSetupModel) prevField() {
-	m.unfocusAll()
+	m.blurAll()
 	m.focusedField--
-	if m.focusedField < FieldCounter {
+	if m.focusedField < FieldTitle {
 		m.focusedField = FieldStart
 	}
 	m.focusCurrent()
 }
 
-// unfocusAll removes focus from all inputs
-func (m *RecordingSetupModel) unfocusAll() {
-	m.counterInput.Blur()
+func (m *RecordingSetupModel) blurAll() {
 	m.titleInput.Blur()
-	m.descriptionInput.Blur()
 	m.presenterInput.Blur()
+	m.descriptionInput.Blur()
 }
 
-// focusCurrent focuses the current field
 func (m *RecordingSetupModel) focusCurrent() {
 	switch m.focusedField {
-	case FieldCounter:
-		m.counterInput.Focus()
 	case FieldTitle:
 		m.titleInput.Focus()
-	case FieldDescription:
-		m.descriptionInput.Focus()
 	case FieldPresenter:
 		m.presenterInput.Focus()
+	case FieldDescription:
+		m.descriptionInput.Focus()
 	}
 }
 
-// Validate checks if the form is valid
 func (m *RecordingSetupModel) Validate() bool {
-	title := strings.TrimSpace(m.titleInput.Value())
-	if title == "" {
-		m.validationMsg = "Title is required"
+	if strings.TrimSpace(m.titleInput.Value()) == "" {
+		m.validationMsg = "Please enter a title"
 		m.focusedField = FieldTitle
 		m.focusCurrent()
 		return false
 	}
-	m.err = nil
-	m.validationMsg = ""
 	return true
 }
 
-// GetMetadata returns the recording metadata
 func (m *RecordingSetupModel) GetMetadata() models.RecordingMetadata {
 	topic := ""
 	if m.selectedTopic >= 0 && m.selectedTopic < len(m.topics) {
@@ -290,235 +209,127 @@ func (m *RecordingSetupModel) GetMetadata() models.RecordingMetadata {
 	}
 
 	presenter := strings.TrimSpace(m.presenterInput.Value())
-
-	// Save presenter as default for next time
 	if presenter != "" && presenter != m.config.DefaultPresenter {
 		m.config.DefaultPresenter = presenter
 		config.Save(m.config)
 	}
 
-	// Parse counter value (fallback to recorded number if invalid)
-	counterValue := m.recordingNumber
-	if val, err := strconv.Atoi(strings.TrimSpace(m.counterInput.Value())); err == nil && val > 0 {
-		counterValue = val
-	}
-
 	metadata := models.RecordingMetadata{
-		Number:      counterValue,
+		Number:      m.recordingNumber,
 		Title:       strings.TrimSpace(m.titleInput.Value()),
 		Description: strings.TrimSpace(m.descriptionInput.Value()),
 		Topic:       topic,
 		Presenter:   presenter,
 	}
-
-	// Generate folder name
 	metadata.GenerateFolderName()
 
 	return metadata
 }
 
-// View renders the setup form
 func (m *RecordingSetupModel) View() string {
-	// Styles matching workspace associations pattern
-	labelWidth := 14
-	fieldWidth := 44
+	// Simple, clean styles
+	label := lipgloss.NewStyle().Foreground(ColorGray).Width(12)
+	activeLabel := lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Width(12)
+	input := lipgloss.NewStyle().Foreground(ColorWhite)
+	dim := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
 
-	labelStyle := lipgloss.NewStyle().
-		Width(labelWidth).
-		Align(lipgloss.Right).
-		Foreground(ColorGray)
+	var b strings.Builder
 
-	focusedLabelStyle := lipgloss.NewStyle().
-		Width(labelWidth).
-		Align(lipgloss.Right).
-		Foreground(ColorOrange).
-		Bold(true)
-
-	requiredMarker := lipgloss.NewStyle().
-		Foreground(ColorRed).
-		Bold(true).
-		Render("*")
-
-	// Input box styles
-	inputBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorGray).
-		Padding(0, 1).
-		Width(fieldWidth)
-
-	focusedInputBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorOrange).
-		Padding(0, 1).
-		Width(fieldWidth)
-
-	// Button styles
-	buttonStyle := lipgloss.NewStyle().
-		Padding(0, 3).
-		Bold(true)
-
-	activeButtonStyle := buttonStyle.
-		Background(ColorOrange).
-		Foreground(lipgloss.Color("#000000"))
-
-	inactiveButtonStyle := buttonStyle.
-		Background(ColorDarkGray).
-		Foreground(ColorWhite)
-
-	// Container style
-	containerStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorBlue).
-		Padding(1, 2).
-		Width(70)
-
-	var rows []string
-
-	// Row 1: Recording Number
-	counterLabel := labelStyle.Render("Recording #:")
-	if m.focusedField == FieldCounter {
-		counterLabel = focusedLabelStyle.Render("Recording #:")
-	}
-	counterBoxStyle := inputBoxStyle.Width(12)
-	if m.focusedField == FieldCounter {
-		counterBoxStyle = focusedInputBoxStyle.Width(12)
-	}
-	counterBox := counterBoxStyle.Render(m.counterInput.View())
-	counterRow := lipgloss.JoinHorizontal(lipgloss.Top, counterLabel, "  ", counterBox)
-	rows = append(rows, counterRow)
-	rows = append(rows, "")
-
-	// Row 2: Title (required)
-	titleLabel := labelStyle.Render("Title:") + requiredMarker
+	// Title
 	if m.focusedField == FieldTitle {
-		titleLabel = focusedLabelStyle.Render("Title:") + requiredMarker
+		b.WriteString(activeLabel.Render("Title"))
+	} else {
+		b.WriteString(label.Render("Title"))
 	}
-	titleBoxStyle := inputBoxStyle
-	if m.focusedField == FieldTitle {
-		titleBoxStyle = focusedInputBoxStyle
-	}
-	titleBox := titleBoxStyle.Render(m.titleInput.View())
-	titleRow := lipgloss.JoinHorizontal(lipgloss.Top, titleLabel, " ", titleBox)
-	rows = append(rows, titleRow)
+	b.WriteString(input.Render(m.titleInput.View()))
+	b.WriteString("\n")
 
-	// Folder preview (shown below title)
-	previewMetadata := m.GetMetadata()
-	folderPreview := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Italic(true).
-		MarginLeft(labelWidth + 3).
-		Render(fmt.Sprintf("→ %s/", previewMetadata.FolderName))
-	rows = append(rows, folderPreview)
-	rows = append(rows, "")
+	// Folder preview
+	meta := m.GetMetadata()
+	b.WriteString(strings.Repeat(" ", 12))
+	b.WriteString(dim.Render("→ " + meta.FolderName + "/"))
+	b.WriteString("\n\n")
 
-	// Row 3: Description
-	descLabel := labelStyle.Render("Description:")
-	if m.focusedField == FieldDescription {
-		descLabel = focusedLabelStyle.Render("Description:")
+	// Presenter
+	if m.focusedField == FieldPresenter {
+		b.WriteString(activeLabel.Render("Presenter"))
+	} else {
+		b.WriteString(label.Render("Presenter"))
 	}
-	descBoxStyle := inputBoxStyle.Height(5)
-	if m.focusedField == FieldDescription {
-		descBoxStyle = focusedInputBoxStyle.Height(5)
-	}
-	descBox := descBoxStyle.Render(m.descriptionInput.View())
-	descRow := lipgloss.JoinHorizontal(lipgloss.Top, descLabel, "  ", descBox)
-	rows = append(rows, descRow)
-	rows = append(rows, "")
+	b.WriteString(input.Render(m.presenterInput.View()))
+	b.WriteString("\n\n")
 
-	// Row 4: Topic (horizontal selection)
-	topicLabel := labelStyle.Render("Topic:")
+	// Topic
 	if m.focusedField == FieldTopic {
-		topicLabel = focusedLabelStyle.Render("Topic:")
+		b.WriteString(activeLabel.Render("Topic"))
+	} else {
+		b.WriteString(label.Render("Topic"))
 	}
 
-	var topicOptions []string
-	for i, topic := range m.topics {
-		topicStyle := lipgloss.NewStyle().
-			Padding(0, 1).
-			Margin(0, 1)
-
+	for i, t := range m.topics {
 		if i == m.selectedTopic {
 			if m.focusedField == FieldTopic {
-				topicStyle = topicStyle.
+				b.WriteString(lipgloss.NewStyle().
 					Background(ColorOrange).
-					Foreground(lipgloss.Color("#000000")).
-					Bold(true)
+					Foreground(lipgloss.Color("#000")).
+					Padding(0, 1).
+					Render(t.Name))
 			} else {
-				topicStyle = topicStyle.
+				b.WriteString(lipgloss.NewStyle().
 					Background(ColorGray).
-					Foreground(ColorWhite)
+					Foreground(ColorWhite).
+					Padding(0, 1).
+					Render(t.Name))
 			}
 		} else {
-			topicStyle = topicStyle.
-				Foreground(ColorGray)
+			b.WriteString(lipgloss.NewStyle().
+				Foreground(ColorGray).
+				Padding(0, 1).
+				Render(t.Name))
 		}
-		topicOptions = append(topicOptions, topicStyle.Render(topic.Name))
 	}
-	topicRow := lipgloss.JoinHorizontal(lipgloss.Top, topicLabel, "  ", lipgloss.JoinHorizontal(lipgloss.Center, topicOptions...))
-	rows = append(rows, topicRow)
-	rows = append(rows, "")
+	b.WriteString("\n\n")
 
-	// Row 5: Presenter
-	presenterLabel := labelStyle.Render("Presenter:")
-	if m.focusedField == FieldPresenter {
-		presenterLabel = focusedLabelStyle.Render("Presenter:")
+	// Description
+	if m.focusedField == FieldDescription {
+		b.WriteString(activeLabel.Render("Description"))
+	} else {
+		b.WriteString(label.Render("Description"))
 	}
-	presenterBoxStyle := inputBoxStyle
-	if m.focusedField == FieldPresenter {
-		presenterBoxStyle = focusedInputBoxStyle
-	}
-	presenterBox := presenterBoxStyle.Render(m.presenterInput.View())
-	presenterRow := lipgloss.JoinHorizontal(lipgloss.Top, presenterLabel, "  ", presenterBox)
-	rows = append(rows, presenterRow)
-	rows = append(rows, "")
+	b.WriteString("\n")
+	b.WriteString(strings.Repeat(" ", 12))
+	b.WriteString(input.Render(m.descriptionInput.View()))
+	b.WriteString("\n\n")
 
-	// Row 6: Start Button
-	startButton := inactiveButtonStyle.Render("▶ Start Recording")
+	// Start button
 	if m.focusedField == FieldStart {
-		startButton = activeButtonStyle.Render("▶ Start Recording")
+		b.WriteString(strings.Repeat(" ", 12))
+		b.WriteString(lipgloss.NewStyle().
+			Background(ColorOrange).
+			Foreground(lipgloss.Color("#000")).
+			Bold(true).
+			Padding(0, 2).
+			Render("▶ Start Recording"))
+	} else {
+		b.WriteString(strings.Repeat(" ", 12))
+		b.WriteString(lipgloss.NewStyle().
+			Background(ColorDarkGray).
+			Foreground(ColorWhite).
+			Padding(0, 2).
+			Render("▶ Start Recording"))
 	}
-	// Center the button
-	buttonRow := lipgloss.NewStyle().
-		Width(60).
-		Align(lipgloss.Center).
-		MarginTop(1).
-		Render(startButton)
-	rows = append(rows, buttonRow)
-
-	// Build form content
-	formContent := lipgloss.JoinVertical(lipgloss.Left, rows...)
-
-	// Wrap in container
-	form := containerStyle.Render(formContent)
 
 	// Validation message
 	if m.validationMsg != "" {
-		errorStyle := lipgloss.NewStyle().
+		b.WriteString("\n\n")
+		b.WriteString(strings.Repeat(" ", 12))
+		b.WriteString(lipgloss.NewStyle().
 			Foreground(ColorRed).
 			Bold(true).
-			MarginTop(1)
-		form = lipgloss.JoinVertical(
-			lipgloss.Center,
-			form,
-			errorStyle.Render("⚠ "+m.validationMsg),
-		)
+			Render(m.validationMsg))
 	}
 
-	// Error message
-	if m.err != nil {
-		errorStyle := lipgloss.NewStyle().
-			Foreground(ColorRed).
-			Bold(true).
-			MarginTop(1)
-		form = lipgloss.JoinVertical(
-			lipgloss.Center,
-			form,
-			errorStyle.Render("Error: "+m.err.Error()),
-		)
-	}
-
-	return form
+	return b.String()
 }
 
-// recordingSetupCompleteMsg signals that setup is complete
 type recordingSetupCompleteMsg struct{}
