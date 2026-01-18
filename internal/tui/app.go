@@ -53,6 +53,9 @@ type AppModel struct {
 	recordingInfo   *models.RecordingInfo
 	outputDir       string
 
+	// Progress channel for processing updates
+	progressChan chan recorder.ProgressUpdate
+
 	// External recording detection
 	externalRecordingActive bool
 	externalRecordingPIDs   []string
@@ -310,11 +313,19 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// If step 0 (stopping recorders) completed, start the processing pipeline
 				if msg.Step == 0 {
-					return m, startProcessingPipeline(m.recorder, m.processing)
+					m.progressChan = make(chan recorder.ProgressUpdate, 100)
+					go m.recorder.ProcessWithProgress(m.progressChan)
+					return m, waitForProgressUpdate(m.progressChan)
 				}
 			}
 		}
-		return m, nil
+		return m, waitForProgressUpdate(m.progressChan)
+
+	case processingPercentMsg:
+		if m.state == stateProcessing && m.processing != nil {
+			m.processing.SetStepProgress(msg.Step, msg.Percent)
+		}
+		return m, waitForProgressUpdate(m.progressChan)
 
 	case processingCompleteMsg:
 		if m.state == stateProcessing && m.processing != nil {
@@ -647,36 +658,33 @@ func (m AppModel) stopAndProcess() tea.Cmd {
 	}
 }
 
-// startProcessingPipeline begins the post-processing pipeline
-func startProcessingPipeline(rec *recorder.Recorder, processing *ProcessingState) tea.Cmd {
+// waitForProgressUpdate waits for the next progress update from the channel
+func waitForProgressUpdate(ch chan recorder.ProgressUpdate) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
 	return func() tea.Msg {
-		progressChan := make(chan recorder.ProgressUpdate, 20)
+		update, ok := <-ch
+		if !ok {
+			// Channel closed, processing complete
+			return processingCompleteMsg{}
+		}
 
-		// Start processing in a goroutine
-		go rec.ProcessWithProgress(progressChan)
-
-		// Process all updates
-		for update := range progressChan {
-			// Check if this is a percent update (no status change, just progress)
-			if update.Percent >= 0 && !update.Completed && !update.Skipped && update.Error == nil {
-				processing.SetStepProgress(update.Step, update.Percent)
-				continue
-			}
-
-			// Update the processing state directly (thread-safe via the state machine)
-			if !update.Completed {
-				processing.SetStepByIndex(update.Step, StepRunning)
-			} else if update.Skipped {
-				processing.SetStepByIndex(update.Step, StepSkipped)
-			} else if update.Error != nil {
-				processing.SetStepByIndex(update.Step, StepFailed)
-				processing.Error = update.Error
-			} else {
-				processing.SetStepByIndex(update.Step, StepComplete)
+		// Check if this is a percent update (no status change, just progress)
+		if update.Percent >= 0 && !update.Completed && !update.Skipped && update.Error == nil {
+			return processingPercentMsg{
+				Step:    update.Step,
+				Percent: update.Percent,
 			}
 		}
 
-		return processingCompleteMsg{}
+		// Return a step message
+		return processingStepMsg{
+			Step:      update.Step,
+			Completed: update.Completed,
+			Skipped:   update.Skipped,
+			Error:     update.Error,
+		}
 	}
 }
 

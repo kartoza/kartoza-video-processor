@@ -151,6 +151,10 @@ type processingStepMsg struct {
 	Skipped   bool
 	Error     error
 }
+type processingPercentMsg struct {
+	Step    int
+	Percent float64
+}
 type processingCompleteMsg struct{}
 type processingErrorMsg struct {
 	Error error
