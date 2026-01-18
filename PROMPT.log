@@ -382,3 +382,15 @@ copies of these resources should be written into the project folder during proce
    - Next recording defaults to these selections
    - Logos passed through recorder.Options to the merger
 5. Supports .png, .jpg, .jpeg, .svg image formats
+
+---
+
+**Prompt:** The video number should be scanning the previous videos made in the output folder and defaulting to the previous highest video id + 1
+
+**Summary:** Changed recording number logic to scan existing folders:
+1. Removed RecordingCounter from Config (no longer persisted)
+2. Added ScanHighestRecordingNumber() that scans output directory
+3. Parses folder names in format NNN-title (e.g., "001-my-video")
+4. Finds highest number and returns it
+5. GetCurrentRecordingNumber() now returns highest + 1
+6. New recordings automatically get next available number based on existing folders

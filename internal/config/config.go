@@ -43,7 +43,6 @@ type Config struct {
 	AudioProcessing  models.AudioProcessingOptions `json:"audio_processing"`
 	Topics           []models.Topic                `json:"topics,omitempty"`
 	DefaultPresenter string                        `json:"default_presenter,omitempty"`
-	RecordingCounter int                           `json:"recording_counter"`
 
 	// Logo settings
 	LogoDirectory  string        `json:"logo_directory,omitempty"`   // Directory to browse for logos
@@ -131,26 +130,62 @@ func Save(cfg *Config) error {
 	return os.WriteFile(configPath, data, 0644)
 }
 
-// GetNextRecordingNumber returns the next recording number and increments the counter
+// GetNextRecordingNumber returns the next recording number by scanning existing folders
 func GetNextRecordingNumber() (int, error) {
-	cfg, err := Load()
-	if err != nil {
-		return 1, err
-	}
-
-	cfg.RecordingCounter++
-	if err := Save(cfg); err != nil {
-		return cfg.RecordingCounter, err
-	}
-
-	return cfg.RecordingCounter, nil
+	return ScanHighestRecordingNumber() + 1, nil
 }
 
-// GetCurrentRecordingNumber returns the current recording counter without incrementing
+// GetCurrentRecordingNumber returns the next recording number by scanning existing folders
 func GetCurrentRecordingNumber() int {
+	return ScanHighestRecordingNumber() + 1
+}
+
+// ScanHighestRecordingNumber scans the output directory for existing recordings
+// and returns the highest recording number found (0 if none found)
+func ScanHighestRecordingNumber() int {
 	cfg, err := Load()
 	if err != nil {
-		return 1
+		return 0
 	}
-	return cfg.RecordingCounter + 1 // Return what the next number will be
+
+	outputDir := cfg.OutputDir
+	if outputDir == "" {
+		outputDir = GetDefaultVideosDir()
+	}
+
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return 0
+	}
+
+	highest := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Parse folder name format: NNN-title (e.g., "001-my-video", "042-tutorial")
+		name := entry.Name()
+		if len(name) < 4 || name[3] != '-' {
+			continue
+		}
+
+		// Try to parse the first 3 characters as a number
+		numStr := name[:3]
+		num := 0
+		for _, c := range numStr {
+			if c >= '0' && c <= '9' {
+				num = num*10 + int(c-'0')
+			} else {
+				num = -1
+				break
+			}
+		}
+
+		if num > highest {
+			highest = num
+		}
+	}
+
+	return highest
 }
