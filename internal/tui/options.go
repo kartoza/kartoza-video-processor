@@ -218,6 +218,18 @@ func (m *OptionsModel) closeFileBrowser() {
 	m.selectingLogoFor = LogoNone
 }
 
+// IsFileBrowserActive returns true if the file browser is currently shown
+func (m *OptionsModel) IsFileBrowserActive() bool {
+	return m.showFileBrowser
+}
+
+// RenderFileBrowser renders the file browser with full screen layout
+func (m *OptionsModel) RenderFileBrowser(width, height int) string {
+	m.width = width
+	m.height = height
+	return m.renderFileBrowser()
+}
+
 // Init initializes the model
 func (m *OptionsModel) Init() tea.Cmd {
 	return textinput.Blink

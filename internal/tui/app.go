@@ -951,6 +951,11 @@ func (m AppModel) renderHistoryScreen() string {
 
 // renderOptionsScreen renders the options screen
 func (m AppModel) renderOptionsScreen() string {
+	// If file browser is active, it takes over the full screen
+	if m.options.IsFileBrowserActive() {
+		return m.options.RenderFileBrowser(m.width, m.height)
+	}
+
 	header := RenderHeader("Options")
 
 	content := lipgloss.NewStyle().
