@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -35,12 +36,13 @@ type RecordingSetupModel struct {
 	height int
 
 	focusedField int
+	inputMode    bool // When true, text input captures all keys; tab exits
 	config       *config.Config
 
 	// Text inputs
 	titleInput  textinput.Model
 	numberInput textinput.Model
-	descInput   textinput.Model
+	descInput   textarea.Model
 
 	// Form values
 	topic string
@@ -90,10 +92,12 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 	numberInput.Width = 30
 	numberInput.SetValue(fmt.Sprintf("%03d", recordingNumber))
 
-	descInput := textinput.New()
+	descInput := textarea.New()
 	descInput.Placeholder = "Enter description..."
-	descInput.CharLimit = 500
-	descInput.Width = 30
+	descInput.CharLimit = 2000
+	descInput.SetWidth(35)
+	descInput.SetHeight(4)
+	descInput.ShowLineNumbers = false
 
 	m := &RecordingSetupModel{
 		config:          cfg,
@@ -120,6 +124,10 @@ func (m *RecordingSetupModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+func (m *RecordingSetupModel) isTextField() bool {
+	return m.focusedField == fieldTitle || m.focusedField == fieldNumber || m.focusedField == fieldDescription
+}
+
 func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -129,6 +137,46 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		// In input mode, only tab/shift+tab/esc exit; all other keys go to text input
+		if m.inputMode {
+			switch msg.String() {
+			case "tab":
+				m.inputMode = false
+				m.nextField()
+				return m, nil
+			case "shift+tab":
+				m.inputMode = false
+				m.prevField()
+				return m, nil
+			case "esc":
+				// Escape exits input mode but stays on current field
+				m.inputMode = false
+				return m, nil
+			case "enter":
+				// For single-line inputs, enter exits input mode
+				// For textarea (description), enter adds a newline
+				if m.focusedField == fieldDescription {
+					m.descInput, cmd = m.descInput.Update(msg)
+					return m, cmd
+				}
+				m.inputMode = false
+				m.nextField()
+				return m, nil
+			default:
+				// Pass all other keys to the text input
+				switch m.focusedField {
+				case fieldTitle:
+					m.titleInput, cmd = m.titleInput.Update(msg)
+				case fieldNumber:
+					m.numberInput, cmd = m.numberInput.Update(msg)
+				case fieldDescription:
+					m.descInput, cmd = m.descInput.Update(msg)
+				}
+				return m, cmd
+			}
+		}
+
+		// Navigation mode
 		switch msg.String() {
 		case "tab", "down", "j":
 			m.nextField()
@@ -143,11 +191,28 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 			m.handleRight()
 			return m, nil
 		case " ":
-			// Space toggles boolean fields
+			// Space toggles boolean fields or activates confirm button
+			if m.focusedField == fieldConfirm {
+				if m.confirmSelected {
+					// Go Live selected
+					if m.Validate() {
+						return m, func() tea.Msg { return recordingSetupCompleteMsg{} }
+					}
+				} else {
+					// Cancel selected
+					return m, func() tea.Msg { return backToMenuMsg{} }
+				}
+				return m, nil
+			}
 			if m.handleToggle() {
 				return m, nil
 			}
 		case "enter":
+			// On text fields, enter activates input mode
+			if m.isTextField() {
+				m.inputMode = true
+				return m, nil
+			}
 			if m.focusedField == fieldConfirm {
 				if m.confirmSelected {
 					// Go Live selected
@@ -163,16 +228,21 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 			// Enter moves to next field for other fields
 			m.nextField()
 			return m, nil
-		}
-
-		// Update text input if focused on a text field
-		switch m.focusedField {
-		case fieldTitle:
-			m.titleInput, cmd = m.titleInput.Update(msg)
-		case fieldNumber:
-			m.numberInput, cmd = m.numberInput.Update(msg)
-		case fieldDescription:
-			m.descInput, cmd = m.descInput.Update(msg)
+		default:
+			// If on a text field and user types a printable character, enter input mode
+			if m.isTextField() && len(msg.String()) == 1 {
+				m.inputMode = true
+				// Pass the key to the text input
+				switch m.focusedField {
+				case fieldTitle:
+					m.titleInput, cmd = m.titleInput.Update(msg)
+				case fieldNumber:
+					m.numberInput, cmd = m.numberInput.Update(msg)
+				case fieldDescription:
+					m.descInput, cmd = m.descInput.Update(msg)
+				}
+				return m, cmd
+			}
 		}
 	}
 
@@ -213,6 +283,7 @@ func (m *RecordingSetupModel) blurAll() {
 	m.titleInput.Blur()
 	m.numberInput.Blur()
 	m.descInput.Blur()
+	m.inputMode = false
 }
 
 func (m *RecordingSetupModel) focusCurrent() {
@@ -271,12 +342,23 @@ func (m *RecordingSetupModel) handleToggle() bool {
 		return true
 	case fieldRecordWebcam:
 		m.recordWebcam = !m.recordWebcam
+		// Disable vertical video if neither webcam nor screen is enabled
+		if !m.recordWebcam && !m.recordScreen {
+			m.verticalVideo = false
+		}
 		return true
 	case fieldRecordScreen:
 		m.recordScreen = !m.recordScreen
+		// Disable vertical video if neither webcam nor screen is enabled
+		if !m.recordWebcam && !m.recordScreen {
+			m.verticalVideo = false
+		}
 		return true
 	case fieldVerticalVideo:
-		m.verticalVideo = !m.verticalVideo
+		// Only allow toggle if webcam or screen is enabled
+		if m.recordWebcam || m.recordScreen {
+			m.verticalVideo = !m.verticalVideo
+		}
 		return true
 	case fieldAddLogos:
 		m.addLogos = !m.addLogos
@@ -285,8 +367,24 @@ func (m *RecordingSetupModel) handleToggle() bool {
 	return false
 }
 
+func (m *RecordingSetupModel) canEnableVerticalVideo() bool {
+	return m.recordWebcam || m.recordScreen
+}
+
 func (m *RecordingSetupModel) Validate() bool {
-	return strings.TrimSpace(m.titleInput.Value()) != ""
+	// Title is required
+	if strings.TrimSpace(m.titleInput.Value()) == "" {
+		return false
+	}
+	// At least one recording source must be enabled
+	if !m.recordAudio && !m.recordWebcam && !m.recordScreen {
+		return false
+	}
+	return true
+}
+
+func (m *RecordingSetupModel) hasRecordingSource() bool {
+	return m.recordAudio || m.recordWebcam || m.recordScreen
 }
 
 func (m *RecordingSetupModel) GetMetadata() models.RecordingMetadata {
@@ -384,8 +482,9 @@ func (m *RecordingSetupModel) View() string {
 	// Spacer
 	rows = append(rows, "")
 
-	// Vertical Video
-	rows = append(rows, m.renderRow(fieldVerticalVideo, "Vertical Video", m.renderToggle(m.verticalVideo, m.focusedField == fieldVerticalVideo), labelStyle, labelFocusedStyle, widgetStyle))
+	// Vertical Video (disabled if neither webcam nor screen is enabled)
+	verticalDisabled := !m.canEnableVerticalVideo()
+	rows = append(rows, m.renderRow(fieldVerticalVideo, "Vertical Video", m.renderToggleWithDisabled(m.verticalVideo, m.focusedField == fieldVerticalVideo, verticalDisabled), labelStyle, labelFocusedStyle, widgetStyle))
 
 	// Add Logos
 	rows = append(rows, m.renderRow(fieldAddLogos, "Add Logos", m.renderToggle(m.addLogos, m.focusedField == fieldAddLogos), labelStyle, labelFocusedStyle, widgetStyle))
@@ -409,13 +508,28 @@ func (m *RecordingSetupModel) renderRow(field int, label, widget string, labelSt
 	ls := labelStyle
 	if m.focusedField == field {
 		ls = labelFocusedStyle
+		// Show input mode indicator for text fields
+		if m.inputMode && m.isTextField() {
+			label = "» " + label
+		}
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Center, ls.Render(label), widgetStyle.Render(widget))
 }
 
 func (m *RecordingSetupModel) renderToggle(value bool, focused bool) string {
+	return m.renderToggleWithDisabled(value, focused, false)
+}
+
+func (m *RecordingSetupModel) renderToggleWithDisabled(value bool, focused bool, disabled bool) string {
 	yes := "Yes"
 	no := "No"
+
+	if disabled {
+		// Disabled state - show dimmed
+		yes = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Padding(0, 1).Render("Yes")
+		no = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Padding(0, 1).Render("No")
+		return fmt.Sprintf("%s  %s  (disabled)", yes, no)
+	}
 
 	if focused {
 		if value {
@@ -470,21 +584,56 @@ func (m *RecordingSetupModel) renderConfirmRow(labelWidth, widgetWidth int) stri
 	spacer := lipgloss.NewStyle().Width(labelWidth).Render("")
 
 	var goLive, cancel string
+	hasSource := m.hasRecordingSource()
+	hasTitle := strings.TrimSpace(m.titleInput.Value()) != ""
+	canGoLive := hasSource && hasTitle
 
 	if m.focusedField == fieldConfirm {
 		if m.confirmSelected {
-			goLive = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000")).Bold(true).Padding(0, 3).Render("Go Live!")
+			if canGoLive {
+				goLive = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000")).Bold(true).Padding(0, 3).Render("Go Live!")
+			} else {
+				// Disabled state - show as dim
+				goLive = lipgloss.NewStyle().Background(ColorGray).Foreground(lipgloss.Color("#666")).Padding(0, 3).Render("Go Live!")
+			}
 			cancel = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Cancel")
 		} else {
-			goLive = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Go Live!")
+			if canGoLive {
+				goLive = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Go Live!")
+			} else {
+				goLive = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Padding(0, 3).Render("Go Live!")
+			}
 			cancel = lipgloss.NewStyle().Background(ColorGray).Foreground(ColorWhite).Bold(true).Padding(0, 3).Render("Cancel")
 		}
 	} else {
-		goLive = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Go Live!")
+		if canGoLive {
+			goLive = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Go Live!")
+		} else {
+			goLive = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Padding(0, 3).Render("Go Live!")
+		}
 		cancel = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Cancel")
 	}
 
 	buttons := fmt.Sprintf("%s    %s", goLive, cancel)
+
+	// Show validation warnings
+	var warnings []string
+	if !hasTitle {
+		warnings = append(warnings, "Title is required")
+	}
+	if !hasSource {
+		warnings = append(warnings, "Enable at least one recording source")
+	}
+
+	if len(warnings) > 0 {
+		warningStyle := lipgloss.NewStyle().Foreground(ColorRed).Italic(true)
+		warningText := warningStyle.Render(strings.Join(warnings, " • "))
+		return lipgloss.JoinVertical(lipgloss.Center,
+			lipgloss.JoinHorizontal(lipgloss.Center, spacer, buttons),
+			lipgloss.JoinHorizontal(lipgloss.Center, spacer, warningText),
+		)
+	}
+
 	return lipgloss.JoinHorizontal(lipgloss.Center, spacer, buttons)
 }
 

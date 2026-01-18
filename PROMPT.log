@@ -277,3 +277,17 @@ Recording: Off | Total Recordings: 10 | Status: Processing
 These should all be centerd on hte screen and the same header used on every page. The dry function will take the page title as a parameter
 next, the recording page has two footers
 the widgets should all be perfectly aligned in a column, can you split the screen into two halves with the labels on the left half and the widgets on the right
+for the text input widgets there is a conflict with the jk keybinds as then it is not possible to type those letters. We can capture input mode when the user presses enter on a text input and return to keys bound to navigation with tab
+if all three of record video, record screen and record audio are off, the go live button should be disabled
+nothing happens when I press enter while the go live button is focussed
+The description input should be a multiline edit
+The vertical video option should be disables if both screen and webcam inputs are not enabled
+if one or more inputs (webcam, screen, audio) are enabled, the go live button should be clickable
+if a text widget is focussed and you just start typing (except a navigation key), it should also put it into editing mode
+I still cannot start the recording
+
+**Summary:** Fixed issue where Go Live button didn't start recording:
+1. The recordingSetupCompleteMsg was being sent by the form but not processed
+2. The AppModel.Update() function was returning early for ScreenRecordingSetup before reaching the message handler
+3. Fixed by moving recordingSetupCompleteMsg and backToMenuMsg handlers to the top of Update() function
+4. Now these messages are handled before any screen-specific processing

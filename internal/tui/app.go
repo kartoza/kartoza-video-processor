@@ -134,6 +134,24 @@ func (m AppModel) Init() tea.Cmd {
 
 // Update handles messages
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle recording setup completion messages first (from any screen)
+	switch msg.(type) {
+	case recordingSetupCompleteMsg:
+		// Recording setup is complete, save metadata and start countdown
+		m.metadata = m.recordingSetup.GetMetadata()
+		m.screen = ScreenRecording
+		m.state = stateCountdown
+		m.countdownNum = 5
+		go playBeep(5)
+		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+			return countdownTickMsg{}
+		})
+	case backToMenuMsg:
+		m.screen = ScreenMenu
+		m.recordingSetup = NewRecordingSetupModel()
+		return m, nil
+	}
+
 	// If on recording setup screen, pass messages to the form
 	if m.screen == ScreenRecordingSetup {
 		// Handle escape to go back (before passing to form)
