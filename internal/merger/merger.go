@@ -311,19 +311,19 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		if opts.ProductLogo1 != "" {
 			logo1Path = m.copyLogoToOutputDir(opts.ProductLogo1, opts.OutputDir, "product_logo_1")
 			if logo1Path != "" {
-				inputs = append(inputs, "-i", logo1Path)
+				inputs = appendLogoInput(inputs, logo1Path)
 			}
 		}
 		if opts.ProductLogo2 != "" {
 			logo2Path = m.copyLogoToOutputDir(opts.ProductLogo2, opts.OutputDir, "product_logo_2")
 			if logo2Path != "" {
-				inputs = append(inputs, "-i", logo2Path)
+				inputs = appendLogoInput(inputs, logo2Path)
 			}
 		}
 		if opts.CompanyLogo != "" {
 			companyLogoPath = m.copyLogoToOutputDir(opts.CompanyLogo, opts.OutputDir, "company_logo")
 			if companyLogoPath != "" {
-				inputs = append(inputs, "-i", companyLogoPath)
+				inputs = appendLogoInput(inputs, companyLogoPath)
 			}
 		}
 	}
@@ -355,11 +355,12 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 	logoInputIndex := 3 // Start after video, webcam, audio
 
 	// Add logo overlays if logos are provided
+	// Using shortest=1 ensures animated GIFs stop when the base video ends
 	if logo1Path != "" {
 		// Product logo 1 in top-left of webcam area
 		logoY := scaledScreenHeight + 10 // Position in webcam area
 		filterComplex += fmt.Sprintf(
-			";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto[out1]",
+			";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
 			logoInputIndex, currentOutput, logoY,
 		)
 		currentOutput = "[out1]"
@@ -370,7 +371,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		// Product logo 2 in top-right of webcam area
 		logoY := scaledScreenHeight + 10
 		filterComplex += fmt.Sprintf(
-			";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto[out2]",
+			";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
 			logoInputIndex, currentOutput, logoY,
 		)
 		currentOutput = "[out2]"
@@ -382,7 +383,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		// Title text is horizontally centered using (w-text_w)/2
 		lowerThirdY := YouTubeShortsHeight - 100 // Position near bottom
 		filterComplex += fmt.Sprintf(
-			";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto[out3];"+
+			";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
 				"[out3]drawtext=text='%s':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
 			logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), lowerThirdY+30,
 		)
@@ -455,4 +456,20 @@ func escapeFFmpegText(text string) string {
 	text = strings.ReplaceAll(text, "[", "\\[")
 	text = strings.ReplaceAll(text, "]", "\\]")
 	return text
+}
+
+// isGif checks if the file is a GIF based on extension
+func isGif(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".gif"
+}
+
+// appendLogoInput adds a logo input to the FFmpeg args
+// For GIFs, it adds -ignore_loop 0 to make them loop forever
+func appendLogoInput(inputs []string, logoPath string) []string {
+	if isGif(logoPath) {
+		// For animated GIFs: -ignore_loop 0 makes the GIF loop forever
+		return append(inputs, "-ignore_loop", "0", "-i", logoPath)
+	}
+	return append(inputs, "-i", logoPath)
 }

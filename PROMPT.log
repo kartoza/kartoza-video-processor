@@ -496,3 +496,16 @@ copies of these resources should be written into the project folder during proce
 **Summary:** Changed logo file filter from .png/.jpg/.jpeg/.svg to .png/.jpg/.jpeg/.gif
 
 ---
+
+**Prompt:** if I use a gif will ffmpeg advance it with each frame ... yes add option 2 but commit first and mark this as v0.1 before making that change
+
+**Summary:** 
+1. Tagged v0.1.0 before making the change
+2. Added animated GIF support for logo overlays:
+   - Added isGif() helper to check file extension
+   - Added appendLogoInput() helper that adds -ignore_loop 0 for GIFs
+   - -ignore_loop 0 makes FFmpeg loop the GIF forever
+   - Added shortest=1 to overlay filters so animation stops when video ends
+   - Animated GIFs now play throughout the video duration
+
+---
