@@ -50,6 +50,17 @@ type EnvironmentInfo struct {
 	MonitorResolution  string `json:"monitor_resolution"`
 }
 
+// VideoFileMetadata contains metadata about a video file
+type VideoFileMetadata struct {
+	Width       int     `json:"width,omitempty"`
+	Height      int     `json:"height,omitempty"`
+	FPS         float64 `json:"fps,omitempty"`
+	AspectRatio string  `json:"aspect_ratio,omitempty"`
+	Duration    float64 `json:"duration_seconds,omitempty"`
+	Codec       string  `json:"codec,omitempty"`
+	Size        int64   `json:"size,omitempty"`
+}
+
 // FileInfo contains information about recording files
 type FileInfo struct {
 	FolderPath   string    `json:"folder_path"`
@@ -64,6 +75,12 @@ type FileInfo struct {
 	MergedSize   int64     `json:"merged_size,omitempty"`
 	VerticalSize int64     `json:"vertical_size,omitempty"`
 	TotalSize    int64     `json:"total_size"`
+
+	// Video metadata for each file
+	VideoMeta    *VideoFileMetadata `json:"video_meta,omitempty"`
+	WebcamMeta   *VideoFileMetadata `json:"webcam_meta,omitempty"`
+	MergedMeta   *VideoFileMetadata `json:"merged_meta,omitempty"`
+	VerticalMeta *VideoFileMetadata `json:"vertical_meta,omitempty"`
 }
 
 // RecordingSettings contains the settings used for recording
@@ -187,6 +204,43 @@ func (r *RecordingInfo) UpdateFileSizes() {
 		if stat, err := os.Stat(r.Files.VerticalFile); err == nil {
 			r.Files.VerticalSize = stat.Size()
 			r.Files.TotalSize += stat.Size()
+		}
+	}
+
+	r.UpdatedAt = time.Now()
+}
+
+// VideoInfoFunc is a function type for getting video metadata
+// This allows dependency injection to avoid circular imports
+type VideoInfoFunc func(filepath string) (*VideoFileMetadata, error)
+
+// UpdateVideoMetadata updates metadata for all video files using the provided function
+func (r *RecordingInfo) UpdateVideoMetadata(getInfo VideoInfoFunc) {
+	if getInfo == nil {
+		return
+	}
+
+	if r.Files.VideoFile != "" {
+		if meta, err := getInfo(r.Files.VideoFile); err == nil {
+			r.Files.VideoMeta = meta
+		}
+	}
+
+	if r.Files.WebcamFile != "" {
+		if meta, err := getInfo(r.Files.WebcamFile); err == nil {
+			r.Files.WebcamMeta = meta
+		}
+	}
+
+	if r.Files.MergedFile != "" {
+		if meta, err := getInfo(r.Files.MergedFile); err == nil {
+			r.Files.MergedMeta = meta
+		}
+	}
+
+	if r.Files.VerticalFile != "" {
+		if meta, err := getInfo(r.Files.VerticalFile); err == nil {
+			r.Files.VerticalMeta = meta
 		}
 	}
 

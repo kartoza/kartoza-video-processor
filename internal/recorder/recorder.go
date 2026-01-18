@@ -584,6 +584,23 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		r.recordingInfo.Processing.NormalizeApplied = mergeResult.NormalizeApplied
 		r.recordingInfo.Processing.VerticalCreated = mergeResult.VerticalFile != ""
 		r.recordingInfo.UpdateFileSizes()
+
+		// Update video metadata (resolution, fps, aspect ratio)
+		r.recordingInfo.UpdateVideoMetadata(func(filepath string) (*models.VideoFileMetadata, error) {
+			meta, err := webcam.GetFullVideoInfo(filepath)
+			if err != nil {
+				return nil, err
+			}
+			return &models.VideoFileMetadata{
+				Width:       meta.Width,
+				Height:      meta.Height,
+				FPS:         meta.FPS,
+				AspectRatio: meta.AspectRatio,
+				Duration:    meta.Duration,
+				Codec:       meta.Codec,
+			}, nil
+		})
+
 		r.recordingInfo.Save()
 	}
 

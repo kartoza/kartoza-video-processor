@@ -394,3 +394,24 @@ copies of these resources should be written into the project folder during proce
 4. Finds highest number and returns it
 5. GetCurrentRecordingNumber() now returns highest + 1
 6. New recordings automatically get next available number based on existing folders
+
+---
+
+**Prompt:** can you do some research to find out what the ideal resolutions and aspect rations videos uploaded to youtube should be ... so without changing the aspect ratio of the input videos, can you make the vertical video always comply with youtubes suggested format. Can you also write the metadata about the resolution, fps and aspect ratio of each of the generated videos into our json
+
+**Summary:** Updated vertical video to YouTube Shorts format and added video metadata:
+1. Vertical video output:
+   - Always outputs 1080x1920 (9:16) for YouTube Shorts compatibility
+   - Screen video scaled to fit 1080 width, maintaining aspect ratio
+   - Webcam scaled to fit remaining height, centered on black background
+   - Changed CRF from 0 to 18 for reasonable file sizes while maintaining quality
+2. Video metadata tracking:
+   - Added VideoFileMetadata struct with width, height, fps, aspect_ratio, duration, codec
+   - Added GetFullVideoInfo() function using ffprobe to extract comprehensive video info
+   - Added calculateAspectRatio() to return human-readable ratios (16:9, 9:16, 4:3, etc.)
+   - FileInfo now includes VideoMeta, WebcamMeta, MergedMeta, VerticalMeta
+   - Metadata populated after processing and saved to recording.json
+3. YouTube recommended specs:
+   - Standard: 1920x1080 (16:9) or 3840x2160 (4K)
+   - Shorts: 1080x1920 (9:16)
+   - Format: MP4 with H.264 video, AAC audio

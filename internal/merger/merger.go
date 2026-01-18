@@ -190,9 +190,16 @@ func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string) error 
 	return nil
 }
 
+// YouTube Shorts recommended dimensions
+const (
+	YouTubeShortsWidth  = 1080
+	YouTubeShortsHeight = 1920
+)
+
 // createVerticalVideo creates a vertical video with webcam at the bottom
+// Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
 func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFile string, opts *MergeOptions) error {
-	notify.ProcessingStep("Creating vertical video with webcam...")
+	notify.ProcessingStep("Creating vertical video (1080x1920) with webcam...")
 
 	// Get screen video dimensions
 	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
@@ -201,16 +208,33 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 	}
 
 	// Get webcam dimensions
-	webcamWidth, webcamHeightOrig, err := webcam.GetVideoInfo(webcamFile)
+	webcamWidth, webcamHeight, err := webcam.GetVideoInfo(webcamFile)
 	if err != nil {
 		return fmt.Errorf("failed to get webcam dimensions: %w", err)
 	}
 
-	// Calculate webcam height to match screen width (maintain aspect ratio)
-	webcamHeight := screenWidth * webcamHeightOrig / webcamWidth
-	if webcamWidth <= 0 {
-		webcamHeight = screenWidth * 3 / 4 // Fallback to 4:3
+	// Calculate layout for 1080x1920 output
+	// Screen takes top portion, webcam takes bottom portion
+	// Scale screen to fit 1080 width while maintaining aspect ratio
+	scaledScreenWidth := YouTubeShortsWidth
+	scaledScreenHeight := screenHeight * YouTubeShortsWidth / screenWidth
+
+	// Calculate remaining height for webcam
+	remainingHeight := YouTubeShortsHeight - scaledScreenHeight
+
+	// Scale webcam to fit remaining space while maintaining aspect ratio
+	// First try fitting to width
+	scaledWebcamWidth := YouTubeShortsWidth
+	scaledWebcamHeight := webcamHeight * YouTubeShortsWidth / webcamWidth
+
+	// If webcam is too tall, scale to fit height instead
+	if scaledWebcamHeight > remainingHeight {
+		scaledWebcamHeight = remainingHeight
+		scaledWebcamWidth = webcamWidth * remainingHeight / webcamHeight
 	}
+
+	// Calculate padding needed to center webcam horizontally
+	webcamPadX := (YouTubeShortsWidth - scaledWebcamWidth) / 2
 
 	// Build inputs list
 	inputs := []string{"-y", "-i", videoFile, "-i", webcamFile, "-i", audioFile}
@@ -238,13 +262,27 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		}
 	}
 
-	// Build filter complex for vertical stacking with optional logo overlays
+	// Build filter complex for 1080x1920 output
+	// 1. Scale screen to fit width (1080)
+	// 2. Scale webcam to fit remaining height
+	// 3. Create black canvas of 1080x1920
+	// 4. Overlay screen at top
+	// 5. Overlay webcam at bottom (centered)
 	filterComplex := fmt.Sprintf(
+		// Scale screen video to 1080 width
 		"[0:v]scale=%d:%d:flags=lanczos[screen];"+
+			// Scale webcam to fit
 			"[1:v]scale=%d:%d:flags=lanczos[webcam];"+
-			"[screen][webcam]vstack=inputs=2[stacked]",
-		screenWidth, screenHeight,
-		screenWidth, webcamHeight,
+			// Create black background canvas
+			"color=black:size=%dx%d:duration=99999[bg];"+
+			// Overlay screen at top center
+			"[bg][screen]overlay=(W-w)/2:0[with_screen];"+
+			// Overlay webcam at bottom center
+			"[with_screen][webcam]overlay=%d:%d[stacked]",
+		scaledScreenWidth, scaledScreenHeight,
+		scaledWebcamWidth, scaledWebcamHeight,
+		YouTubeShortsWidth, YouTubeShortsHeight,
+		webcamPadX, scaledScreenHeight,
 	)
 
 	currentOutput := "[stacked]"
@@ -252,11 +290,11 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 
 	// Add logo overlays if logos are provided
 	if logo1Path != "" {
-		// Product logo 1 in top-left of webcam area (which is now at the bottom)
-		webcamY := screenHeight // Position relative to stacked video
+		// Product logo 1 in top-left of webcam area
+		logoY := scaledScreenHeight + 10 // Position in webcam area
 		filterComplex += fmt.Sprintf(
 			";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto[out1]",
-			logoInputIndex, currentOutput, webcamY+10,
+			logoInputIndex, currentOutput, logoY,
 		)
 		currentOutput = "[out1]"
 		logoInputIndex++
@@ -264,10 +302,10 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 
 	if logo2Path != "" {
 		// Product logo 2 in top-right of webcam area
-		webcamY := screenHeight
+		logoY := scaledScreenHeight + 10
 		filterComplex += fmt.Sprintf(
 			";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto[out2]",
-			logoInputIndex, currentOutput, webcamY+10,
+			logoInputIndex, currentOutput, logoY,
 		)
 		currentOutput = "[out2]"
 		logoInputIndex++
@@ -275,8 +313,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 
 	if companyLogoPath != "" && opts != nil && opts.VideoTitle != "" {
 		// Company logo as lower third with title overlay
-		totalHeight := screenHeight + webcamHeight
-		lowerThirdY := totalHeight - 100 // Position near bottom
+		lowerThirdY := YouTubeShortsHeight - 100 // Position near bottom
 		filterComplex += fmt.Sprintf(
 			";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto[out3];"+
 				"[out3]drawtext=text='%s':fontcolor=white:fontsize=36:x=220:y=%d[outv]",
@@ -292,7 +329,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		"-map", "2:a",
 		"-c:v", "libx264",
 		"-preset", "veryslow",
-		"-crf", "0",
+		"-crf", "18", // Use CRF 18 for high quality (CRF 0 creates huge files)
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "320k",
