@@ -19,3 +19,14 @@
    - Audio processing (noise reduction, normalization)
    - Video/audio merging (ffmpeg)
    - Desktop notifications
+
+---
+
+**Prompt:** have the same splash animation on start and exit
+
+**Summary:** Add the same splash screen animations from kartoza-timesheet-app:
+1. Entry splash: Logo expands from 5% to 100% with easeInOutCubic easing (3 seconds)
+2. Exit splash: Logo shrinks from 100% to 5% with easeInOutCubic easing (2 seconds)
+3. Support for Kitty graphics protocol with PNG logo
+4. Fallback to ASCII art for non-Kitty terminals
+5. Skippable with any key press

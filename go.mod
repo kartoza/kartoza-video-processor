@@ -3,9 +3,11 @@ module github.com/kartoza/kartoza-video-processor
 go 1.23
 
 require (
+	github.com/blacktop/go-termimg v0.1.24
 	github.com/charmbracelet/bubbles v0.21.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.1
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/spf13/cobra v1.10.2
 )
 

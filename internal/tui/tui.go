@@ -285,9 +285,23 @@ func updateMonitors() tea.Cmd {
 	}
 }
 
-// Run starts the TUI application
+// Run starts the TUI application with splash screens
 func Run() error {
+	// Show entry splash screen (3 seconds, skippable with any key)
+	if err := ShowSplashScreen(3 * time.Second); err != nil {
+		// Ignore splash errors, continue to main app
+		_ = err
+	}
+
+	// Run main application
 	p := tea.NewProgram(NewModel(), tea.WithAltScreen())
 	_, err := p.Run()
+
+	// Show exit splash screen (2 seconds, skippable with any key)
+	if exitErr := ShowExitSplashScreen(2 * time.Second); exitErr != nil {
+		// Ignore splash errors
+		_ = exitErr
+	}
+
 	return err
 }
