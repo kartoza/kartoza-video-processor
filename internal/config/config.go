@@ -26,6 +26,7 @@ const (
 	VideoPathFile  = "/tmp/kartoza-video.path"
 	AudioPathFile  = "/tmp/kartoza-audio.path"
 	WebcamPathFile = "/tmp/kartoza-webcam.path"
+	StopSignalFile = "/tmp/kartoza-video.stop"
 )
 
 // Config holds the application configuration

@@ -192,3 +192,59 @@
 8. Validation messages displayed below form
 9. Tab/vim navigation between all fields
 10. Consistent width and spacing throughout
+
+---
+
+**Prompt:** that user interface for the recording details is horrific. try again making it clean and simple
+
+**Summary:** Simplified the recording setup form:
+1. Removed complex bordered containers
+2. Simple label: input format with clean spacing
+3. Two-column layout with right-aligned labels
+
+---
+
+**Prompt:** the description widget should be large, responsively filling the remaining space on the screen
+
+**Summary:** Made description textarea responsive:
+1. Dynamically resize based on window height
+2. Fills remaining vertical space after other form elements
+
+---
+
+**Prompt:** I think you did not get my requirement for centering the content area. Whilst I want the content area to be centered horizontally, the widgets should be left aligned within the sub content area for the form. All of the widget labels should be aligned to each other in a column with the actual widgets in a second column to the right of the labels
+
+**Summary:** Fixed form layout alignment:
+1. Form centered horizontally on screen using lipgloss.Place
+2. Internal form content left-aligned
+3. Labels in first column with fixed width, right-aligned text
+4. Inputs in second column
+
+---
+
+**Prompt:** can we bind a global hotkey to the stop recording action so that the user can stop the recording even when another application is focussed
+
+**Summary:** (In progress) Implementing global hotkey support:
+1. Added StopSignalFile constant to config for IPC
+2. CLI `stop` command already exists
+3. Plan: TUI watches for signal file, handles stop gracefully with processing state
+4. User can bind `kartoza-video-processor stop` to Hyprland keybinding
+
+---
+
+**Prompt:** see the updated .png with a wireframe of how the recording should be setup
+
+**Summary:** Redesigned recording setup form per wireframe (StandardApplicationDesign.drawio.png):
+1. Title field (text input)
+2. Number field (editable recording number)
+3. Topic selector (horizontal chips)
+4. Options section with checkboxes:
+   - Record Audio
+   - Record Webcam
+   - Record Screen (with nested monitor selection)
+   - Generate Vertical Video
+   - Add logos
+5. Large responsive Description textarea
+6. "Go Live!" button (renamed from "Start Recording")
+7. Space toggles checkboxes, left/right changes selections
+8. Vim navigation (j/k/h/l) and arrow keys supported

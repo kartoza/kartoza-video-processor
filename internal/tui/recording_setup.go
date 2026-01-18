@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -9,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-video-processor/internal/config"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-video-processor/internal/monitor"
 )
 
 // RecordingSetupField represents which field is currently focused
@@ -16,10 +19,16 @@ type RecordingSetupField int
 
 const (
 	FieldTitle RecordingSetupField = iota
-	FieldPresenter
+	FieldNumber
 	FieldTopic
+	FieldRecordAudio
+	FieldRecordWebcam
+	FieldRecordScreen
+	FieldScreenSelect
+	FieldVerticalVideo
+	FieldAddLogos
 	FieldDescription
-	FieldStart
+	FieldGoLive
 )
 
 // RecordingSetupModel handles the recording setup form
@@ -29,14 +38,24 @@ type RecordingSetupModel struct {
 
 	focusedField     RecordingSetupField
 	titleInput       textinput.Model
-	presenterInput   textinput.Model
+	numberInput      textinput.Model
 	descriptionInput textarea.Model
 
-	recordingNumber int
-	topics          []models.Topic
-	selectedTopic   int
-	config          *config.Config
-	validationMsg   string
+	topics        []models.Topic
+	selectedTopic int
+	config        *config.Config
+	validationMsg string
+
+	// Options
+	recordAudio    bool
+	recordWebcam   bool
+	recordScreen   bool
+	verticalVideo  bool
+	addLogos       bool
+
+	// Screen selection
+	monitors        []models.Monitor
+	selectedMonitor int
 }
 
 // NewRecordingSetupModel creates a new recording setup model
@@ -45,18 +64,16 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 	recordingNumber := config.GetCurrentRecordingNumber()
 
 	titleInput := textinput.New()
-	titleInput.Placeholder = "My Tutorial Video"
+	titleInput.Placeholder = "A nice recording"
 	titleInput.CharLimit = 100
 	titleInput.Width = 50
 	titleInput.Focus()
 
-	presenterInput := textinput.New()
-	presenterInput.Placeholder = "Your Name"
-	presenterInput.CharLimit = 100
-	presenterInput.Width = 50
-	if cfg.DefaultPresenter != "" {
-		presenterInput.SetValue(cfg.DefaultPresenter)
-	}
+	numberInput := textinput.New()
+	numberInput.Placeholder = "001"
+	numberInput.CharLimit = 10
+	numberInput.Width = 10
+	numberInput.SetValue(fmt.Sprintf("%03d", recordingNumber))
 
 	descInput := textarea.New()
 	descInput.Placeholder = "Description of this recording..."
@@ -70,15 +87,25 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 		topics = models.DefaultTopics()
 	}
 
+	// Get available monitors
+	monitors, _ := monitor.ListMonitors()
+
 	return &RecordingSetupModel{
 		focusedField:     FieldTitle,
 		titleInput:       titleInput,
-		presenterInput:   presenterInput,
+		numberInput:      numberInput,
 		descriptionInput: descInput,
-		recordingNumber:  recordingNumber,
 		topics:           topics,
 		selectedTopic:    0,
 		config:           cfg,
+		// Default options
+		recordAudio:     true,
+		recordWebcam:    true,
+		recordScreen:    true,
+		verticalVideo:   true,
+		addLogos:        true,
+		monitors:        monitors,
+		selectedMonitor: 0,
 	}
 }
 
@@ -92,21 +119,21 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 		m.width = msg.Width
 		m.height = msg.Height
 		// Resize description to fill remaining space
-		// Header ~3, title+folder ~3, presenter ~2, topic ~2, button ~2, footer ~2 = ~14 lines used
-		descHeight := m.height - 18
+		// Account for more rows now with options
+		descHeight := m.height - 28
 		if descHeight < 3 {
 			descHeight = 3
 		}
 		m.descriptionInput.SetHeight(descHeight)
-		m.descriptionInput.SetWidth(m.width - 16) // Leave room for label
+		m.descriptionInput.SetWidth(m.width - 20)
 
 	case tea.KeyMsg:
 		m.validationMsg = ""
 
 		switch msg.String() {
-		case "tab", "down":
+		case "tab", "down", "j":
 			if m.focusedField == FieldDescription {
-				// Let textarea handle down if it has content
+				// Let textarea handle down if it has multiline content
 				if strings.Contains(m.descriptionInput.Value(), "\n") {
 					var cmd tea.Cmd
 					m.descriptionInput, cmd = m.descriptionInput.Update(msg)
@@ -116,37 +143,29 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 			m.nextField()
 			return m, nil
 
-		case "shift+tab", "up":
+		case "shift+tab", "up", "k":
 			m.prevField()
 			return m, nil
 
-		case "left":
-			if m.focusedField == FieldTopic {
-				m.selectedTopic--
-				if m.selectedTopic < 0 {
-					m.selectedTopic = len(m.topics) - 1
-				}
-				return m, nil
-			}
+		case "left", "h":
+			return m.handleLeft()
 
-		case "right":
-			if m.focusedField == FieldTopic {
-				m.selectedTopic++
-				if m.selectedTopic >= len(m.topics) {
-					m.selectedTopic = 0
-				}
-				return m, nil
-			}
+		case "right", "l":
+			return m.handleRight()
+
+		case " ":
+			// Space toggles checkboxes
+			return m.handleSpace()
 
 		case "enter":
-			if m.focusedField == FieldStart {
+			if m.focusedField == FieldGoLive {
 				if m.Validate() {
 					return m, func() tea.Msg { return recordingSetupCompleteMsg{} }
 				}
 				return m, nil
 			}
-			m.nextField()
-			return m, nil
+			// Space/enter on checkboxes toggle them
+			return m.handleSpace()
 		}
 
 		// Update focused input
@@ -154,8 +173,8 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 		switch m.focusedField {
 		case FieldTitle:
 			m.titleInput, cmd = m.titleInput.Update(msg)
-		case FieldPresenter:
-			m.presenterInput, cmd = m.presenterInput.Update(msg)
+		case FieldNumber:
+			m.numberInput, cmd = m.numberInput.Update(msg)
 		case FieldDescription:
 			m.descriptionInput, cmd = m.descriptionInput.Update(msg)
 		}
@@ -165,10 +184,64 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 	return m, nil
 }
 
+func (m *RecordingSetupModel) handleLeft() (*RecordingSetupModel, tea.Cmd) {
+	switch m.focusedField {
+	case FieldTopic:
+		m.selectedTopic--
+		if m.selectedTopic < 0 {
+			m.selectedTopic = len(m.topics) - 1
+		}
+	case FieldScreenSelect:
+		m.selectedMonitor--
+		if m.selectedMonitor < 0 {
+			m.selectedMonitor = len(m.monitors) - 1
+		}
+	}
+	return m, nil
+}
+
+func (m *RecordingSetupModel) handleRight() (*RecordingSetupModel, tea.Cmd) {
+	switch m.focusedField {
+	case FieldTopic:
+		m.selectedTopic++
+		if m.selectedTopic >= len(m.topics) {
+			m.selectedTopic = 0
+		}
+	case FieldScreenSelect:
+		m.selectedMonitor++
+		if m.selectedMonitor >= len(m.monitors) {
+			m.selectedMonitor = 0
+		}
+	}
+	return m, nil
+}
+
+func (m *RecordingSetupModel) handleSpace() (*RecordingSetupModel, tea.Cmd) {
+	switch m.focusedField {
+	case FieldRecordAudio:
+		m.recordAudio = !m.recordAudio
+	case FieldRecordWebcam:
+		m.recordWebcam = !m.recordWebcam
+	case FieldRecordScreen:
+		m.recordScreen = !m.recordScreen
+	case FieldVerticalVideo:
+		m.verticalVideo = !m.verticalVideo
+	case FieldAddLogos:
+		m.addLogos = !m.addLogos
+	}
+	return m, nil
+}
+
 func (m *RecordingSetupModel) nextField() {
 	m.blurAll()
 	m.focusedField++
-	if m.focusedField > FieldStart {
+
+	// Skip screen select if record screen is disabled
+	if m.focusedField == FieldScreenSelect && !m.recordScreen {
+		m.focusedField++
+	}
+
+	if m.focusedField > FieldGoLive {
 		m.focusedField = FieldTitle
 	}
 	m.focusCurrent()
@@ -177,15 +250,21 @@ func (m *RecordingSetupModel) nextField() {
 func (m *RecordingSetupModel) prevField() {
 	m.blurAll()
 	m.focusedField--
+
+	// Skip screen select if record screen is disabled
+	if m.focusedField == FieldScreenSelect && !m.recordScreen {
+		m.focusedField--
+	}
+
 	if m.focusedField < FieldTitle {
-		m.focusedField = FieldStart
+		m.focusedField = FieldGoLive
 	}
 	m.focusCurrent()
 }
 
 func (m *RecordingSetupModel) blurAll() {
 	m.titleInput.Blur()
-	m.presenterInput.Blur()
+	m.numberInput.Blur()
 	m.descriptionInput.Blur()
 }
 
@@ -193,8 +272,8 @@ func (m *RecordingSetupModel) focusCurrent() {
 	switch m.focusedField {
 	case FieldTitle:
 		m.titleInput.Focus()
-	case FieldPresenter:
-		m.presenterInput.Focus()
+	case FieldNumber:
+		m.numberInput.Focus()
 	case FieldDescription:
 		m.descriptionInput.Focus()
 	}
@@ -216,29 +295,44 @@ func (m *RecordingSetupModel) GetMetadata() models.RecordingMetadata {
 		topic = m.topics[m.selectedTopic].Name
 	}
 
-	presenter := strings.TrimSpace(m.presenterInput.Value())
-	if presenter != "" && presenter != m.config.DefaultPresenter {
-		m.config.DefaultPresenter = presenter
-		config.Save(m.config)
+	// Parse recording number from input
+	recordingNumber := 1
+	if num, err := strconv.Atoi(strings.TrimSpace(m.numberInput.Value())); err == nil && num > 0 {
+		recordingNumber = num
 	}
 
 	metadata := models.RecordingMetadata{
-		Number:      m.recordingNumber,
+		Number:      recordingNumber,
 		Title:       strings.TrimSpace(m.titleInput.Value()),
 		Description: strings.TrimSpace(m.descriptionInput.Value()),
 		Topic:       topic,
-		Presenter:   presenter,
+		Presenter:   m.config.DefaultPresenter,
 	}
 	metadata.GenerateFolderName()
 
 	return metadata
 }
 
+// GetRecordingOptions returns the recording options based on form selections
+func (m *RecordingSetupModel) GetRecordingOptions() models.RecordingOptions {
+	monitorName := ""
+	if m.recordScreen && m.selectedMonitor >= 0 && m.selectedMonitor < len(m.monitors) {
+		monitorName = m.monitors[m.selectedMonitor].Name
+	}
+
+	return models.RecordingOptions{
+		Monitor:        monitorName,
+		NoAudio:        !m.recordAudio,
+		NoWebcam:       !m.recordWebcam,
+		CreateVertical: m.verticalVideo && m.recordWebcam, // Only create vertical if webcam is enabled
+		// AddLogos is a future feature
+	}
+}
+
 func (m *RecordingSetupModel) View() string {
 	labelWidth := 14
 	label := lipgloss.NewStyle().Foreground(ColorGray).Width(labelWidth).Align(lipgloss.Right)
 	activeLabel := lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Width(labelWidth).Align(lipgloss.Right)
-	dim := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
 
 	var rows []string
 
@@ -248,21 +342,14 @@ func (m *RecordingSetupModel) View() string {
 		titleLabel = activeLabel.Render("Title")
 	}
 	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, titleLabel, "  ", m.titleInput.View()))
-
-	// Folder preview
-	meta := m.GetMetadata()
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(labelWidth).Render(""),
-		"  ",
-		dim.Render("→ "+meta.FolderName+"/")))
 	rows = append(rows, "")
 
-	// Presenter row
-	presenterLabel := label.Render("Presenter")
-	if m.focusedField == FieldPresenter {
-		presenterLabel = activeLabel.Render("Presenter")
+	// Number row
+	numberLabel := label.Render("Number")
+	if m.focusedField == FieldNumber {
+		numberLabel = activeLabel.Render("Number")
 	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, presenterLabel, "  ", m.presenterInput.View()))
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, numberLabel, "  ", m.numberInput.View()))
 	rows = append(rows, "")
 
 	// Topic row
@@ -270,30 +357,18 @@ func (m *RecordingSetupModel) View() string {
 	if m.focusedField == FieldTopic {
 		topicLabel = activeLabel.Render("Topic")
 	}
-	var topicChips []string
-	for i, t := range m.topics {
-		if i == m.selectedTopic {
-			if m.focusedField == FieldTopic {
-				topicChips = append(topicChips, lipgloss.NewStyle().
-					Background(ColorOrange).
-					Foreground(lipgloss.Color("#000")).
-					Padding(0, 1).
-					Render(t.Name))
-			} else {
-				topicChips = append(topicChips, lipgloss.NewStyle().
-					Background(ColorGray).
-					Foreground(ColorWhite).
-					Padding(0, 1).
-					Render(t.Name))
-			}
-		} else {
-			topicChips = append(topicChips, lipgloss.NewStyle().
-				Foreground(ColorGray).
-				Padding(0, 1).
-				Render(t.Name))
-		}
+	topicValue := m.renderTopicSelector()
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, topicLabel, "  ", topicValue))
+	rows = append(rows, "")
+
+	// Options section
+	optionsLabel := label.Render("Options")
+	if m.focusedField >= FieldRecordAudio && m.focusedField <= FieldAddLogos {
+		optionsLabel = activeLabel.Render("Options")
 	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, topicLabel, "  ", lipgloss.JoinHorizontal(lipgloss.Top, topicChips...)))
+
+	optionsContent := m.renderOptions()
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, optionsLabel, "  ", optionsContent))
 	rows = append(rows, "")
 
 	// Description row
@@ -304,26 +379,26 @@ func (m *RecordingSetupModel) View() string {
 	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, descLabel, "  ", m.descriptionInput.View()))
 	rows = append(rows, "")
 
-	// Start button row
-	var startBtn string
-	if m.focusedField == FieldStart {
-		startBtn = lipgloss.NewStyle().
+	// Go Live button row
+	var goLiveBtn string
+	if m.focusedField == FieldGoLive {
+		goLiveBtn = lipgloss.NewStyle().
 			Background(ColorOrange).
 			Foreground(lipgloss.Color("#000")).
 			Bold(true).
 			Padding(0, 2).
-			Render("▶ Start Recording")
+			Render("Go Live!")
 	} else {
-		startBtn = lipgloss.NewStyle().
+		goLiveBtn = lipgloss.NewStyle().
 			Background(ColorDarkGray).
 			Foreground(ColorWhite).
 			Padding(0, 2).
-			Render("▶ Start Recording")
+			Render("Go Live!")
 	}
 	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Width(labelWidth).Render(""),
 		"  ",
-		startBtn))
+		goLiveBtn))
 
 	// Validation message
 	if m.validationMsg != "" {
@@ -339,6 +414,100 @@ func (m *RecordingSetupModel) View() string {
 
 	// Center the form horizontally on screen
 	return lipgloss.Place(m.width, m.height-6, lipgloss.Center, lipgloss.Top, form)
+}
+
+func (m *RecordingSetupModel) renderTopicSelector() string {
+	var chips []string
+	for i, t := range m.topics {
+		if i == m.selectedTopic {
+			if m.focusedField == FieldTopic {
+				chips = append(chips, lipgloss.NewStyle().
+					Background(ColorOrange).
+					Foreground(lipgloss.Color("#000")).
+					Padding(0, 1).
+					Render(t.Name))
+			} else {
+				chips = append(chips, lipgloss.NewStyle().
+					Background(ColorGray).
+					Foreground(ColorWhite).
+					Padding(0, 1).
+					Render(t.Name))
+			}
+		} else {
+			chips = append(chips, lipgloss.NewStyle().
+				Foreground(ColorGray).
+				Padding(0, 1).
+				Render(t.Name))
+		}
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, chips...)
+}
+
+func (m *RecordingSetupModel) renderOptions() string {
+	var lines []string
+
+	// Record Audio
+	lines = append(lines, m.renderCheckbox("Record Audio", m.recordAudio, m.focusedField == FieldRecordAudio))
+
+	// Record Webcam
+	lines = append(lines, m.renderCheckbox("Record Webcam", m.recordWebcam, m.focusedField == FieldRecordWebcam))
+
+	// Record Screen
+	lines = append(lines, m.renderCheckbox("Record Screen", m.recordScreen, m.focusedField == FieldRecordScreen))
+
+	// Screen selection (nested, only if record screen is enabled)
+	if m.recordScreen && len(m.monitors) > 0 {
+		lines = append(lines, m.renderScreenSelector())
+	}
+
+	// Generate Vertical Video
+	lines = append(lines, m.renderCheckbox("Generate Vertical Video", m.verticalVideo, m.focusedField == FieldVerticalVideo))
+
+	// Add logos
+	lines = append(lines, m.renderCheckbox("Add logos", m.addLogos, m.focusedField == FieldAddLogos))
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (m *RecordingSetupModel) renderCheckbox(label string, checked bool, focused bool) string {
+	checkmark := " "
+	if checked {
+		checkmark = "x"
+	}
+
+	style := lipgloss.NewStyle().Foreground(ColorGray)
+	if focused {
+		style = lipgloss.NewStyle().Foreground(ColorOrange).Bold(true)
+	}
+
+	return style.Render(fmt.Sprintf("(%s) %s", checkmark, label))
+}
+
+func (m *RecordingSetupModel) renderScreenSelector() string {
+	indent := "    "
+	var lines []string
+
+	for i, mon := range m.monitors {
+		selected := i == m.selectedMonitor
+		focused := m.focusedField == FieldScreenSelect
+
+		marker := " "
+		if selected {
+			marker = "x"
+		}
+
+		style := lipgloss.NewStyle().Foreground(ColorGray)
+		if focused && selected {
+			style = lipgloss.NewStyle().Foreground(ColorOrange).Bold(true)
+		} else if focused {
+			style = lipgloss.NewStyle().Foreground(ColorWhite)
+		}
+
+		label := fmt.Sprintf("%s (%dx%d)", mon.Name, mon.Width, mon.Height)
+		lines = append(lines, indent+style.Render(fmt.Sprintf("(%s) %s", marker, label)))
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 type recordingSetupCompleteMsg struct{}
