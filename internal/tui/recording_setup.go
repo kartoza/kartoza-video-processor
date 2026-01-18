@@ -235,109 +235,110 @@ func (m *RecordingSetupModel) GetMetadata() models.RecordingMetadata {
 }
 
 func (m *RecordingSetupModel) View() string {
-	// Simple, clean styles
-	label := lipgloss.NewStyle().Foreground(ColorGray).Width(12)
-	activeLabel := lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Width(12)
-	input := lipgloss.NewStyle().Foreground(ColorWhite)
+	labelWidth := 14
+	label := lipgloss.NewStyle().Foreground(ColorGray).Width(labelWidth).Align(lipgloss.Right)
+	activeLabel := lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Width(labelWidth).Align(lipgloss.Right)
 	dim := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
 
-	var b strings.Builder
+	var rows []string
 
-	// Title
+	// Title row
+	titleLabel := label.Render("Title")
 	if m.focusedField == FieldTitle {
-		b.WriteString(activeLabel.Render("Title"))
-	} else {
-		b.WriteString(label.Render("Title"))
+		titleLabel = activeLabel.Render("Title")
 	}
-	b.WriteString(input.Render(m.titleInput.View()))
-	b.WriteString("\n")
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, titleLabel, "  ", m.titleInput.View()))
 
 	// Folder preview
 	meta := m.GetMetadata()
-	b.WriteString(strings.Repeat(" ", 12))
-	b.WriteString(dim.Render("→ " + meta.FolderName + "/"))
-	b.WriteString("\n\n")
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Width(labelWidth).Render(""),
+		"  ",
+		dim.Render("→ "+meta.FolderName+"/")))
+	rows = append(rows, "")
 
-	// Presenter
+	// Presenter row
+	presenterLabel := label.Render("Presenter")
 	if m.focusedField == FieldPresenter {
-		b.WriteString(activeLabel.Render("Presenter"))
-	} else {
-		b.WriteString(label.Render("Presenter"))
+		presenterLabel = activeLabel.Render("Presenter")
 	}
-	b.WriteString(input.Render(m.presenterInput.View()))
-	b.WriteString("\n\n")
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, presenterLabel, "  ", m.presenterInput.View()))
+	rows = append(rows, "")
 
-	// Topic
+	// Topic row
+	topicLabel := label.Render("Topic")
 	if m.focusedField == FieldTopic {
-		b.WriteString(activeLabel.Render("Topic"))
-	} else {
-		b.WriteString(label.Render("Topic"))
+		topicLabel = activeLabel.Render("Topic")
 	}
-
+	var topicChips []string
 	for i, t := range m.topics {
 		if i == m.selectedTopic {
 			if m.focusedField == FieldTopic {
-				b.WriteString(lipgloss.NewStyle().
+				topicChips = append(topicChips, lipgloss.NewStyle().
 					Background(ColorOrange).
 					Foreground(lipgloss.Color("#000")).
 					Padding(0, 1).
 					Render(t.Name))
 			} else {
-				b.WriteString(lipgloss.NewStyle().
+				topicChips = append(topicChips, lipgloss.NewStyle().
 					Background(ColorGray).
 					Foreground(ColorWhite).
 					Padding(0, 1).
 					Render(t.Name))
 			}
 		} else {
-			b.WriteString(lipgloss.NewStyle().
+			topicChips = append(topicChips, lipgloss.NewStyle().
 				Foreground(ColorGray).
 				Padding(0, 1).
 				Render(t.Name))
 		}
 	}
-	b.WriteString("\n\n")
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, topicLabel, "  ", lipgloss.JoinHorizontal(lipgloss.Top, topicChips...)))
+	rows = append(rows, "")
 
-	// Description
+	// Description row
+	descLabel := label.Render("Description")
 	if m.focusedField == FieldDescription {
-		b.WriteString(activeLabel.Render("Description"))
-	} else {
-		b.WriteString(label.Render("Description"))
+		descLabel = activeLabel.Render("Description")
 	}
-	b.WriteString("\n")
-	b.WriteString(strings.Repeat(" ", 12))
-	b.WriteString(input.Render(m.descriptionInput.View()))
-	b.WriteString("\n\n")
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, descLabel, "  ", m.descriptionInput.View()))
+	rows = append(rows, "")
 
-	// Start button
+	// Start button row
+	var startBtn string
 	if m.focusedField == FieldStart {
-		b.WriteString(strings.Repeat(" ", 12))
-		b.WriteString(lipgloss.NewStyle().
+		startBtn = lipgloss.NewStyle().
 			Background(ColorOrange).
 			Foreground(lipgloss.Color("#000")).
 			Bold(true).
 			Padding(0, 2).
-			Render("▶ Start Recording"))
+			Render("▶ Start Recording")
 	} else {
-		b.WriteString(strings.Repeat(" ", 12))
-		b.WriteString(lipgloss.NewStyle().
+		startBtn = lipgloss.NewStyle().
 			Background(ColorDarkGray).
 			Foreground(ColorWhite).
 			Padding(0, 2).
-			Render("▶ Start Recording"))
+			Render("▶ Start Recording")
 	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Width(labelWidth).Render(""),
+		"  ",
+		startBtn))
 
 	// Validation message
 	if m.validationMsg != "" {
-		b.WriteString("\n\n")
-		b.WriteString(strings.Repeat(" ", 12))
-		b.WriteString(lipgloss.NewStyle().
-			Foreground(ColorRed).
-			Bold(true).
-			Render(m.validationMsg))
+		rows = append(rows, "")
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			lipgloss.NewStyle().Width(labelWidth).Render(""),
+			"  ",
+			lipgloss.NewStyle().Foreground(ColorRed).Bold(true).Render(m.validationMsg)))
 	}
 
-	return b.String()
+	// Join all rows left-aligned
+	form := lipgloss.JoinVertical(lipgloss.Left, rows...)
+
+	// Center the form horizontally on screen
+	return lipgloss.Place(m.width, m.height-6, lipgloss.Center, lipgloss.Top, form)
 }
 
 type recordingSetupCompleteMsg struct{}
