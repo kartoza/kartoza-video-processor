@@ -47,3 +47,14 @@
    - ColorDarkGray (#3A3A3A) - Background
    - ColorRed (#E95420) - Error/Recording
    - ColorGreen (#4CAF50) - Success
+
+---
+
+**Prompt:** when the user starts recording by pressing space, there should be a 5s count in using a super bit termdash (https://github.com/mum4k/termdash) count down. During that time the user can go to the screen they want to record. Each second count off except 0 should be accompanied by an audible beet of descending tone
+
+**Summary:** Add 5-second countdown before recording starts:
+1. Big segment-style numbers displayed centered on screen (5, 4, 3, 2, 1, GO!)
+2. Each second (5-1) plays a descending tone beep using speaker-test or paplay
+3. Countdown gives user time to switch to the screen they want to record
+4. Uses termdash-style segment display for large readable numbers
+5. "GO!" displayed briefly before recording starts (no beep on GO)

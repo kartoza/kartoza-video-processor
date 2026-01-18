@@ -13,11 +13,21 @@ import (
 	"github.com/kartoza/kartoza-video-processor/internal/recorder"
 )
 
+// Application states
+type appState int
+
+const (
+	stateReady appState = iota
+	stateCountdown
+	stateRecording
+)
+
 // Key bindings
 type keyMap struct {
 	Toggle key.Binding
 	Quit   key.Binding
 	Help   key.Binding
+	Cancel key.Binding
 }
 
 var keys = keyMap{
@@ -33,6 +43,10 @@ var keys = keyMap{
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
 	),
+	Cancel: key.NewBinding(
+		key.WithKeys("esc"),
+		key.WithHelp("esc", "cancel"),
+	),
 }
 
 // Messages
@@ -40,18 +54,22 @@ type tickMsg time.Time
 type statusUpdateMsg models.RecordingStatus
 type monitorsUpdateMsg []models.Monitor
 type blinkMsg struct{}
+type countdownTickMsg struct{}
+type startRecordingMsg struct{}
 
 // Model is the main TUI model
 type Model struct {
-	recorder   *recorder.Recorder
-	status     models.RecordingStatus
-	monitors   []models.Monitor
-	spinner    spinner.Model
-	width      int
-	height     int
-	showHelp   bool
-	blinkOn    bool
-	err        error
+	recorder      *recorder.Recorder
+	status        models.RecordingStatus
+	monitors      []models.Monitor
+	spinner       spinner.Model
+	width         int
+	height        int
+	showHelp      bool
+	blinkOn       bool
+	err           error
+	state         appState
+	countdownNum  int
 }
 
 // NewModel creates a new TUI model
@@ -61,9 +79,11 @@ func NewModel() Model {
 	s.Style = lipgloss.NewStyle().Foreground(ColorRed)
 
 	return Model{
-		recorder: recorder.New(),
-		spinner:  s,
-		blinkOn:  true,
+		recorder:     recorder.New(),
+		spinner:      s,
+		blinkOn:      true,
+		state:        stateReady,
+		countdownNum: 5,
 	}
 }
 
@@ -82,21 +102,39 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle cancel during countdown
+		if m.state == stateCountdown {
+			if key.Matches(msg, keys.Cancel) || msg.String() == "q" {
+				m.state = stateReady
+				m.countdownNum = 5
+				return m, nil
+			}
+			// Ignore other keys during countdown
+			return m, nil
+		}
+
 		switch {
 		case key.Matches(msg, keys.Quit):
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Toggle):
 			if m.status.IsRecording {
+				// Stop recording immediately
 				if err := m.recorder.Stop(); err != nil {
 					m.err = err
 				}
+				m.state = stateReady
+				return m, updateStatus(m.recorder)
 			} else {
-				if err := m.recorder.Start(); err != nil {
-					m.err = err
-				}
+				// Start countdown
+				m.state = stateCountdown
+				m.countdownNum = 5
+				// Play first beep
+				go playBeep(5)
+				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+					return countdownTickMsg{}
+				})
 			}
-			return m, updateStatus(m.recorder)
 
 		case key.Matches(msg, keys.Help):
 			m.showHelp = !m.showHelp
@@ -109,18 +147,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		return m, tea.Batch(
-			tickCmd(),
-			updateStatus(m.recorder),
-			updateMonitors(),
-		)
+		if m.state != stateCountdown {
+			return m, tea.Batch(
+				tickCmd(),
+				updateStatus(m.recorder),
+				updateMonitors(),
+			)
+		}
+		return m, tickCmd()
 
 	case blinkMsg:
 		m.blinkOn = !m.blinkOn
 		return m, blinkCmd()
 
+	case countdownTickMsg:
+		if m.state != stateCountdown {
+			return m, nil
+		}
+
+		m.countdownNum--
+
+		if m.countdownNum < 0 {
+			// Countdown finished, start recording
+			m.state = stateRecording
+			if err := m.recorder.Start(); err != nil {
+				m.err = err
+				m.state = stateReady
+			}
+			return m, updateStatus(m.recorder)
+		}
+
+		// Play beep for counts 5-1 (not for 0/GO)
+		if m.countdownNum > 0 {
+			go playBeep(m.countdownNum)
+		}
+
+		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
+			return countdownTickMsg{}
+		})
+
 	case statusUpdateMsg:
 		m.status = models.RecordingStatus(msg)
+		if m.status.IsRecording {
+			m.state = stateRecording
+		} else if m.state == stateRecording {
+			m.state = stateReady
+		}
 		return m, nil
 
 	case monitorsUpdateMsg:
@@ -140,6 +212,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
+	}
+
+	// Show countdown screen if in countdown state
+	if m.state == stateCountdown {
+		return m.renderCountdownView()
 	}
 
 	// Build header state
@@ -175,6 +252,81 @@ func (m Model) View() string {
 
 	// Use standard layout
 	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+}
+
+// renderCountdownView renders the countdown screen
+func (m Model) renderCountdownView() string {
+	var bigText []string
+	var color lipgloss.Color
+
+	if m.countdownNum > 0 {
+		// Show digit
+		bigText = getBigDigit(m.countdownNum)
+		// Color changes as countdown progresses (orange -> red)
+		switch m.countdownNum {
+		case 5, 4:
+			color = ColorOrange
+		case 3, 2:
+			color = lipgloss.Color("#FF8C00") // Dark orange
+		case 1:
+			color = ColorRed
+		}
+	} else {
+		// Show GO!
+		bigText = bigGO
+		color = ColorGreen
+	}
+
+	// Style the big text
+	digitStyle := lipgloss.NewStyle().
+		Foreground(color).
+		Bold(true)
+
+	// Build the display
+	var lines string
+	for i, line := range bigText {
+		lines += digitStyle.Render(line)
+		if i < len(bigText)-1 {
+			lines += "\n"
+		}
+	}
+
+	// Add subtitle
+	subtitleStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	var subtitle string
+	if m.countdownNum > 0 {
+		subtitle = subtitleStyle.Render("Get ready... Recording starts soon!")
+	} else {
+		subtitle = subtitleStyle.Render("Recording!")
+	}
+
+	// Add cancel hint
+	hintStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+	hint := hintStyle.Render("Press ESC to cancel")
+
+	// Combine content
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		"",
+		lines,
+		"",
+		subtitle,
+		"",
+		hint,
+	)
+
+	// Center on screen
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		content,
+	)
 }
 
 // renderContent renders the main content area
