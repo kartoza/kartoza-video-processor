@@ -482,3 +482,11 @@ copies of these resources should be written into the project folder during proce
 3. Renamed "Bottom Logo" to "Bottom Banner" for clarity
 
 ---
+
+**Prompt:** with the resolution for banner and logo it should also advise the dpi
+
+**Summary:** Updated logo size guidance to include DPI:
+- Changed hint from "Logos: 216x216px (1/5 width) • Banner: 1080px wide"
+- To: "Logos: 216x216px @ 72dpi • Banner: 1080x200px @ 72dpi"
+
+---

@@ -657,7 +657,7 @@ func (m *RecordingSetupModel) View() string {
 	if m.addLogos {
 		// Logo size hints
 		hintStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
-		rows = append(rows, hintStyle.Render("  Logos: 216x216px (1/5 width) • Banner: 1080px wide"))
+		rows = append(rows, hintStyle.Render("  Logos: 216x216px @ 72dpi • Banner: 1080x200px @ 72dpi"))
 
 		leftLogoValue := m.renderLogoSelector(m.selectedLeftIdx, m.focusedField == fieldLeftLogo)
 		rows = append(rows, m.renderRow(fieldLeftLogo, "Left Logo", leftLogoValue, labelStyle, labelFocusedStyle, widgetStyle))
