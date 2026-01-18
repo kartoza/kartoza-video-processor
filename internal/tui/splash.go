@@ -18,8 +18,7 @@ import (
 //go:embed resources/kartoza-logo.png
 var logoFS embed.FS
 
-// Brand colors (Kartoza orange)
-var ColorOrange = lipgloss.Color("#DDA036")
+// Note: ColorOrange is defined in widgets.go for brand consistency
 
 // SplashModel represents the splash screen state
 type SplashModel struct {

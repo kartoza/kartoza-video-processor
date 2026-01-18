@@ -30,3 +30,20 @@
 3. Support for Kitty graphics protocol with PNG logo
 4. Fallback to ASCII art for non-Kitty terminals
 5. Skippable with any key press
+
+---
+
+**Prompt:** please use the guide in ../StandardApplicationDesign.drawio.png to get the layout consistent with the timesheet app. Also use the same brand colours as the kartoza timesheet app
+
+**Summary:** Update TUI to follow the standard Kartoza application layout:
+1. Header area at top: "Application Title - Page Title" with status indicators
+2. Main content area: Centered horizontally, anchored to top vertically
+3. Navigation shortcut keys: Centered at bottom of screen
+4. Brand colors from widgets.go:
+   - ColorOrange (#DDA036) - Primary/Active
+   - ColorBlue (#569FC6) - Secondary/Links
+   - ColorGray (#9A9EA0) - Inactive/Subtle
+   - ColorWhite (#FFFFFF) - Text
+   - ColorDarkGray (#3A3A3A) - Background
+   - ColorRed (#E95420) - Error/Recording
+   - ColorGreen (#4CAF50) - Success

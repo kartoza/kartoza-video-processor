@@ -13,53 +13,6 @@ import (
 	"github.com/kartoza/kartoza-video-processor/internal/recorder"
 )
 
-// Theme colors (Catppuccin-inspired)
-var (
-	primaryColor   = lipgloss.Color("#89b4fa") // Blue
-	secondaryColor = lipgloss.Color("#a6e3a1") // Green
-	warningColor   = lipgloss.Color("#f9e2af") // Yellow
-	errorColor     = lipgloss.Color("#f38ba8") // Red
-	textColor      = lipgloss.Color("#cdd6f4") // Text
-	subtleColor    = lipgloss.Color("#6c7086") // Subtle
-	surfaceColor   = lipgloss.Color("#313244") // Surface
-)
-
-// Styles
-var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(primaryColor).
-			MarginBottom(1)
-
-	statusStyle = lipgloss.NewStyle().
-			Foreground(secondaryColor).
-			Bold(true)
-
-	inactiveStyle = lipgloss.NewStyle().
-			Foreground(subtleColor)
-
-	recordingStyle = lipgloss.NewStyle().
-			Foreground(errorColor).
-			Bold(true).
-			Blink(true)
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(subtleColor).
-			MarginTop(1)
-
-	boxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(primaryColor).
-			Padding(1, 2)
-
-	monitorStyle = lipgloss.NewStyle().
-			Foreground(textColor)
-
-	cursorMarkerStyle = lipgloss.NewStyle().
-				Foreground(warningColor).
-				Bold(true)
-)
-
 // Key bindings
 type keyMap struct {
 	Toggle key.Binding
@@ -86,6 +39,7 @@ var keys = keyMap{
 type tickMsg time.Time
 type statusUpdateMsg models.RecordingStatus
 type monitorsUpdateMsg []models.Monitor
+type blinkMsg struct{}
 
 // Model is the main TUI model
 type Model struct {
@@ -96,6 +50,7 @@ type Model struct {
 	width      int
 	height     int
 	showHelp   bool
+	blinkOn    bool
 	err        error
 }
 
@@ -103,11 +58,12 @@ type Model struct {
 func NewModel() Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(errorColor)
+	s.Style = lipgloss.NewStyle().Foreground(ColorRed)
 
 	return Model{
 		recorder: recorder.New(),
 		spinner:  s,
+		blinkOn:  true,
 	}
 }
 
@@ -116,6 +72,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		tickCmd(),
+		blinkCmd(),
 		updateStatus(m.recorder),
 		updateMonitors(),
 	)
@@ -158,6 +115,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updateMonitors(),
 		)
 
+	case blinkMsg:
+		m.blinkOn = !m.blinkOn
+		return m, blinkCmd()
+
 	case statusUpdateMsg:
 		m.status = models.RecordingStatus(msg)
 		return m, nil
@@ -175,36 +136,113 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the UI
+// View renders the UI using the standard layout
 func (m Model) View() string {
-	var content string
-
-	// Title
-	title := titleStyle.Render("🎬 Kartoza Video Processor")
-
-	// Status
-	var status string
-	if m.status.IsRecording {
-		duration := time.Since(m.status.StartTime).Round(time.Second)
-		status = fmt.Sprintf("%s %s Recording... %s",
-			m.spinner.View(),
-			recordingStyle.Render("●"),
-			statusStyle.Render(duration.String()),
-		)
-	} else {
-		status = inactiveStyle.Render("○ Ready to record")
+	if m.width == 0 || m.height == 0 {
+		return ""
 	}
 
-	// Monitors
-	var monitorsView string
-	cursorMonitor, _ := monitor.GetMouseMonitor()
+	// Build header state
+	headerState := &HeaderState{
+		IsRecording: m.status.IsRecording,
+		BlinkOn:     m.blinkOn,
+	}
 
-	if len(m.monitors) > 0 {
-		monitorsView = "Monitors:\n"
+	if m.status.IsRecording {
+		headerState.Duration = time.Since(m.status.StartTime).Round(time.Second).String()
+		headerState.Monitor = m.status.Monitor
+	}
+
+	// Get current monitor with cursor
+	cursorMonitor, _ := monitor.GetMouseMonitor()
+	if cursorMonitor != "" && !m.status.IsRecording {
+		headerState.Monitor = cursorMonitor
+	}
+
+	// Render header
+	screenTitle := "Ready"
+	if m.status.IsRecording {
+		screenTitle = "Recording"
+	}
+	header := RenderHeader(screenTitle, headerState)
+
+	// Render main content
+	content := m.renderContent(cursorMonitor)
+
+	// Render footer
+	helpText := "space - toggle recording | q - quit | ? - help"
+	footer := RenderHelpFooter(helpText, m.width)
+
+	// Use standard layout
+	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+}
+
+// renderContent renders the main content area
+func (m Model) renderContent(cursorMonitor string) string {
+	// Monitor list
+	monitorsContent := m.renderMonitors(cursorMonitor)
+
+	// Recording info (if recording)
+	var recordingInfo string
+	if m.status.IsRecording {
+		recordingInfo = m.renderRecordingInfo()
+	}
+
+	// Help content (if shown)
+	var helpContent string
+	if m.showHelp {
+		helpContent = m.renderHelp()
+	}
+
+	// Combine content
+	contentStyle := lipgloss.NewStyle().
+		Width(HeaderWidth).
+		Align(lipgloss.Center)
+
+	var sections []string
+	sections = append(sections, monitorsContent)
+
+	if recordingInfo != "" {
+		sections = append(sections, "", recordingInfo)
+	}
+
+	if helpContent != "" {
+		sections = append(sections, "", helpContent)
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
+	return contentStyle.Render(content)
+}
+
+// renderMonitors renders the monitor list
+func (m Model) renderMonitors(cursorMonitor string) string {
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorBlue).
+		MarginBottom(1)
+
+	markerStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	monitorStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite)
+
+	dimStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	var content string
+	content += titleStyle.Render("Available Monitors") + "\n"
+
+	if len(m.monitors) == 0 {
+		content += dimStyle.Render("No monitors detected")
+	} else {
 		for _, mon := range m.monitors {
 			marker := "  "
+			style := monitorStyle
 			if mon.Name == cursorMonitor {
-				marker = cursorMarkerStyle.Render("→ ")
+				marker = markerStyle.Render("→ ")
+				style = ActiveStyle
 			}
 			line := fmt.Sprintf("%s%s (%dx%d)",
 				marker,
@@ -212,53 +250,61 @@ func (m Model) View() string {
 				mon.Width,
 				mon.Height,
 			)
-			monitorsView += monitorStyle.Render(line) + "\n"
+			content += style.Render(line) + "\n"
 		}
 	}
 
-	// Recording info
-	var recordingInfo string
-	if m.status.IsRecording {
-		recordingInfo = fmt.Sprintf("\nRecording to:\n  Video: %s\n  Audio: %s",
-			m.status.VideoFile,
-			m.status.AudioFile,
-		)
-		if m.status.WebcamFile != "" {
-			recordingInfo += fmt.Sprintf("\n  Webcam: %s", m.status.WebcamFile)
-		}
-	}
-
-	// Help
-	help := helpStyle.Render("[space] toggle recording  [q] quit  [?] help")
-
-	// Combine content
-	content = fmt.Sprintf("%s\n\n%s\n\n%s%s\n%s",
-		title,
-		status,
-		monitorsView,
-		recordingInfo,
-		help,
-	)
-
-	if m.showHelp {
-		content += "\n\n" + m.renderHelp()
-	}
-
-	return boxStyle.Render(content)
+	return content
 }
 
+// renderRecordingInfo renders info about the current recording
+func (m Model) renderRecordingInfo() string {
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorRed).
+		MarginBottom(1)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite)
+
+	var content string
+	content += titleStyle.Render("Recording In Progress") + "\n"
+	content += labelStyle.Render("Video: ") + valueStyle.Render(m.status.VideoFile) + "\n"
+	content += labelStyle.Render("Audio: ") + valueStyle.Render(m.status.AudioFile) + "\n"
+
+	if m.status.WebcamFile != "" {
+		content += labelStyle.Render("Webcam: ") + valueStyle.Render(m.status.WebcamFile) + "\n"
+	}
+
+	return content
+}
+
+// renderHelp renders the help content
 func (m Model) renderHelp() string {
-	return `Keyboard Shortcuts:
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorBlue).
+		MarginBottom(1)
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	helpText := `Keyboard Shortcuts:
   space/enter  Toggle recording on/off
   q            Quit application
-  ?            Toggle help
+  ?            Toggle this help
 
-Recording Info:
-  • Video is recorded with wl-screenrec
-  • Audio is captured from default microphone
-  • Webcam is recorded if available
-  • Audio is denoised and normalized automatically
-  • Vertical video is created with webcam overlay`
+Recording Features:
+  • Video captured with wl-screenrec
+  • Audio from default microphone
+  • Webcam recorded if available
+  • Audio denoised & normalized
+  • Vertical video with webcam overlay`
+
+	return titleStyle.Render("Help") + "\n" + helpStyle.Render(helpText)
 }
 
 // Commands
@@ -266,6 +312,12 @@ Recording Info:
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
+	})
+}
+
+func blinkCmd() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+		return blinkMsg{}
 	})
 }
 
