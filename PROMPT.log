@@ -315,3 +315,12 @@ I still cannot start the recording
 3. TotalRecordings count is initialized at startup and refreshed after processing completes
 4. Status shows "Recording" during recording, "Processing" during post-processing, "Ready" otherwise
 5. Recording indicator blinks during active recording
+
+---
+
+**Prompt:** for the history table, show topic, date, duration, size and then folder on a new line. No need to show title and description in the table list view
+
+**Summary:** Simplified history table list view:
+1. Row 1: Topic, Date (YYYY-MM-DD), Duration, Size
+2. Row 2: Folder name with folder icon
+3. Removed title and description from list view (still visible in detail view)

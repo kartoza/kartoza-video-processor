@@ -1055,12 +1055,10 @@ func (h *HistoryModel) renderScrollableTable() string {
 		Align(lipgloss.Left)
 
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
-		headerStyle.Render("Folder"),
-		headerStyle.Render("Title"),
-		headerStyle.Width(10).Render("Topic"),
-		headerStyle.Width(10).Render("Date"),
-		headerStyle.Width(8).Render("Duration"),
-		headerStyle.Width(8).Render("Size"),
+		headerStyle.Width(12).Render("Topic"),
+		headerStyle.Width(12).Render("Date"),
+		headerStyle.Width(10).Render("Duration"),
+		headerStyle.Width(10).Render("Size"),
 	)
 
 	var rows []string
@@ -1068,45 +1066,34 @@ func (h *HistoryModel) renderScrollableTable() string {
 		absoluteIdx := startIdx + i
 		isSelected := absoluteIdx == h.cursor
 
-		folder := truncateStr(rec.Metadata.FolderName, 10)
-		title := truncateStr(rec.Metadata.Title, 10)
-		topic := truncateStr(rec.Metadata.Topic, 8)
-		dateStr := rec.StartTime.Format("01-02")
+		topic := truncateStr(rec.Metadata.Topic, 10)
+		dateStr := rec.StartTime.Format("2006-01-02")
 		duration := models.FormatDuration(rec.Duration)
 		size := models.FormatFileSize(rec.Files.TotalSize)
+		folder := rec.Metadata.FolderName
 
 		var row1 string
 		if isSelected {
 			row1 = lipgloss.JoinHorizontal(lipgloss.Top,
-				selectedStyle.Render(folder),
-				selectedStyle.Render(title),
-				selectedStyle.Width(10).Render(topic),
-				selectedStyle.Width(10).Render(dateStr),
-				selectedStyle.Width(8).Render(duration),
-				selectedStyle.Width(8).Render(size),
+				selectedStyle.Width(12).Render(topic),
+				selectedStyle.Width(12).Render(dateStr),
+				selectedStyle.Width(10).Render(duration),
+				selectedStyle.Width(10).Render(size),
 			)
 		} else {
 			row1 = lipgloss.JoinHorizontal(lipgloss.Top,
-				cellStyle.Render(folder),
-				cellStyle.Render(title),
-				cellStyle.Width(10).Render(topic),
-				cellStyle.Width(10).Render(dateStr),
-				cellStyle.Width(8).Render(duration),
-				cellStyle.Width(8).Render(size),
+				cellStyle.Width(12).Render(topic),
+				cellStyle.Width(12).Render(dateStr),
+				cellStyle.Width(10).Render(duration),
+				cellStyle.Width(10).Render(size),
 			)
 		}
 
-		desc := rec.Metadata.Description
-		if desc == "" {
-			desc = "(no description)"
-		}
-		desc = truncateStr(desc, 52)
-
 		var row2 string
 		if isSelected {
-			row2 = selectedDescStyle.Render("  " + desc)
+			row2 = selectedDescStyle.Render("  📁 " + folder)
 		} else {
-			row2 = descStyle.Render("  " + desc)
+			row2 = descStyle.Render("  📁 " + folder)
 		}
 
 		rows = append(rows, row1, row2)
