@@ -565,6 +565,7 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 	mergeOpts.ProductLogo1 = r.logoSelection.LeftLogo
 	mergeOpts.ProductLogo2 = r.logoSelection.RightLogo
 	mergeOpts.CompanyLogo = r.logoSelection.BottomLogo
+	mergeOpts.TitleColor = r.logoSelection.TitleColor
 	// Check if any logos are configured
 	mergeOpts.AddLogos = mergeOpts.ProductLogo1 != "" || mergeOpts.ProductLogo2 != "" || mergeOpts.CompanyLogo != ""
 

@@ -31,6 +31,7 @@ const (
 	fieldLeftLogo
 	fieldRightLogo
 	fieldBottomLogo
+	fieldTitleColor
 	fieldDescription
 	fieldConfirm
 	fieldCount
@@ -61,14 +62,16 @@ type RecordingSetupModel struct {
 	addLogos      bool
 
 	// Logo selection
-	logoDirectory    string   // Directory containing logos
-	availableLogos   []string // List of logo files in the directory
-	leftLogo         string   // Selected left logo path
-	rightLogo        string   // Selected right logo path
-	bottomLogo       string   // Selected bottom logo path
-	selectedLeftIdx  int      // Index in availableLogos for left
-	selectedRightIdx int      // Index in availableLogos for right
-	selectedBottomIdx int     // Index in availableLogos for bottom
+	logoDirectory     string   // Directory containing logos
+	availableLogos    []string // List of logo files in the directory
+	leftLogo          string   // Selected left logo path
+	rightLogo         string   // Selected right logo path
+	bottomLogo        string   // Selected bottom logo path
+	selectedLeftIdx   int      // Index in availableLogos for left
+	selectedRightIdx  int      // Index in availableLogos for right
+	selectedBottomIdx int      // Index in availableLogos for bottom
+	titleColor        string   // Selected title text color
+	selectedColorIdx  int      // Index in TitleColors
 
 	// Screen selection
 	monitors        []models.Monitor
@@ -115,26 +118,42 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 	descInput.SetHeight(4)
 	descInput.ShowLineNumbers = false
 
+	// Determine title color - use last used or default
+	titleColor := cfg.LastUsedLogos.TitleColor
+	if titleColor == "" {
+		titleColor = config.DefaultTitleColor
+	}
+	// Find index of title color
+	colorIdx := 0
+	for i, c := range config.TitleColors {
+		if c == titleColor {
+			colorIdx = i
+			break
+		}
+	}
+
 	m := &RecordingSetupModel{
-		config:          cfg,
-		focusedField:    fieldTitle,
-		titleInput:      titleInput,
-		numberInput:     numberInput,
-		descInput:       descInput,
-		recordAudio:     true,
-		recordWebcam:    true,
-		recordScreen:    true,
-		verticalVideo:   true,
-		addLogos:        true,
-		monitors:        monitors,
-		selectedMonitor: 0,
-		topics:          topics,
-		selectedTopic:   0,
-		confirmSelected: true, // Default to "Go Live"
-		logoDirectory:   cfg.LogoDirectory,
-		leftLogo:        cfg.LastUsedLogos.LeftLogo,
-		rightLogo:       cfg.LastUsedLogos.RightLogo,
-		bottomLogo:      cfg.LastUsedLogos.BottomLogo,
+		config:           cfg,
+		focusedField:     fieldTitle,
+		titleInput:       titleInput,
+		numberInput:      numberInput,
+		descInput:        descInput,
+		recordAudio:      true,
+		recordWebcam:     true,
+		recordScreen:     true,
+		verticalVideo:    true,
+		addLogos:         true,
+		monitors:         monitors,
+		selectedMonitor:  0,
+		topics:           topics,
+		selectedTopic:    0,
+		confirmSelected:  true, // Default to "Go Live"
+		logoDirectory:    cfg.LogoDirectory,
+		leftLogo:         cfg.LastUsedLogos.LeftLogo,
+		rightLogo:        cfg.LastUsedLogos.RightLogo,
+		bottomLogo:       cfg.LastUsedLogos.BottomLogo,
+		titleColor:       titleColor,
+		selectedColorIdx: colorIdx,
 	}
 
 	// Load available logos from directory
@@ -337,7 +356,7 @@ func (m *RecordingSetupModel) nextField() {
 		if m.focusedField == fieldMonitor && !m.recordScreen {
 			skip = true
 		}
-		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo) && !m.addLogos {
+		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo || m.focusedField == fieldTitleColor) && !m.addLogos {
 			skip = true
 		}
 		if !skip {
@@ -366,7 +385,7 @@ func (m *RecordingSetupModel) prevField() {
 		if m.focusedField == fieldMonitor && !m.recordScreen {
 			skip = true
 		}
-		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo) && !m.addLogos {
+		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo || m.focusedField == fieldTitleColor) && !m.addLogos {
 			skip = true
 		}
 		if !skip {
@@ -433,6 +452,12 @@ func (m *RecordingSetupModel) handleLeft() {
 			m.selectedBottomIdx = len(m.availableLogos) - 1
 		}
 		m.bottomLogo = m.getLogoPath(m.selectedBottomIdx)
+	case fieldTitleColor:
+		m.selectedColorIdx--
+		if m.selectedColorIdx < 0 {
+			m.selectedColorIdx = len(config.TitleColors) - 1
+		}
+		m.titleColor = config.TitleColors[m.selectedColorIdx]
 	case fieldRecordAudio, fieldRecordWebcam, fieldRecordScreen, fieldVerticalVideo, fieldAddLogos:
 		m.handleToggle()
 	case fieldConfirm:
@@ -470,6 +495,12 @@ func (m *RecordingSetupModel) handleRight() {
 			m.selectedBottomIdx = 0
 		}
 		m.bottomLogo = m.getLogoPath(m.selectedBottomIdx)
+	case fieldTitleColor:
+		m.selectedColorIdx++
+		if m.selectedColorIdx >= len(config.TitleColors) {
+			m.selectedColorIdx = 0
+		}
+		m.titleColor = config.TitleColors[m.selectedColorIdx]
 	case fieldRecordAudio, fieldRecordWebcam, fieldRecordScreen, fieldVerticalVideo, fieldAddLogos:
 		m.handleToggle()
 	case fieldConfirm:
@@ -575,6 +606,7 @@ func (m *RecordingSetupModel) GetLogoSelection() config.LogoSelection {
 		LeftLogo:   m.leftLogo,
 		RightLogo:  m.rightLogo,
 		BottomLogo: m.bottomLogo,
+		TitleColor: m.titleColor,
 	}
 }
 
@@ -667,6 +699,9 @@ func (m *RecordingSetupModel) View() string {
 
 		bottomLogoValue := m.renderLogoSelector(m.selectedBottomIdx, m.focusedField == fieldBottomLogo)
 		rows = append(rows, m.renderRow(fieldBottomLogo, "Bottom Banner", bottomLogoValue, labelStyle, labelFocusedStyle, widgetStyle))
+
+		titleColorValue := m.renderColorSelector(m.focusedField == fieldTitleColor)
+		rows = append(rows, m.renderRow(fieldTitleColor, "Title Color", titleColorValue, labelStyle, labelFocusedStyle, widgetStyle))
 	}
 
 	// Spacer
@@ -771,6 +806,15 @@ func (m *RecordingSetupModel) renderLogoSelector(selectedIdx int, focused bool) 
 	}
 	if name == "(none)" {
 		return lipgloss.NewStyle().Foreground(ColorGray).Render(name)
+	}
+	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
+}
+
+func (m *RecordingSetupModel) renderColorSelector(focused bool) string {
+	name := m.titleColor
+
+	if focused {
+		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
 	}
 	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
 }

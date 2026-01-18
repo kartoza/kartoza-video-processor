@@ -146,6 +146,7 @@ type MergeOptions struct {
 	ProductLogo2   string // Path to product logo 2 (top-right)
 	CompanyLogo    string // Path to company logo (lower third)
 	VideoTitle     string // Title for lower third overlay
+	TitleColor     string // Color for title text (e.g., "white", "black", "yellow")
 	OutputDir      string // Directory for output files
 }
 
@@ -354,15 +355,34 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 	currentOutput := "[stacked]"
 	logoInputIndex := 3 // Start after video, webcam, audio
 
+	// Determine title color (default to white if not specified)
+	titleColor := "white"
+	if opts != nil && opts.TitleColor != "" {
+		titleColor = opts.TitleColor
+	}
+
 	// Add logo overlays if logos are provided
 	// Using shortest=1 ensures animated GIFs stop when the base video ends
+	// For GIFs, we add a white background using split and overlay to handle transparency
 	if logo1Path != "" {
 		// Product logo 1 in top-left of webcam area
 		logoY := scaledScreenHeight + 10 // Position in webcam area
-		filterComplex += fmt.Sprintf(
-			";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
-			logoInputIndex, currentOutput, logoY,
-		)
+		if isGif(logo1Path) {
+			// For GIFs: create white background, then overlay the GIF on it
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=iw/4:-1[logo1_raw];"+
+					"[logo1_raw]split[logo1_a][logo1_b];"+
+					"[logo1_a]drawbox=c=white:t=fill[logo1_bg];"+
+					"[logo1_bg][logo1_b]overlay=0:0:format=auto[logo1];"+
+					"%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
+				logoInputIndex, currentOutput, logoY,
+			)
+		} else {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
+				logoInputIndex, currentOutput, logoY,
+			)
+		}
 		currentOutput = "[out1]"
 		logoInputIndex++
 	}
@@ -370,10 +390,22 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 	if logo2Path != "" {
 		// Product logo 2 in top-right of webcam area
 		logoY := scaledScreenHeight + 10
-		filterComplex += fmt.Sprintf(
-			";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
-			logoInputIndex, currentOutput, logoY,
-		)
+		if isGif(logo2Path) {
+			// For GIFs: create white background, then overlay the GIF on it
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=iw/4:-1[logo2_raw];"+
+					"[logo2_raw]split[logo2_a][logo2_b];"+
+					"[logo2_a]drawbox=c=white:t=fill[logo2_bg];"+
+					"[logo2_bg][logo2_b]overlay=0:0:format=auto[logo2];"+
+					"%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
+				logoInputIndex, currentOutput, logoY,
+			)
+		} else {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
+				logoInputIndex, currentOutput, logoY,
+			)
+		}
 		currentOutput = "[out2]"
 		logoInputIndex++
 	}
@@ -382,11 +414,24 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		// Company logo as lower third with title overlay
 		// Title text is horizontally centered using (w-text_w)/2
 		lowerThirdY := YouTubeShortsHeight - 100 // Position near bottom
-		filterComplex += fmt.Sprintf(
-			";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
-				"[out3]drawtext=text='%s':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
-			logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), lowerThirdY+30,
-		)
+		if isGif(companyLogoPath) {
+			// For GIFs: create white background, then overlay the GIF on it
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=200:-1[complogo_raw];"+
+					"[complogo_raw]split[complogo_a][complogo_b];"+
+					"[complogo_a]drawbox=c=white:t=fill[complogo_bg];"+
+					"[complogo_bg][complogo_b]overlay=0:0:format=auto[complogo];"+
+					"%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
+					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
+			)
+		} else {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
+					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
+			)
+		}
 	} else {
 		filterComplex += fmt.Sprintf(";%s[outv]", currentOutput)
 	}

@@ -509,3 +509,24 @@ copies of these resources should be written into the project folder during proce
    - Animated GIFs now play throughout the video duration
 
 ---
+
+**Prompt:** it should fill the background of every frame white before compositing. The title text should be drawn in a colour that the user specifies in the video setup form. the colour of the text should default to the one last used. the title also accept html #rrggbb values. If there is no previously used colour, default to #62A4C7
+
+**Summary:** Added white background for GIF frames and user-selectable title color:
+1. GIF logo handling:
+   - For animated GIFs, frames are now composited onto a white background
+   - Uses FFmpeg split filter: split the GIF, fill one with white via drawbox, overlay the other on top
+   - Applied to all three logo positions (left, right, bottom banner)
+2. Title color selection:
+   - Added TitleColor field to LogoSelection struct in config
+   - Added fieldTitleColor to recording setup form navigation
+   - Added color selector widget (cycles through predefined colors with ◀/▶)
+   - Available colors: #62A4C7 (Kartoza blue), white, black, yellow, orange, red, green, blue, cyan, magenta
+   - Default color is #62A4C7 (Kartoza blue) when no previous color saved
+   - Last used color is saved to config and restored on next recording
+   - Color passed through to FFmpeg drawtext filter as fontcolor parameter
+3. FFmpeg filter changes:
+   - Title text now uses user-selected color instead of hardcoded "white"
+   - GIF logos get white background: `split[a][b];[a]drawbox=c=white:t=fill[bg];[bg][b]overlay`
+
+---

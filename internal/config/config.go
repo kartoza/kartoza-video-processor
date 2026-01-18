@@ -34,7 +34,15 @@ type LogoSelection struct {
 	LeftLogo   string `json:"left_logo,omitempty"`   // Top-left logo
 	RightLogo  string `json:"right_logo,omitempty"`  // Top-right logo
 	BottomLogo string `json:"bottom_logo,omitempty"` // Lower third logo
+	TitleColor string `json:"title_color,omitempty"` // Color for title text overlay
 }
+
+// DefaultTitleColor is the default color for title text (Kartoza blue)
+const DefaultTitleColor = "#62A4C7"
+
+// Available title colors for the user to choose from
+// Includes named colors and can accept #RRGGBB hex values
+var TitleColors = []string{"#62A4C7", "white", "black", "yellow", "orange", "red", "green", "blue", "cyan", "magenta"}
 
 // Config holds the application configuration
 type Config struct {
