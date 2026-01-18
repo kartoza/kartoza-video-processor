@@ -1,0 +1,38 @@
+name: kartoza-video-processor
+version: '0.1.0'
+summary: Screen recording tool for Wayland
+description: |
+  A screen recording tool for Wayland compositors (Hyprland, Sway, etc.)
+  with multi-monitor support, audio processing, and webcam integration.
+
+  Features:
+  - Multi-monitor screen recording with cursor detection
+  - Separate audio recording with noise reduction
+  - Webcam recording and vertical video creation
+  - Audio normalization using EBU R128 standards
+  - Hardware and software video encoding
+
+grade: stable
+confinement: classic
+base: core22
+
+architectures:
+  - build-on: amd64
+  - build-on: arm64
+
+parts:
+  kartoza-video-processor:
+    plugin: go
+    source: .
+    build-snaps:
+      - go/1.23/stable
+    build-environment:
+      - CGO_ENABLED: 0
+    override-build: |
+      go build -ldflags "-s -w -X main.version=${SNAPCRAFT_PROJECT_VERSION}" -o ${SNAPCRAFT_PART_INSTALL}/bin/kartoza-video-processor .
+
+apps:
+  kartoza-video-processor:
+    command: bin/kartoza-video-processor
+    environment:
+      HOME: $SNAP_USER_DATA

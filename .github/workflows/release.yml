@@ -1,0 +1,172 @@
+name: Release
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            VERSION="${{ github.event.inputs.tag }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          # Remove v prefix if present
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p release
+
+          LDFLAGS="-s -w -X main.version=${VERSION}"
+
+          echo "Building linux-amd64..."
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-linux-amd64 .
+
+          echo "Building linux-arm64..."
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-linux-arm64 .
+
+          echo "Building darwin-amd64..."
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-darwin-amd64 .
+
+          echo "Building darwin-arm64..."
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-darwin-arm64 .
+
+          echo "Building windows-amd64..."
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-windows-amd64.exe .
+
+      - name: Create tarballs
+        run: |
+          cd release
+
+          tar -czf kartoza-video-processor-linux-amd64.tar.gz kartoza-video-processor-linux-amd64
+          tar -czf kartoza-video-processor-linux-arm64.tar.gz kartoza-video-processor-linux-arm64
+          tar -czf kartoza-video-processor-darwin-amd64.tar.gz kartoza-video-processor-darwin-amd64
+          tar -czf kartoza-video-processor-darwin-arm64.tar.gz kartoza-video-processor-darwin-arm64
+          tar -czf kartoza-video-processor-windows-amd64.tar.gz kartoza-video-processor-windows-amd64.exe
+
+          # Generate checksums
+          sha256sum *.tar.gz > checksums.txt
+
+          # Clean up raw binaries
+          rm -f kartoza-video-processor-linux-* kartoza-video-processor-darwin-* kartoza-video-processor-windows-*
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.tar.gz
+            release/checksums.txt
+
+      - name: Upload artifacts (manual trigger)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.version.outputs.version }}
+          path: release/
+
+  build-packages:
+    name: Build Packages
+    runs-on: ubuntu-latest
+    needs: build-and-release
+    if: github.event_name == 'release'
+    strategy:
+      matrix:
+        package: [deb]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build Debian package
+        if: matrix.package == 'deb'
+        run: |
+          # Install build dependencies
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
+
+          # Build binary
+          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-video-processor .
+
+          # Create package structure
+          mkdir -p dpkg/DEBIAN
+          mkdir -p dpkg/usr/bin
+          mkdir -p dpkg/usr/share/applications
+
+          cp kartoza-video-processor dpkg/usr/bin/
+
+          # Create control file
+          cat > dpkg/DEBIAN/control << EOF
+          Package: kartoza-video-processor
+          Version: ${{ steps.version.outputs.version }}
+          Section: video
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Tim Sutton <tim@kartoza.com>
+          Description: Screen recording tool for Wayland
+           A screen recording tool for Wayland compositors with audio
+           processing, webcam support, and vertical video creation.
+          EOF
+
+          # Create desktop file
+          cat > dpkg/usr/share/applications/kartoza-video-processor.desktop << EOF
+          [Desktop Entry]
+          Name=Kartoza Video Processor
+          Comment=Screen recording tool for Wayland
+          Exec=kartoza-video-processor
+          Icon=video-x-generic
+          Terminal=true
+          Type=Application
+          Categories=AudioVideo;Video;Recorder;
+          EOF
+
+          # Build package
+          dpkg-deb --build dpkg kartoza-video-processor_${{ steps.version.outputs.version }}_amd64.deb
+
+      - name: Upload package
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.deb'

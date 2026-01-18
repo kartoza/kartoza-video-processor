@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export GOPROXY = https://proxy.golang.org,direct
+export GO111MODULE = on
+export CGO_ENABLED = 0
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	go build -ldflags "-s -w -X main.version=$(shell dpkg-parsechangelog -S Version)" -o kartoza-video-processor .
+
+override_dh_auto_install:
+	install -D -m 0755 kartoza-video-processor debian/kartoza-video-processor/usr/bin/kartoza-video-processor
+	install -D -m 0644 resources/kartoza-video-processor.desktop debian/kartoza-video-processor/usr/share/applications/kartoza-video-processor.desktop
+
+override_dh_auto_test:
+	go test -v ./...
+
+override_dh_auto_clean:
+	rm -f kartoza-video-processor
+	go clean

@@ -1,0 +1,21 @@
+# Prompt Log
+
+## 2026-01-18
+
+**Prompt:** using the folder above ../kartoza-timesheets-app, start a new github repo with all the niceties for ci, release creation, nix flakes, makefile, and a nice neat code base. The go app should reimplement the logic in /etc/xdg/hypr/scripts/screen-recorder.sh in neat modular go. Use the same design aesthetic, components etc. as used in the timesheet app
+
+**Summary:** Create a new Go application (kartoza-video-processor) that reimplements the screen-recorder.sh bash script functionality. The application should:
+1. Have CI/CD with GitHub Actions (ci.yml, release.yml)
+2. Use Nix flakes for builds and dev environment
+3. Include a comprehensive Makefile
+4. Follow the same project structure as kartoza-timesheets-app
+5. Use Bubble Tea for TUI
+6. Use Cobra for CLI commands
+7. Implement modular Go code for:
+   - Monitor detection (hyprctl integration)
+   - Screen recording (wl-screenrec)
+   - Audio recording (pw-record)
+   - Webcam recording (ffmpeg/v4l2)
+   - Audio processing (noise reduction, normalization)
+   - Video/audio merging (ffmpeg)
+   - Desktop notifications

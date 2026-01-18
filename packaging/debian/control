@@ -1,0 +1,25 @@
+Source: kartoza-video-processor
+Section: video
+Priority: optional
+Maintainer: Tim Sutton <tim@kartoza.com>
+Build-Depends: debhelper-compat (= 13), golang-go (>= 1.21)
+Standards-Version: 4.6.2
+Homepage: https://github.com/kartoza/kartoza-video-processor
+Vcs-Browser: https://github.com/kartoza/kartoza-video-processor
+Vcs-Git: https://github.com/kartoza/kartoza-video-processor.git
+Rules-Requires-Root: no
+
+Package: kartoza-video-processor
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, wl-screenrec, ffmpeg, pipewire, libnotify-bin
+Recommends: hyprland | sway
+Description: Screen recording tool for Wayland
+ A screen recording tool for Wayland compositors (Hyprland, Sway, etc.)
+ with multi-monitor support, audio processing, and webcam integration.
+ .
+ Features:
+  - Multi-monitor screen recording with cursor detection
+  - Separate audio recording with noise reduction
+  - Webcam recording and vertical video creation
+  - Audio normalization using EBU R128 standards
+  - Hardware and software video encoding

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Kartoza Video Processor
+Comment=Screen recording tool for Wayland
+GenericName=Screen Recorder
+Exec=kartoza-video-processor
+Icon=video-x-generic
+Terminal=true
+Type=Application
+Categories=AudioVideo;Video;Recorder;
+Keywords=screen;recording;video;wayland;hyprland;capture;
+StartupNotify=false
