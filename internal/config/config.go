@@ -29,12 +29,32 @@ const (
 	StopSignalFile = "/tmp/kartoza-video.stop"
 )
 
+// GifLoopMode controls how animated GIFs are played
+type GifLoopMode string
+
+const (
+	GifLoopContinuous GifLoopMode = "continuous" // Loop forever
+	GifLoopOnce       GifLoopMode = "once"       // Play once and stop at last frame
+	GifLoopNone       GifLoopMode = "none"       // Show only first frame (static)
+)
+
+// GifLoopModes is the list of available GIF loop modes
+var GifLoopModes = []GifLoopMode{GifLoopContinuous, GifLoopOnce, GifLoopNone}
+
+// GifLoopModeLabels provides human-readable labels for GIF loop modes
+var GifLoopModeLabels = map[GifLoopMode]string{
+	GifLoopContinuous: "Loop continuously",
+	GifLoopOnce:       "Play once, stop at end",
+	GifLoopNone:       "First frame only",
+}
+
 // LogoSelection holds the selected logos for a recording
 type LogoSelection struct {
-	LeftLogo   string `json:"left_logo,omitempty"`   // Top-left logo
-	RightLogo  string `json:"right_logo,omitempty"`  // Top-right logo
-	BottomLogo string `json:"bottom_logo,omitempty"` // Lower third logo
-	TitleColor string `json:"title_color,omitempty"` // Color for title text overlay
+	LeftLogo    string      `json:"left_logo,omitempty"`    // Top-left logo
+	RightLogo   string      `json:"right_logo,omitempty"`   // Top-right logo
+	BottomLogo  string      `json:"bottom_logo,omitempty"`  // Lower third logo
+	TitleColor  string      `json:"title_color,omitempty"`  // Color for title text overlay
+	GifLoopMode GifLoopMode `json:"gif_loop_mode,omitempty"` // How to loop animated GIFs
 }
 
 // DefaultTitleColor is the default color for title text (Kartoza blue)

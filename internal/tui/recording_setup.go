@@ -32,6 +32,7 @@ const (
 	fieldRightLogo
 	fieldBottomLogo
 	fieldTitleColor
+	fieldGifLoopMode
 	fieldDescription
 	fieldConfirm
 	fieldCount
@@ -66,12 +67,14 @@ type RecordingSetupModel struct {
 	availableLogos    []string // List of logo files in the directory
 	leftLogo          string   // Selected left logo path
 	rightLogo         string   // Selected right logo path
-	bottomLogo        string   // Selected bottom logo path
-	selectedLeftIdx   int      // Index in availableLogos for left
-	selectedRightIdx  int      // Index in availableLogos for right
-	selectedBottomIdx int      // Index in availableLogos for bottom
-	titleColor        string   // Selected title text color
-	selectedColorIdx  int      // Index in TitleColors
+	bottomLogo          string            // Selected bottom logo path
+	selectedLeftIdx     int               // Index in availableLogos for left
+	selectedRightIdx    int               // Index in availableLogos for right
+	selectedBottomIdx   int               // Index in availableLogos for bottom
+	titleColor          string            // Selected title text color
+	selectedColorIdx    int               // Index in TitleColors
+	gifLoopMode         config.GifLoopMode // How to loop animated GIFs
+	selectedGifLoopIdx  int               // Index in GifLoopModes
 
 	// Screen selection
 	monitors        []models.Monitor
@@ -132,28 +135,44 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 		}
 	}
 
+	// Determine GIF loop mode - use last used or default to continuous
+	gifLoopMode := cfg.LastUsedLogos.GifLoopMode
+	if gifLoopMode == "" {
+		gifLoopMode = config.GifLoopContinuous
+	}
+	// Find index of GIF loop mode
+	gifLoopIdx := 0
+	for i, mode := range config.GifLoopModes {
+		if mode == gifLoopMode {
+			gifLoopIdx = i
+			break
+		}
+	}
+
 	m := &RecordingSetupModel{
-		config:           cfg,
-		focusedField:     fieldTitle,
-		titleInput:       titleInput,
-		numberInput:      numberInput,
-		descInput:        descInput,
-		recordAudio:      true,
-		recordWebcam:     true,
-		recordScreen:     true,
-		verticalVideo:    true,
-		addLogos:         true,
-		monitors:         monitors,
-		selectedMonitor:  0,
-		topics:           topics,
-		selectedTopic:    0,
-		confirmSelected:  true, // Default to "Go Live"
-		logoDirectory:    cfg.LogoDirectory,
-		leftLogo:         cfg.LastUsedLogos.LeftLogo,
-		rightLogo:        cfg.LastUsedLogos.RightLogo,
-		bottomLogo:       cfg.LastUsedLogos.BottomLogo,
-		titleColor:       titleColor,
-		selectedColorIdx: colorIdx,
+		config:             cfg,
+		focusedField:       fieldTitle,
+		titleInput:         titleInput,
+		numberInput:        numberInput,
+		descInput:          descInput,
+		recordAudio:        true,
+		recordWebcam:       true,
+		recordScreen:       true,
+		verticalVideo:      true,
+		addLogos:           true,
+		monitors:           monitors,
+		selectedMonitor:    0,
+		topics:             topics,
+		selectedTopic:      0,
+		confirmSelected:    true, // Default to "Go Live"
+		logoDirectory:      cfg.LogoDirectory,
+		leftLogo:           cfg.LastUsedLogos.LeftLogo,
+		rightLogo:          cfg.LastUsedLogos.RightLogo,
+		bottomLogo:         cfg.LastUsedLogos.BottomLogo,
+		titleColor:         titleColor,
+		selectedColorIdx:   colorIdx,
+		gifLoopMode:        gifLoopMode,
+		selectedGifLoopIdx: gifLoopIdx,
 	}
 
 	// Load available logos from directory
@@ -346,6 +365,15 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 	return m, cmd
 }
 
+// isBottomLogoGif returns true if the bottom logo is a GIF file
+func (m *RecordingSetupModel) isBottomLogoGif() bool {
+	if m.bottomLogo == "" {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(m.bottomLogo))
+	return ext == ".gif"
+}
+
 func (m *RecordingSetupModel) nextField() {
 	m.blurAll()
 	m.focusedField++
@@ -357,6 +385,10 @@ func (m *RecordingSetupModel) nextField() {
 			skip = true
 		}
 		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo || m.focusedField == fieldTitleColor) && !m.addLogos {
+			skip = true
+		}
+		// Skip GIF loop mode if logos not enabled or bottom logo is not a GIF
+		if m.focusedField == fieldGifLoopMode && (!m.addLogos || !m.isBottomLogoGif()) {
 			skip = true
 		}
 		if !skip {
@@ -386,6 +418,10 @@ func (m *RecordingSetupModel) prevField() {
 			skip = true
 		}
 		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo || m.focusedField == fieldTitleColor) && !m.addLogos {
+			skip = true
+		}
+		// Skip GIF loop mode if logos not enabled or bottom logo is not a GIF
+		if m.focusedField == fieldGifLoopMode && (!m.addLogos || !m.isBottomLogoGif()) {
 			skip = true
 		}
 		if !skip {
@@ -458,6 +494,12 @@ func (m *RecordingSetupModel) handleLeft() {
 			m.selectedColorIdx = len(config.TitleColors) - 1
 		}
 		m.titleColor = config.TitleColors[m.selectedColorIdx]
+	case fieldGifLoopMode:
+		m.selectedGifLoopIdx--
+		if m.selectedGifLoopIdx < 0 {
+			m.selectedGifLoopIdx = len(config.GifLoopModes) - 1
+		}
+		m.gifLoopMode = config.GifLoopModes[m.selectedGifLoopIdx]
 	case fieldRecordAudio, fieldRecordWebcam, fieldRecordScreen, fieldVerticalVideo, fieldAddLogos:
 		m.handleToggle()
 	case fieldConfirm:
@@ -501,6 +543,12 @@ func (m *RecordingSetupModel) handleRight() {
 			m.selectedColorIdx = 0
 		}
 		m.titleColor = config.TitleColors[m.selectedColorIdx]
+	case fieldGifLoopMode:
+		m.selectedGifLoopIdx++
+		if m.selectedGifLoopIdx >= len(config.GifLoopModes) {
+			m.selectedGifLoopIdx = 0
+		}
+		m.gifLoopMode = config.GifLoopModes[m.selectedGifLoopIdx]
 	case fieldRecordAudio, fieldRecordWebcam, fieldRecordScreen, fieldVerticalVideo, fieldAddLogos:
 		m.handleToggle()
 	case fieldConfirm:
@@ -603,10 +651,11 @@ func (m *RecordingSetupModel) GetLogoSelection() config.LogoSelection {
 		return config.LogoSelection{}
 	}
 	return config.LogoSelection{
-		LeftLogo:   m.leftLogo,
-		RightLogo:  m.rightLogo,
-		BottomLogo: m.bottomLogo,
-		TitleColor: m.titleColor,
+		LeftLogo:    m.leftLogo,
+		RightLogo:   m.rightLogo,
+		BottomLogo:  m.bottomLogo,
+		TitleColor:  m.titleColor,
+		GifLoopMode: m.gifLoopMode,
 	}
 }
 
@@ -702,6 +751,12 @@ func (m *RecordingSetupModel) View() string {
 
 		titleColorValue := m.renderColorSelector(m.focusedField == fieldTitleColor)
 		rows = append(rows, m.renderRow(fieldTitleColor, "Title Color", titleColorValue, labelStyle, labelFocusedStyle, widgetStyle))
+
+		// Only show GIF loop mode if bottom logo is a GIF
+		if m.isBottomLogoGif() {
+			gifLoopValue := m.renderGifLoopSelector(m.focusedField == fieldGifLoopMode)
+			rows = append(rows, m.renderRow(fieldGifLoopMode, "GIF Animation", gifLoopValue, labelStyle, labelFocusedStyle, widgetStyle))
+		}
 	}
 
 	// Spacer
@@ -817,6 +872,18 @@ func (m *RecordingSetupModel) renderColorSelector(focused bool) string {
 		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
 	}
 	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
+}
+
+func (m *RecordingSetupModel) renderGifLoopSelector(focused bool) string {
+	label := config.GifLoopModeLabels[m.gifLoopMode]
+	if label == "" {
+		label = string(m.gifLoopMode)
+	}
+
+	if focused {
+		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(label))
+	}
+	return lipgloss.NewStyle().Foreground(ColorWhite).Render(label)
 }
 
 func (m *RecordingSetupModel) renderConfirmRow(labelWidth, widgetWidth int) string {

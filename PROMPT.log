@@ -530,3 +530,23 @@ copies of these resources should be written into the project folder during proce
    - GIF logos get white background: `split[a][b];[a]drawbox=c=white:t=fill[bg];[bg][b]overlay`
 
 ---
+
+**Prompt:** Add a toggle to let the user choose whether the gif should loop continuously or loop once and stop at the last frame or not loop at all and only show the first frame. remember the preset choice the next time the user makes a video. This should only show if they user has set the banner to a gif file
+
+**Summary:** Added GIF animation loop mode selector:
+1. Added GifLoopMode type with three options:
+   - GifLoopContinuous: "Loop continuously" (default)
+   - GifLoopOnce: "Play once, stop at end"
+   - GifLoopNone: "First frame only"
+2. Added GifLoopMode to LogoSelection struct in config
+3. Added fieldGifLoopMode to recording setup form
+4. GIF Animation field only appears when:
+   - Add Logos is enabled AND
+   - Bottom Banner is set to a .gif file
+5. Uses FFmpeg -ignore_loop option:
+   - Continuous: -ignore_loop 0 (loop forever)
+   - Once: -ignore_loop 1 (play once)
+   - None: no option (static first frame)
+6. Selection is saved to config and restored on next recording
+
+---

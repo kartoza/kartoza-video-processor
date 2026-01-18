@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/kartoza/kartoza-video-processor/internal/audio"
+	"github.com/kartoza/kartoza-video-processor/internal/config"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 	"github.com/kartoza/kartoza-video-processor/internal/notify"
 	"github.com/kartoza/kartoza-video-processor/internal/webcam"
@@ -141,13 +142,14 @@ type MergeOptions struct {
 	AudioFile      string
 	WebcamFile     string
 	CreateVertical bool
-	AddLogos       bool   // Whether to add logo overlays
-	ProductLogo1   string // Path to product logo 1 (top-left)
-	ProductLogo2   string // Path to product logo 2 (top-right)
-	CompanyLogo    string // Path to company logo (lower third)
-	VideoTitle     string // Title for lower third overlay
-	TitleColor     string // Color for title text (e.g., "white", "black", "yellow")
-	OutputDir      string // Directory for output files
+	AddLogos       bool               // Whether to add logo overlays
+	ProductLogo1   string             // Path to product logo 1 (top-left)
+	ProductLogo2   string             // Path to product logo 2 (top-right)
+	CompanyLogo    string             // Path to company logo (lower third)
+	VideoTitle     string             // Title for lower third overlay
+	TitleColor     string             // Color for title text (e.g., "white", "black", "yellow")
+	GifLoopMode    config.GifLoopMode // How to loop animated GIFs
+	OutputDir      string             // Directory for output files
 }
 
 // MergeResult contains the paths to merged files and processing info
@@ -308,23 +310,27 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 
 	// Copy logos to output directory if needed
 	var logo1Path, logo2Path, companyLogoPath string
+	gifLoopMode := opts.GifLoopMode
+	if gifLoopMode == "" {
+		gifLoopMode = config.GifLoopContinuous // Default to continuous
+	}
 	if opts != nil && opts.AddLogos && opts.OutputDir != "" {
 		if opts.ProductLogo1 != "" {
 			logo1Path = m.copyLogoToOutputDir(opts.ProductLogo1, opts.OutputDir, "product_logo_1")
 			if logo1Path != "" {
-				inputs = appendLogoInput(inputs, logo1Path)
+				inputs = appendLogoInput(inputs, logo1Path, gifLoopMode)
 			}
 		}
 		if opts.ProductLogo2 != "" {
 			logo2Path = m.copyLogoToOutputDir(opts.ProductLogo2, opts.OutputDir, "product_logo_2")
 			if logo2Path != "" {
-				inputs = appendLogoInput(inputs, logo2Path)
+				inputs = appendLogoInput(inputs, logo2Path, gifLoopMode)
 			}
 		}
 		if opts.CompanyLogo != "" {
 			companyLogoPath = m.copyLogoToOutputDir(opts.CompanyLogo, opts.OutputDir, "company_logo")
 			if companyLogoPath != "" {
-				inputs = appendLogoInput(inputs, companyLogoPath)
+				inputs = appendLogoInput(inputs, companyLogoPath, gifLoopMode)
 			}
 		}
 	}
@@ -510,11 +516,24 @@ func isGif(path string) bool {
 }
 
 // appendLogoInput adds a logo input to the FFmpeg args
-// For GIFs, it adds -ignore_loop 0 to make them loop forever
-func appendLogoInput(inputs []string, logoPath string) []string {
+// For GIFs, loop behavior depends on the gifLoopMode parameter
+func appendLogoInput(inputs []string, logoPath string, gifLoopMode config.GifLoopMode) []string {
 	if isGif(logoPath) {
-		// For animated GIFs: -ignore_loop 0 makes the GIF loop forever
-		return append(inputs, "-ignore_loop", "0", "-i", logoPath)
+		switch gifLoopMode {
+		case config.GifLoopContinuous:
+			// -ignore_loop 0 makes the GIF loop forever
+			return append(inputs, "-ignore_loop", "0", "-i", logoPath)
+		case config.GifLoopOnce:
+			// -ignore_loop 1 plays the GIF once (uses the loop count from the GIF, or plays once if none)
+			return append(inputs, "-ignore_loop", "1", "-i", logoPath)
+		case config.GifLoopNone:
+			// No special options - FFmpeg will just use the first frame by default
+			// We'll handle this in the filter by not animating
+			return append(inputs, "-i", logoPath)
+		default:
+			// Default to continuous loop
+			return append(inputs, "-ignore_loop", "0", "-i", logoPath)
+		}
 	}
 	return append(inputs, "-i", logoPath)
 }
