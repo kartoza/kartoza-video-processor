@@ -344,3 +344,18 @@ copies of these resources should be written into the project folder during proce
 8. During processing, logos are copied to the recording folder
 9. FFmpeg filter complex overlays logos onto the vertical video
 10. Logo options are saved to and loaded from config.json
+
+---
+
+**Prompt:** the file picker should adhere to our user interface conventions with title area up top, navigation down below etc. There should also be a way for a user to traverse the directory system and also to paste a uri
+
+**Summary:** Replaced bubbles filepicker with custom file browser:
+1. Uses RenderHeader for standard page title at top
+2. Uses RenderHelpFooter for navigation hints at bottom
+3. Uses LayoutWithHeaderFooter for proper screen layout
+4. Path input field allows pasting full paths (tab or / to focus)
+5. Directory navigation with ↑/↓/j/k keys
+6. Enter into directories, backspace to parent, ~ for home
+7. Shows folders in blue with 📁 icon, files in white
+8. Filters to only show .png, .jpg, .jpeg, .svg files
+9. Scrolling support for long directory listings

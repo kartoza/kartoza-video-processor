@@ -3,9 +3,9 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -13,9 +13,11 @@ import (
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 )
 
-// filePickerResultMsg is sent when a file is selected from the filepicker
-type filePickerResultMsg struct {
-	path string
+// fileEntry represents a file or directory in the browser
+type fileEntry struct {
+	name  string
+	path  string
+	isDir bool
 }
 
 // OptionsField represents which field is focused in options
@@ -42,6 +44,14 @@ const (
 	LogoCompany
 )
 
+// FileBrowserField represents which part of the file browser is focused
+type FileBrowserField int
+
+const (
+	FileBrowserFieldList FileBrowserField = iota
+	FileBrowserFieldPathInput
+)
+
 // OptionsModel handles the options screen
 type OptionsModel struct {
 	width  int
@@ -61,15 +71,20 @@ type OptionsModel struct {
 	newTopicInput  textinput.Model
 	presenterInput textinput.Model
 
-	// Logo paths (displayed as text, selected via filepicker)
+	// Logo paths (displayed as text, selected via file browser)
 	productLogo1Path string
 	productLogo2Path string
 	companyLogoPath  string
 
-	// Filepicker for logo selection
-	filepicker       filepicker.Model
-	showFilepicker   bool
-	selectingLogoFor LogoType
+	// Custom file browser
+	showFileBrowser   bool
+	selectingLogoFor  LogoType
+	browserCurrentDir string
+	browserEntries    []fileEntry
+	browserSelected   int
+	browserScrollTop  int
+	browserPathInput  textinput.Model
+	browserField      FileBrowserField
 
 	// State
 	message string
@@ -101,30 +116,106 @@ func NewOptionsModel() *OptionsModel {
 		presenterInput.SetValue(cfg.DefaultPresenter)
 	}
 
-	// Initialize filepicker for image files
-	fp := filepicker.New()
-	fp.AllowedTypes = []string{".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"}
-	fp.ShowHidden = false
-	fp.ShowPermissions = false
-	fp.ShowSize = true
+	// Path input for file browser
+	pathInput := textinput.New()
+	pathInput.Placeholder = "Enter or paste path..."
+	pathInput.CharLimit = 500
+	pathInput.Width = 50
+
 	// Start in home directory
 	home, _ := os.UserHomeDir()
-	fp.CurrentDirectory = home
 
 	return &OptionsModel{
-		config:           cfg,
-		topics:           topics,
-		selectedTopic:    0,
-		focusedField:     OptionsFieldTopicList,
-		newTopicInput:    newTopicInput,
-		presenterInput:   presenterInput,
-		productLogo1Path: cfg.ProductLogo1Path,
-		productLogo2Path: cfg.ProductLogo2Path,
-		companyLogoPath:  cfg.CompanyLogoPath,
-		filepicker:       fp,
-		showFilepicker:   false,
-		selectingLogoFor: LogoNone,
+		config:            cfg,
+		topics:            topics,
+		selectedTopic:     0,
+		focusedField:      OptionsFieldTopicList,
+		newTopicInput:     newTopicInput,
+		presenterInput:    presenterInput,
+		productLogo1Path:  cfg.ProductLogo1Path,
+		productLogo2Path:  cfg.ProductLogo2Path,
+		companyLogoPath:   cfg.CompanyLogoPath,
+		showFileBrowser:   false,
+		selectingLogoFor:  LogoNone,
+		browserCurrentDir: home,
+		browserPathInput:  pathInput,
+		browserField:      FileBrowserFieldList,
 	}
+}
+
+// loadBrowserEntries loads the directory contents for the file browser
+func (m *OptionsModel) loadBrowserEntries() {
+	m.browserEntries = nil
+	m.browserSelected = 0
+	m.browserScrollTop = 0
+
+	entries, err := os.ReadDir(m.browserCurrentDir)
+	if err != nil {
+		return
+	}
+
+	// Add parent directory entry if not at root
+	if m.browserCurrentDir != "/" {
+		m.browserEntries = append(m.browserEntries, fileEntry{
+			name:  "..",
+			path:  filepath.Dir(m.browserCurrentDir),
+			isDir: true,
+		})
+	}
+
+	// Separate dirs and files
+	var dirs, files []fileEntry
+	for _, entry := range entries {
+		// Skip hidden files
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		fullPath := filepath.Join(m.browserCurrentDir, entry.Name())
+		fe := fileEntry{
+			name:  entry.Name(),
+			path:  fullPath,
+			isDir: entry.IsDir(),
+		}
+
+		if entry.IsDir() {
+			dirs = append(dirs, fe)
+		} else {
+			// Only show image files
+			ext := strings.ToLower(filepath.Ext(entry.Name()))
+			if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".svg" {
+				files = append(files, fe)
+			}
+		}
+	}
+
+	// Sort alphabetically
+	sort.Slice(dirs, func(i, j int) bool {
+		return strings.ToLower(dirs[i].name) < strings.ToLower(dirs[j].name)
+	})
+	sort.Slice(files, func(i, j int) bool {
+		return strings.ToLower(files[i].name) < strings.ToLower(files[j].name)
+	})
+
+	// Dirs first, then files
+	m.browserEntries = append(m.browserEntries, dirs...)
+	m.browserEntries = append(m.browserEntries, files...)
+}
+
+// openFileBrowser opens the file browser for selecting a logo
+func (m *OptionsModel) openFileBrowser(logoType LogoType) {
+	m.showFileBrowser = true
+	m.selectingLogoFor = logoType
+	m.browserField = FileBrowserFieldList
+	m.browserPathInput.SetValue(m.browserCurrentDir)
+	m.browserPathInput.Blur()
+	m.loadBrowserEntries()
+}
+
+// closeFileBrowser closes the file browser
+func (m *OptionsModel) closeFileBrowser() {
+	m.showFileBrowser = false
+	m.selectingLogoFor = LogoNone
 }
 
 // Init initializes the model
@@ -136,52 +227,15 @@ func (m *OptionsModel) Init() tea.Cmd {
 func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	// Handle filepicker if active
-	if m.showFilepicker {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			if msg.String() == "esc" {
-				m.showFilepicker = false
-				m.selectingLogoFor = LogoNone
-				return m, nil
-			}
-		}
-
-		var cmd tea.Cmd
-		m.filepicker, cmd = m.filepicker.Update(msg)
-
-		// Check if a file was selected
-		if didSelect, path := m.filepicker.DidSelectFile(msg); didSelect {
-			// Store the selected path based on which logo we're selecting
-			switch m.selectingLogoFor {
-			case LogoProduct1:
-				m.productLogo1Path = path
-			case LogoProduct2:
-				m.productLogo2Path = path
-			case LogoCompany:
-				m.companyLogoPath = path
-			}
-			m.showFilepicker = false
-			m.selectingLogoFor = LogoNone
-			m.message = "Logo selected: " + filepath.Base(path)
-			return m, nil
-		}
-
-		// Check if a file was disabled (invalid type)
-		if didSelect, path := m.filepicker.DidSelectDisabledFile(msg); didSelect {
-			m.message = "Invalid file type: " + filepath.Base(path)
-			return m, cmd
-		}
-
-		return m, cmd
+	// Handle file browser if active
+	if m.showFileBrowser {
+		return m.updateFileBrowser(msg)
 	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Update filepicker size
-		m.filepicker.Height = m.height - 10
 
 	case tea.KeyMsg:
 		// Clear messages on any key
@@ -224,17 +278,14 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 				m.removeTopic()
 				return m, nil
 			case OptionsFieldProductLogo1:
-				m.showFilepicker = true
-				m.selectingLogoFor = LogoProduct1
-				return m, m.filepicker.Init()
+				m.openFileBrowser(LogoProduct1)
+				return m, nil
 			case OptionsFieldProductLogo2:
-				m.showFilepicker = true
-				m.selectingLogoFor = LogoProduct2
-				return m, m.filepicker.Init()
+				m.openFileBrowser(LogoProduct2)
+				return m, nil
 			case OptionsFieldCompanyLogo:
-				m.showFilepicker = true
-				m.selectingLogoFor = LogoCompany
-				return m, m.filepicker.Init()
+				m.openFileBrowser(LogoCompany)
+				return m, nil
 			case OptionsFieldSave:
 				m.save()
 				return m, nil
@@ -383,9 +434,9 @@ func (m *OptionsModel) save() {
 
 // View renders the options screen
 func (m *OptionsModel) View() string {
-	// If filepicker is shown, render it instead
-	if m.showFilepicker {
-		return m.renderFilepicker()
+	// If file browser is shown, render it instead
+	if m.showFileBrowser {
+		return m.renderFileBrowser()
 	}
 
 	// Styles
@@ -560,42 +611,224 @@ func (m *OptionsModel) View() string {
 	)
 }
 
-// renderFilepicker renders the file picker overlay
-func (m *OptionsModel) renderFilepicker() string {
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorOrange).
-		MarginBottom(1)
+// updateFileBrowser handles messages when the file browser is active
+func (m *OptionsModel) updateFileBrowser(msg tea.Msg) (*OptionsModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
 
-	hintStyle := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Italic(true)
+	case tea.KeyMsg:
+		// Handle path input mode
+		if m.browserField == FileBrowserFieldPathInput {
+			switch msg.String() {
+			case "esc":
+				m.browserField = FileBrowserFieldList
+				m.browserPathInput.Blur()
+				return m, nil
+			case "enter":
+				// Try to navigate to the entered path
+				path := m.browserPathInput.Value()
+				if info, err := os.Stat(path); err == nil {
+					if info.IsDir() {
+						m.browserCurrentDir = path
+						m.loadBrowserEntries()
+					} else {
+						// It's a file - select it if valid
+						ext := strings.ToLower(filepath.Ext(path))
+						if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".svg" {
+							m.selectFile(path)
+							return m, nil
+						}
+					}
+				}
+				m.browserField = FileBrowserFieldList
+				m.browserPathInput.Blur()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.browserPathInput, cmd = m.browserPathInput.Update(msg)
+				return m, cmd
+			}
+		}
 
-	var title string
+		// Handle file list mode
+		switch msg.String() {
+		case "esc", "q":
+			m.closeFileBrowser()
+			return m, nil
+
+		case "up", "k":
+			if m.browserSelected > 0 {
+				m.browserSelected--
+				// Scroll up if needed
+				if m.browserSelected < m.browserScrollTop {
+					m.browserScrollTop = m.browserSelected
+				}
+			}
+			return m, nil
+
+		case "down", "j":
+			if m.browserSelected < len(m.browserEntries)-1 {
+				m.browserSelected++
+				// Scroll down if needed
+				visibleHeight := m.height - 12 // Account for header, footer, path input
+				if m.browserSelected >= m.browserScrollTop+visibleHeight {
+					m.browserScrollTop = m.browserSelected - visibleHeight + 1
+				}
+			}
+			return m, nil
+
+		case "enter", " ":
+			if len(m.browserEntries) > 0 && m.browserSelected < len(m.browserEntries) {
+				entry := m.browserEntries[m.browserSelected]
+				if entry.isDir {
+					// Navigate into directory
+					m.browserCurrentDir = entry.path
+					m.browserPathInput.SetValue(entry.path)
+					m.loadBrowserEntries()
+				} else {
+					// Select the file
+					m.selectFile(entry.path)
+				}
+			}
+			return m, nil
+
+		case "backspace":
+			// Go to parent directory
+			if m.browserCurrentDir != "/" {
+				m.browserCurrentDir = filepath.Dir(m.browserCurrentDir)
+				m.browserPathInput.SetValue(m.browserCurrentDir)
+				m.loadBrowserEntries()
+			}
+			return m, nil
+
+		case "tab", "/":
+			// Switch to path input
+			m.browserField = FileBrowserFieldPathInput
+			m.browserPathInput.Focus()
+			return m, textinput.Blink
+
+		case "~":
+			// Go to home directory
+			if home, err := os.UserHomeDir(); err == nil {
+				m.browserCurrentDir = home
+				m.browserPathInput.SetValue(home)
+				m.loadBrowserEntries()
+			}
+			return m, nil
+		}
+	}
+
+	return m, nil
+}
+
+// selectFile selects a file and closes the browser
+func (m *OptionsModel) selectFile(path string) {
 	switch m.selectingLogoFor {
 	case LogoProduct1:
-		title = "Select Product Logo 1 (top-left)"
+		m.productLogo1Path = path
 	case LogoProduct2:
-		title = "Select Product Logo 2 (top-right)"
+		m.productLogo2Path = path
 	case LogoCompany:
-		title = "Select Company Logo (lower third)"
+		m.companyLogoPath = path
+	}
+	m.message = "Logo selected: " + filepath.Base(path)
+	m.closeFileBrowser()
+}
+
+// renderFileBrowser renders the custom file browser
+func (m *OptionsModel) renderFileBrowser() string {
+	// Page title
+	var pageTitle string
+	switch m.selectingLogoFor {
+	case LogoProduct1:
+		pageTitle = "Select Product Logo 1"
+	case LogoProduct2:
+		pageTitle = "Select Product Logo 2"
+	case LogoCompany:
+		pageTitle = "Select Company Logo"
 	default:
-		title = "Select Logo"
+		pageTitle = "Select Logo"
 	}
 
+	header := RenderHeader(pageTitle)
+
+	// Styles
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Width(10).
+		Align(lipgloss.Right)
+
+	labelActiveStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true).
+		Width(10).
+		Align(lipgloss.Right)
+
+	dirStyle := lipgloss.NewStyle().
+		Foreground(ColorBlue)
+
+	fileStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite)
+
+	selectedStyle := lipgloss.NewStyle().
+		Background(ColorOrange).
+		Foreground(lipgloss.Color("#000000"))
+
+	// Path input row
+	pathLabel := labelStyle.Render("Path: ")
+	if m.browserField == FileBrowserFieldPathInput {
+		pathLabel = labelActiveStyle.Render("Path: ")
+	}
+	pathRow := lipgloss.JoinHorizontal(lipgloss.Center, pathLabel, m.browserPathInput.View())
+
+	// Current directory display
+	dirLabel := labelStyle.Render("In: ")
+	dirRow := lipgloss.JoinHorizontal(lipgloss.Center, dirLabel, lipgloss.NewStyle().Foreground(ColorGray).Render(m.browserCurrentDir))
+
+	// File list
+	visibleHeight := m.height - 14 // Account for header, footer, path input, etc
+	if visibleHeight < 5 {
+		visibleHeight = 5
+	}
+
+	var fileLines []string
+	for i := m.browserScrollTop; i < len(m.browserEntries) && i < m.browserScrollTop+visibleHeight; i++ {
+		entry := m.browserEntries[i]
+		var line string
+		if entry.isDir {
+			line = dirStyle.Render("📁 " + entry.name)
+		} else {
+			line = fileStyle.Render("   " + entry.name)
+		}
+
+		if i == m.browserSelected && m.browserField == FileBrowserFieldList {
+			line = selectedStyle.Render("▶ " + entry.name)
+			if entry.isDir {
+				line = selectedStyle.Render("▶ 📁 " + entry.name)
+			}
+		}
+		fileLines = append(fileLines, line)
+	}
+
+	fileList := lipgloss.JoinVertical(lipgloss.Left, fileLines...)
+	if len(m.browserEntries) == 0 {
+		fileList = lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("(no image files in this directory)")
+	}
+
+	// Content
 	content := lipgloss.JoinVertical(lipgloss.Left,
+		pathRow,
+		dirRow,
 		"",
-		titleStyle.Render(title),
-		"",
-		m.filepicker.View(),
-		"",
-		hintStyle.Render("↑/↓ navigate • enter select • esc cancel"),
-		hintStyle.Render("Allowed types: .png, .jpg, .jpeg"),
+		fileList,
 	)
 
-	// Center on screen
-	if m.width > 0 && m.height > 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
-	}
-	return content
+	// Help footer
+	helpText := "↑/k ↓/j: navigate • enter: select • backspace: parent • tab: edit path • ~: home • esc: cancel"
+	footer := RenderHelpFooter(helpText, m.width)
+
+	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
 }
