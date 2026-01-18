@@ -162,7 +162,7 @@ func (m *RecordingSetupModel) loadAvailableLogos() {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".svg" {
+		if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" {
 			logos = append(logos, entry.Name())
 		}
 	}

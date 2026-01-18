@@ -490,3 +490,9 @@ copies of these resources should be written into the project folder during proce
 - To: "Logos: 216x216px @ 72dpi • Banner: 1080x200px @ 72dpi"
 
 ---
+
+**Prompt:** remove the ability to use svgs it should only allow png/jpg/gif
+
+**Summary:** Changed logo file filter from .png/.jpg/.jpeg/.svg to .png/.jpg/.jpeg/.gif
+
+---
