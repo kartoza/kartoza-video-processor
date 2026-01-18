@@ -392,140 +392,140 @@ func (m *OptionsModel) View() string {
 	sectionStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(ColorBlue).
-		MarginBottom(1)
+		MarginTop(1)
 
 	labelStyle := lipgloss.NewStyle().
-		Foreground(ColorGray)
+		Foreground(ColorGray).
+		Width(18).
+		Align(lipgloss.Right)
 
-	activeStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorOrange).
-		Padding(0, 1)
+	labelActiveStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true).
+		Width(18).
+		Align(lipgloss.Right)
 
-	inactiveStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorGray).
-		Padding(0, 1)
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite)
+
+	valueActiveStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange)
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
 
 	buttonStyle := lipgloss.NewStyle().
 		Padding(0, 2).
 		Bold(true)
 
-	activeButtonStyle := buttonStyle.Copy().
+	activeButtonStyle := buttonStyle.
 		Background(ColorOrange).
 		Foreground(lipgloss.Color("#000000"))
 
-	inactiveButtonStyle := buttonStyle.Copy().
+	inactiveButtonStyle := buttonStyle.
 		Background(ColorGray).
 		Foreground(ColorWhite)
 
 	// Topic Management Section
-	topicSection := sectionStyle.Render("Topic Management")
+	topicSection := sectionStyle.Render("Topics")
 
-	// Topic list
-	var topicList []string
+	// Topic list - simple inline display
+	var topicItems []string
 	for i, topic := range m.topics {
-		style := lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 1)
+		style := lipgloss.NewStyle().Foreground(ColorGray)
 		if i == m.selectedTopic {
 			if m.focusedField == OptionsFieldTopicList {
-				style = lipgloss.NewStyle().
-					Background(ColorOrange).
-					Foreground(lipgloss.Color("#000000")).
-					Padding(0, 1)
+				style = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000000"))
 			} else {
-				style = lipgloss.NewStyle().
-					Background(ColorGray).
-					Foreground(ColorWhite).
-					Padding(0, 1)
+				style = lipgloss.NewStyle().Foreground(ColorWhite)
 			}
 		}
-		topicList = append(topicList, style.Render(topic.Name))
+		topicItems = append(topicItems, style.Render(" "+topic.Name+" "))
 	}
+	topicListStr := lipgloss.JoinHorizontal(lipgloss.Center, topicItems...)
 
-	topicListStr := lipgloss.JoinVertical(lipgloss.Left, topicList...)
-	topicListBox := inactiveStyle.Render(topicListStr)
+	topicLabel := labelStyle.Render("Topics: ")
 	if m.focusedField == OptionsFieldTopicList {
-		topicListBox = activeStyle.Render(topicListStr)
+		topicLabel = labelActiveStyle.Render("Topics: ")
 	}
+	topicRow := lipgloss.JoinHorizontal(lipgloss.Center, topicLabel, topicListStr)
 
 	// Add topic input
-	addTopicStyle := inactiveStyle
+	addLabel := labelStyle.Render("Add: ")
 	if m.focusedField == OptionsFieldAddTopic {
-		addTopicStyle = activeStyle
+		addLabel = labelActiveStyle.Render("Add: ")
 	}
-	addTopicRow := lipgloss.JoinHorizontal(lipgloss.Center,
-		labelStyle.Render("Add topic: "),
-		addTopicStyle.Render(m.newTopicInput.View()),
-	)
+	addTopicRow := lipgloss.JoinHorizontal(lipgloss.Center, addLabel, m.newTopicInput.View())
 
 	// Remove button
-	removeBtn := inactiveButtonStyle.Render("Remove Selected")
+	removeLabel := labelStyle.Render("")
+	removeBtn := inactiveButtonStyle.Render("Remove")
 	if m.focusedField == OptionsFieldRemoveTopic {
-		removeBtn = activeButtonStyle.Render("Remove Selected")
+		removeBtn = activeButtonStyle.Render("Remove")
 	}
+	removeRow := lipgloss.JoinHorizontal(lipgloss.Center, removeLabel, "  ", removeBtn)
 
 	// Default Presenter Section
-	presenterSection := sectionStyle.Render("Default Presenter")
-	presenterInputStyle := inactiveStyle
+	presenterSection := sectionStyle.Render("Presenter")
+	presenterLabel := labelStyle.Render("Default: ")
 	if m.focusedField == OptionsFieldDefaultPresenter {
-		presenterInputStyle = activeStyle
+		presenterLabel = labelActiveStyle.Render("Default: ")
 	}
-	presenterRow := presenterInputStyle.Render(m.presenterInput.View())
+	presenterRow := lipgloss.JoinHorizontal(lipgloss.Center, presenterLabel, m.presenterInput.View())
 
 	// Logo Settings Section
-	logoSection := sectionStyle.Render("Logo Settings")
+	logoSection := sectionStyle.Render("Logos")
 
 	// Helper to format logo path for display
-	formatLogoPath := func(path string) string {
+	formatLogoPath := func(path string, focused bool) string {
 		if path == "" {
-			return "(not set - press Enter to browse)"
+			if focused {
+				return valueActiveStyle.Render("(browse...)")
+			}
+			return hintStyle.Render("(not set)")
 		}
-		// Show just the filename, or truncate if too long
 		name := filepath.Base(path)
-		if len(name) > 40 {
-			name = name[:37] + "..."
+		if len(name) > 30 {
+			name = name[:27] + "..."
 		}
-		return name
+		if focused {
+			return valueActiveStyle.Render(name)
+		}
+		return valueStyle.Render(name)
 	}
 
-	// Product Logo 1 (top-left)
-	logo1Style := inactiveStyle.Width(44)
+	// Product Logo 1
+	logo1Label := labelStyle.Render("Product 1: ")
 	if m.focusedField == OptionsFieldProductLogo1 {
-		logo1Style = activeStyle.Width(44)
+		logo1Label = labelActiveStyle.Render("Product 1: ")
 	}
-	logo1Row := lipgloss.JoinHorizontal(lipgloss.Center,
-		labelStyle.Width(20).Render("Product Logo 1: "),
-		logo1Style.Render(formatLogoPath(m.productLogo1Path)),
-	)
-	logo1Hint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (top-left corner)")
+	logo1Value := formatLogoPath(m.productLogo1Path, m.focusedField == OptionsFieldProductLogo1)
+	logo1Row := lipgloss.JoinHorizontal(lipgloss.Center, logo1Label, logo1Value, hintStyle.Render("  top-left"))
 
-	// Product Logo 2 (top-right)
-	logo2Style := inactiveStyle.Width(44)
+	// Product Logo 2
+	logo2Label := labelStyle.Render("Product 2: ")
 	if m.focusedField == OptionsFieldProductLogo2 {
-		logo2Style = activeStyle.Width(44)
+		logo2Label = labelActiveStyle.Render("Product 2: ")
 	}
-	logo2Row := lipgloss.JoinHorizontal(lipgloss.Center,
-		labelStyle.Width(20).Render("Product Logo 2: "),
-		logo2Style.Render(formatLogoPath(m.productLogo2Path)),
-	)
-	logo2Hint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (top-right corner)")
+	logo2Value := formatLogoPath(m.productLogo2Path, m.focusedField == OptionsFieldProductLogo2)
+	logo2Row := lipgloss.JoinHorizontal(lipgloss.Center, logo2Label, logo2Value, hintStyle.Render("  top-right"))
 
-	// Company Logo (lower third)
-	companyLogoStyle := inactiveStyle.Width(44)
+	// Company Logo
+	companyLabel := labelStyle.Render("Company: ")
 	if m.focusedField == OptionsFieldCompanyLogo {
-		companyLogoStyle = activeStyle.Width(44)
+		companyLabel = labelActiveStyle.Render("Company: ")
 	}
-	companyLogoRow := lipgloss.JoinHorizontal(lipgloss.Center,
-		labelStyle.Width(20).Render("Company Logo: "),
-		companyLogoStyle.Render(formatLogoPath(m.companyLogoPath)),
-	)
-	companyLogoHint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (lower third with title)")
+	companyValue := formatLogoPath(m.companyLogoPath, m.focusedField == OptionsFieldCompanyLogo)
+	companyRow := lipgloss.JoinHorizontal(lipgloss.Center, companyLabel, companyValue, hintStyle.Render("  lower third"))
 
 	// Save button
-	saveBtn := inactiveButtonStyle.Render("Save Settings")
+	saveLabel := labelStyle.Render("")
+	saveBtn := inactiveButtonStyle.Render("Save")
 	if m.focusedField == OptionsFieldSave {
-		saveBtn = activeButtonStyle.Render("Save Settings")
+		saveBtn = activeButtonStyle.Render("Save")
 	}
+	saveRow := lipgloss.JoinHorizontal(lipgloss.Center, saveLabel, "  ", saveBtn)
 
 	// Message/Error display
 	var statusLine string
@@ -541,36 +541,20 @@ func (m *OptionsModel) View() string {
 			Render(m.message)
 	}
 
-	// Hints
-	hintStyle := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Italic(true)
-	topicHint := hintStyle.Render("j/k to navigate • d to delete • enter to select")
-	logoHint := hintStyle.Render("enter/space to browse • c to clear")
-
 	// Build the view
 	return lipgloss.JoinVertical(lipgloss.Left,
-		"",
 		topicSection,
-		topicListBox,
-		topicHint,
-		"",
+		topicRow,
 		addTopicRow,
-		removeBtn,
-		"",
+		removeRow,
 		presenterSection,
 		presenterRow,
-		"",
 		logoSection,
-		logoHint,
 		logo1Row,
-		logo1Hint,
 		logo2Row,
-		logo2Hint,
-		companyLogoRow,
-		companyLogoHint,
+		companyRow,
 		"",
-		saveBtn,
+		saveRow,
 		"",
 		statusLine,
 	)
