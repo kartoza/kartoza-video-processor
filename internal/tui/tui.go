@@ -499,12 +499,14 @@ func updateMonitors() tea.Cmd {
 	}
 }
 
-// Run starts the TUI application with splash screens
-func Run() error {
+// Run starts the TUI application with optional splash screens
+func Run(noSplash bool) error {
 	// Show entry splash screen (3 seconds, skippable with any key)
-	if err := ShowSplashScreen(3 * time.Second); err != nil {
-		// Ignore splash errors, continue to main app
-		_ = err
+	if !noSplash {
+		if err := ShowSplashScreen(3 * time.Second); err != nil {
+			// Ignore splash errors, continue to main app
+			_ = err
+		}
 	}
 
 	// Run main application
@@ -512,9 +514,11 @@ func Run() error {
 	_, err := p.Run()
 
 	// Show exit splash screen (2 seconds, skippable with any key)
-	if exitErr := ShowExitSplashScreen(2 * time.Second); exitErr != nil {
-		// Ignore splash errors
-		_ = exitErr
+	if !noSplash {
+		if exitErr := ShowExitSplashScreen(2 * time.Second); exitErr != nil {
+			// Ignore splash errors
+			_ = exitErr
+		}
 	}
 
 	return err

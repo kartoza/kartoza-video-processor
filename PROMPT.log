@@ -81,3 +81,12 @@
 3. If recording processes are still running, restore the recording state in the TUI
 4. Show correct recording status (duration, monitor, file paths)
 5. Allow user to stop the recording even after restarting the app
+
+---
+
+**Prompt:** add a --nosplash option for launching
+
+**Summary:** Add CLI option to skip splash screens:
+1. Add `--nosplash` flag to the root command
+2. When specified, skip both entry and exit splash screens
+3. Useful for faster startup when splash animation is not desired

@@ -4,6 +4,6 @@ import (
 	"github.com/kartoza/kartoza-video-processor/internal/tui"
 )
 
-func runTUIApp() error {
-	return tui.Run()
+func runTUIApp(noSplash bool) error {
+	return tui.Run(noSplash)
 }

@@ -11,6 +11,7 @@ var (
 	version   = "dev"
 	debugMode bool
 	dataDir   string
+	noSplash  bool
 )
 
 // SetVersion sets the application version (called from main)
@@ -50,6 +51,7 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Enable debug mode")
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "Data directory (default: ~/.config/kartoza-video-processor)")
+	rootCmd.PersistentFlags().BoolVar(&noSplash, "nosplash", false, "Skip splash screens on startup and exit")
 
 	// Add subcommands
 	rootCmd.AddCommand(toggleCmd)
@@ -62,5 +64,5 @@ func init() {
 
 func runTUI() error {
 	// Import and run the TUI application
-	return runTUIApp()
+	return runTUIApp(noSplash)
 }
