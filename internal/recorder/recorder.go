@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,9 +31,30 @@ type Options struct {
 	AudioDevice  string
 }
 
+// recorderInstance holds a single recorder's state
+type recorderInstance struct {
+	name    string
+	cmd     *exec.Cmd
+	pid     int
+	file    string
+	err     error
+	started bool
+}
+
 // Recorder manages screen recording sessions
 type Recorder struct {
 	config *config.Config
+	mu     sync.Mutex
+
+	// Active recorder instances
+	video  *recorderInstance
+	audio  *recorderInstance
+	webcam *recorderInstance
+
+	// Synchronization
+	startBarrier chan struct{}
+	stopSignal   chan struct{}
+	wg           sync.WaitGroup
 }
 
 // New creates a new Recorder
@@ -43,6 +65,9 @@ func New() *Recorder {
 
 // IsRecording checks if any recording is currently in progress
 func (r *Recorder) IsRecording() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	return checkPID(config.VideoPIDFile) ||
 		checkPID(config.AudioPIDFile) ||
 		checkPID(config.WebcamPIDFile)
@@ -50,8 +75,13 @@ func (r *Recorder) IsRecording() bool {
 
 // GetStatus returns the current recording status
 func (r *Recorder) GetStatus() models.RecordingStatus {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	status := models.RecordingStatus{
-		IsRecording: r.IsRecording(),
+		IsRecording: checkPID(config.VideoPIDFile) ||
+			checkPID(config.AudioPIDFile) ||
+			checkPID(config.WebcamPIDFile),
 	}
 
 	if status.IsRecording {
@@ -61,6 +91,14 @@ func (r *Recorder) GetStatus() models.RecordingStatus {
 		status.VideoFile = readPath(config.VideoPathFile)
 		status.AudioFile = readPath(config.AudioPathFile)
 		status.WebcamFile = readPath(config.WebcamPathFile)
+
+		// Get monitor name - from instance if available, else extract from filename
+		if r.video != nil {
+			status.Monitor = r.video.name
+		} else if status.VideoFile != "" {
+			// Extract monitor name from filename: screenrecording-<monitor>-<timestamp>.mp4
+			status.Monitor = extractMonitorFromPath(status.VideoFile)
+		}
 
 		// Read start time from status file
 		if data, err := os.ReadFile(config.StatusFile); err == nil {
@@ -80,7 +118,10 @@ func (r *Recorder) Start() error {
 
 // StartWithOptions starts a recording with the given options
 func (r *Recorder) StartWithOptions(opts Options) error {
-	if r.IsRecording() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.IsRecordingLocked() {
 		return fmt.Errorf("recording already in progress")
 	}
 
@@ -108,86 +149,270 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		}
 	}
 
-	// Generate filenames
+	// Generate filenames with synchronized timestamp
 	timestamp := time.Now().Format("20060102-150405")
 	videoFile := filepath.Join(outputDir, fmt.Sprintf("screenrecording-%s-%s.mp4", monitorName, timestamp))
 	audioFile := filepath.Join(outputDir, fmt.Sprintf("screenrecording-%s-%s.wav", monitorName, timestamp))
 	webcamFile := filepath.Join(outputDir, fmt.Sprintf("screenrecording-webcam-%s-%s.mp4", monitorName, timestamp))
 
-	// Start video recording
-	if err := r.startVideoRecording(videoFile, monitorName, opts.HWAccel); err != nil {
-		return err
+	// Initialize recorder instances
+	r.video = &recorderInstance{name: monitorName, file: videoFile}
+	if !opts.NoAudio {
+		r.audio = &recorderInstance{name: "audio", file: audioFile}
+	}
+	if !opts.NoWebcam {
+		r.webcam = &recorderInstance{name: "webcam", file: webcamFile}
 	}
 
-	// Store file paths
-	os.WriteFile(config.VideoPathFile, []byte(videoFile), 0644)
-	os.WriteFile(config.StatusFile, []byte(time.Now().Format(time.RFC3339)), 0644)
+	// Create synchronization primitives
+	r.startBarrier = make(chan struct{})
+	r.stopSignal = make(chan struct{})
 
-	// Start audio recording
-	if !opts.NoAudio {
+	// Count how many recorders we're starting
+	numRecorders := 1 // video is always started
+	if r.audio != nil {
+		numRecorders++
+	}
+	if r.webcam != nil {
+		numRecorders++
+	}
+
+	// Channel to collect readiness
+	ready := make(chan string, numRecorders)
+	errors := make(chan error, numRecorders)
+
+	// Start video recorder in goroutine
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		r.startVideoRecorder(opts.HWAccel, ready, errors)
+	}()
+
+	// Start audio recorder in goroutine
+	if r.audio != nil {
 		audioDevice := opts.AudioDevice
 		if audioDevice == "" {
 			audioDevice = "@DEFAULT_SOURCE@"
 		}
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			r.startAudioRecorder(audioDevice, ready, errors)
+		}()
+	}
 
-		audioRecorder := audio.NewRecorder(audioDevice, audioFile)
-		if err := audioRecorder.Start(); err != nil {
-			notify.Warning("Audio Recording", "Failed to start audio recording")
-		} else {
-			writePID(config.AudioPIDFile, audioRecorder.PID())
-			os.WriteFile(config.AudioPathFile, []byte(audioFile), 0644)
+	// Start webcam recorder in goroutine
+	if r.webcam != nil {
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			r.startWebcamRecorder(opts, ready, errors)
+		}()
+	}
+
+	// Wait for all recorders to be ready (with timeout)
+	readyCount := 0
+	timeout := time.After(5 * time.Second)
+
+	for readyCount < numRecorders {
+		select {
+		case name := <-ready:
+			readyCount++
+			_ = name // Could log which recorder is ready
+		case err := <-errors:
+			// Non-fatal errors for audio/webcam
+			notify.Warning("Recorder Warning", err.Error())
+			numRecorders-- // Reduce expected count
+		case <-timeout:
+			// Proceed with what we have
+			break
 		}
 	}
 
-	// Start webcam recording
-	if !opts.NoWebcam {
-		webcamOpts := webcam.Options{
-			Device:     opts.WebcamDevice,
-			FPS:        opts.WebcamFPS,
-			Resolution: "1920x1080",
-			OutputFile: webcamFile,
-		}
+	// All ready - signal them to start simultaneously
+	close(r.startBarrier)
 
-		if webcamOpts.FPS == 0 {
-			webcamOpts.FPS = 60
-		}
+	// Record start time
+	startTime := time.Now()
+	os.WriteFile(config.StatusFile, []byte(startTime.Format(time.RFC3339)), 0644)
 
-		cam := webcam.New(webcamOpts)
-		if err := cam.Start(); err != nil {
-			notify.Info("Webcam Recording", "No webcam detected")
-		} else {
-			writePID(config.WebcamPIDFile, cam.PID())
-			os.WriteFile(config.WebcamPathFile, []byte(webcamFile), 0644)
-		}
+	// Store file paths and PIDs
+	if r.video != nil && r.video.started {
+		writePID(config.VideoPIDFile, r.video.pid)
+		os.WriteFile(config.VideoPathFile, []byte(r.video.file), 0644)
+	}
+	if r.audio != nil && r.audio.started {
+		writePID(config.AudioPIDFile, r.audio.pid)
+		os.WriteFile(config.AudioPathFile, []byte(r.audio.file), 0644)
+	}
+	if r.webcam != nil && r.webcam.started {
+		writePID(config.WebcamPIDFile, r.webcam.pid)
+		os.WriteFile(config.WebcamPathFile, []byte(r.webcam.file), 0644)
 	}
 
 	notify.RecordingStarted(monitorName)
 	return nil
 }
 
+// startVideoRecorder starts the video recorder and waits for the start signal
+func (r *Recorder) startVideoRecorder(hwAccel bool, ready chan<- string, errors chan<- error) {
+	args := []string{}
+
+	// Software encoding by default (more compatible)
+	if !hwAccel {
+		args = append(args, "--no-hw")
+	}
+
+	args = append(args,
+		"--output="+r.video.name,
+		"--filename="+r.video.file,
+		"--encode-pixfmt", "yuv420p",
+	)
+
+	r.video.cmd = exec.Command("wl-screenrec", args...)
+	r.video.cmd.Stdout = nil
+	r.video.cmd.Stderr = nil
+
+	// Signal we're ready
+	ready <- "video"
+
+	// Wait for synchronized start signal
+	<-r.startBarrier
+
+	if err := r.video.cmd.Start(); err != nil {
+		r.video.err = fmt.Errorf("failed to start wl-screenrec: %w", err)
+		errors <- r.video.err
+		return
+	}
+
+	r.video.pid = r.video.cmd.Process.Pid
+	r.video.started = true
+
+	// Wait for stop signal or process exit
+	done := make(chan error, 1)
+	go func() {
+		done <- r.video.cmd.Wait()
+	}()
+
+	select {
+	case <-r.stopSignal:
+		// Stop requested
+	case err := <-done:
+		if err != nil {
+			r.video.err = err
+		}
+	}
+}
+
+// startAudioRecorder starts the audio recorder and waits for the start signal
+func (r *Recorder) startAudioRecorder(device string, ready chan<- string, errors chan<- error) {
+	audioRecorder := audio.NewRecorder(device, r.audio.file)
+
+	// Signal we're ready
+	ready <- "audio"
+
+	// Wait for synchronized start signal
+	<-r.startBarrier
+
+	if err := audioRecorder.Start(); err != nil {
+		r.audio.err = fmt.Errorf("failed to start audio recording: %w", err)
+		errors <- r.audio.err
+		return
+	}
+
+	r.audio.pid = audioRecorder.PID()
+	r.audio.started = true
+
+	// Wait for stop signal
+	<-r.stopSignal
+}
+
+// startWebcamRecorder starts the webcam recorder and waits for the start signal
+func (r *Recorder) startWebcamRecorder(opts Options, ready chan<- string, errors chan<- error) {
+	webcamOpts := webcam.Options{
+		Device:     opts.WebcamDevice,
+		FPS:        opts.WebcamFPS,
+		Resolution: "1920x1080",
+		OutputFile: r.webcam.file,
+	}
+
+	if webcamOpts.FPS == 0 {
+		webcamOpts.FPS = 60
+	}
+
+	cam := webcam.New(webcamOpts)
+
+	// Signal we're ready
+	ready <- "webcam"
+
+	// Wait for synchronized start signal
+	<-r.startBarrier
+
+	if err := cam.Start(); err != nil {
+		r.webcam.err = fmt.Errorf("no webcam detected: %w", err)
+		errors <- r.webcam.err
+		return
+	}
+
+	r.webcam.pid = cam.PID()
+	r.webcam.started = true
+
+	// Wait for stop signal
+	<-r.stopSignal
+}
+
 // Stop stops the current recording
 func (r *Recorder) Stop() error {
-	if !r.IsRecording() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.IsRecordingLocked() {
 		return fmt.Errorf("no recording in progress")
 	}
 
-	// Stop video recording
+	// Signal all recorders to stop simultaneously
+	if r.stopSignal != nil {
+		close(r.stopSignal)
+	}
+
+	// Stop all processes simultaneously using goroutines
+	var stopWg sync.WaitGroup
+
+	// Stop video
 	if pid := readPID(config.VideoPIDFile); pid > 0 {
-		stopProcess(pid)
-		os.Remove(config.VideoPIDFile)
+		stopWg.Add(1)
+		go func(p int) {
+			defer stopWg.Done()
+			stopProcess(p)
+			os.Remove(config.VideoPIDFile)
+		}(pid)
 	}
 
-	// Stop audio recording
+	// Stop audio
 	if pid := readPID(config.AudioPIDFile); pid > 0 {
-		stopProcess(pid)
-		os.Remove(config.AudioPIDFile)
+		stopWg.Add(1)
+		go func(p int) {
+			defer stopWg.Done()
+			stopProcess(p)
+			os.Remove(config.AudioPIDFile)
+		}(pid)
 	}
 
-	// Stop webcam recording
+	// Stop webcam
 	if pid := readPID(config.WebcamPIDFile); pid > 0 {
-		stopProcess(pid)
-		os.Remove(config.WebcamPIDFile)
+		stopWg.Add(1)
+		go func(p int) {
+			defer stopWg.Done()
+			stopProcess(p)
+			os.Remove(config.WebcamPIDFile)
+		}(pid)
 	}
+
+	// Wait for all stop operations to complete
+	stopWg.Wait()
+
+	// Wait for recorder goroutines to finish
+	r.wg.Wait()
 
 	notify.RecordingStopped()
 
@@ -197,41 +422,19 @@ func (r *Recorder) Stop() error {
 	// Merge recordings in background
 	go r.processRecordings()
 
+	// Clear instances
+	r.video = nil
+	r.audio = nil
+	r.webcam = nil
+
 	return nil
 }
 
-// startVideoRecording starts the screen recording process
-func (r *Recorder) startVideoRecording(outputFile, monitorName string, hwAccel bool) error {
-	args := []string{}
-
-	// Software encoding by default (more compatible)
-	if !hwAccel {
-		args = append(args, "--no-hw")
-	}
-
-	args = append(args,
-		"--output="+monitorName,
-		"--filename="+outputFile,
-		"--encode-pixfmt", "yuv420p",
-	)
-
-	cmd := exec.Command("wl-screenrec", args...)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start wl-screenrec: %w", err)
-	}
-
-	// Wait a moment to check if it started successfully
-	time.Sleep(time.Second)
-
-	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-		return fmt.Errorf("wl-screenrec failed to start")
-	}
-
-	writePID(config.VideoPIDFile, cmd.Process.Pid)
-	return nil
+// IsRecordingLocked checks recording status without locking (internal use)
+func (r *Recorder) IsRecordingLocked() bool {
+	return checkPID(config.VideoPIDFile) ||
+		checkPID(config.AudioPIDFile) ||
+		checkPID(config.WebcamPIDFile)
 }
 
 // processRecordings merges the recorded files
@@ -305,6 +508,35 @@ func readPath(pathFile string) string {
 		return ""
 	}
 	return string(data)
+}
+
+// extractMonitorFromPath extracts monitor name from filename like:
+// screenrecording-HDMI-A-1-20260118-103045.mp4 -> HDMI-A-1
+func extractMonitorFromPath(filePath string) string {
+	base := filepath.Base(filePath)
+	// Remove extension
+	name := base[:len(base)-len(filepath.Ext(base))]
+
+	// Expected format: screenrecording-<monitor>-<timestamp>
+	const prefix = "screenrecording-"
+	if len(name) <= len(prefix) {
+		return ""
+	}
+	name = name[len(prefix):]
+
+	// Find the timestamp part (format: YYYYMMDD-HHMMSS)
+	// Look for pattern: -NNNNNNNN-NNNNNN at the end
+	// The timestamp is 15 chars: YYYYMMDD-HHMMSS
+	if len(name) > 16 && name[len(name)-7] == '-' {
+		// Find where the date starts (should be preceded by a -)
+		for i := len(name) - 16; i >= 0; i-- {
+			if name[i] == '-' && i > 0 {
+				return name[:i]
+			}
+		}
+	}
+
+	return name
 }
 
 func stopProcess(pid int) error {

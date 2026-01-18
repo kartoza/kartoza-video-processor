@@ -78,11 +78,21 @@ func NewModel() Model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(ColorRed)
 
+	rec := recorder.New()
+
+	// Check if a recording is already in progress (restore state)
+	initialState := stateReady
+	status := rec.GetStatus()
+	if status.IsRecording {
+		initialState = stateRecording
+	}
+
 	return Model{
-		recorder:     recorder.New(),
+		recorder:     rec,
 		spinner:      s,
 		blinkOn:      true,
-		state:        stateReady,
+		state:        initialState,
+		status:       status,
 		countdownNum: 5,
 	}
 }

@@ -58,3 +58,26 @@
 3. Countdown gives user time to switch to the screen they want to record
 4. Uses termdash-style segment display for large readable numbers
 5. "GO!" displayed briefly before recording starts (no beep on GO)
+
+---
+
+**Prompt:** well the launching and management of the video, web cam and audio recorder should each happen in their own threads and should be carefully managed to ensure that they are synchronised to stop and start at exactly the same time
+
+**Summary:** Implement synchronized thread management for recorders:
+1. Launch video, webcam, and audio recorders in separate goroutines
+2. Use sync.WaitGroup and channels for coordination
+3. Ensure all recorders start at exactly the same time (barrier synchronization)
+4. Ensure all recorders stop simultaneously when recording ends
+5. Handle errors from any recorder gracefully without blocking others
+6. Properly clean up resources on stop
+
+---
+
+**Prompt:** the application should be stateful - if I exit while recording and then return into the app it should still show it is recording
+
+**Summary:** Make the application stateful:
+1. Store recording state in files (already done via PID files)
+2. On startup, check if recording is in progress by checking PID files
+3. If recording processes are still running, restore the recording state in the TUI
+4. Show correct recording status (duration, monitor, file paths)
+5. Allow user to stop the recording even after restarting the app
