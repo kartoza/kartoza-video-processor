@@ -25,6 +25,7 @@ type Options struct {
 	Monitor        string
 	NoAudio        bool
 	NoWebcam       bool
+	NoScreen       bool
 	HWAccel        bool
 	OutputDir      string
 	WebcamDevice   string
@@ -169,8 +170,10 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 	audioFile := filepath.Join(outputDir, "audio.wav")
 	webcamFile := filepath.Join(outputDir, "webcam.mp4")
 
-	// Initialize recorder instances
-	r.video = &recorderInstance{name: monitorName, file: videoFile}
+	// Initialize recorder instances based on options
+	if !opts.NoScreen {
+		r.video = &recorderInstance{name: monitorName, file: videoFile}
+	}
 	if !opts.NoAudio {
 		r.audio = &recorderInstance{name: "audio", file: audioFile}
 	}
@@ -180,7 +183,9 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 
 	// Update recording info with file paths
 	if r.recordingInfo != nil {
-		r.recordingInfo.Files.VideoFile = videoFile
+		if r.video != nil {
+			r.recordingInfo.Files.VideoFile = videoFile
+		}
 		if r.audio != nil {
 			r.recordingInfo.Files.AudioFile = audioFile
 		}
@@ -196,7 +201,10 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 	r.stopSignal = make(chan struct{})
 
 	// Count how many recorders we're starting
-	numRecorders := 1 // video is always started
+	numRecorders := 0
+	if r.video != nil {
+		numRecorders++
+	}
 	if r.audio != nil {
 		numRecorders++
 	}
@@ -204,17 +212,24 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		numRecorders++
 	}
 
+	// Must have at least one recorder
+	if numRecorders == 0 {
+		return fmt.Errorf("no recording sources enabled")
+	}
+
 	// Channel to collect readiness and started confirmation
 	ready := make(chan string, numRecorders)
 	started := make(chan string, numRecorders)
 	errors := make(chan error, numRecorders)
 
-	// Start video recorder in goroutine
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
-		r.startVideoRecorder(opts.HWAccel, ready, started, errors)
-	}()
+	// Start video recorder in goroutine (if enabled)
+	if r.video != nil {
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			r.startVideoRecorder(opts.HWAccel, ready, started, errors)
+		}()
+	}
 
 	// Start audio recorder in goroutine
 	if r.audio != nil {

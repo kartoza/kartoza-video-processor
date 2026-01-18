@@ -660,7 +660,8 @@ func (m *RecordingSetupModel) GetRecordingOptions() models.RecordingOptions {
 		Monitor:        monitorName,
 		NoAudio:        !m.recordAudio,
 		NoWebcam:       !m.recordWebcam,
-		CreateVertical: m.verticalVideo && m.recordWebcam,
+		NoScreen:       !m.recordScreen,
+		CreateVertical: m.verticalVideo && m.recordWebcam && m.recordScreen,
 	}
 }
 

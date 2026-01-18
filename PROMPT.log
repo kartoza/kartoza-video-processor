@@ -582,3 +582,6 @@ If no webcam recording is made, only the merged video should be made
 If no webcam and no sound then only the video output should be made
 If no screen recording then combine the other inputs and so on
 whatever presets are used in a recording should become the default the next time a recording is made. This excludes the description and title and video number
+I just tried to disable screen recording and enable all other inputs but it seems like it recorded the screen regardless then failed to produce the screen-vertical.mp4
+in the case that an output e.g. vertical video will not be created, the recording.json should have all of these options documented. Also the progress screen for processing the outputs should show the steps that are not relevant as gray text and should indicate those steps are being skipped
+something is wrong with the vertical video output. I think the length is truncated because of hte banner logo - you need to tell it the output length should match the video of the desktop

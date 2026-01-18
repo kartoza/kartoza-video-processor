@@ -38,6 +38,15 @@ type ProcessingState struct {
 	Error        error
 }
 
+// Processing step indices (must match order in NewProcessingState)
+const (
+	ProcessStepStopping = iota
+	ProcessStepAnalyzing
+	ProcessStepNormalizing
+	ProcessStepMerging
+	ProcessStepVertical
+)
+
 // NewProcessingState creates a new processing state with default steps
 func NewProcessingState() *ProcessingState {
 	return &ProcessingState{
@@ -50,6 +59,25 @@ func NewProcessingState() *ProcessingState {
 		},
 		CurrentStep:  -1,
 		IsProcessing: false,
+	}
+}
+
+// ConfigureSteps marks steps as skipped based on recording settings
+func (p *ProcessingState) ConfigureSteps(hasAudio, hasScreen, hasWebcam, createVertical bool) {
+	// Audio steps skipped if no audio
+	if !hasAudio {
+		p.Steps[ProcessStepAnalyzing].Status = StepSkipped
+		p.Steps[ProcessStepNormalizing].Status = StepSkipped
+	}
+
+	// Merging step skipped if only one source or no video sources
+	if !hasScreen && !hasWebcam {
+		p.Steps[ProcessStepMerging].Status = StepSkipped
+	}
+
+	// Vertical video step skipped if not creating vertical video
+	if !createVertical {
+		p.Steps[ProcessStepVertical].Status = StepSkipped
 	}
 }
 
@@ -80,9 +108,15 @@ func (p *ProcessingState) Start() {
 	p.IsProcessing = true
 	p.StartTime = time.Now()
 	p.CurrentStep = 0
-	if len(p.Steps) > 0 {
-		p.Steps[0].Status = StepRunning
-		p.Steps[0].StartTime = time.Now()
+
+	// Find first non-skipped step
+	for p.CurrentStep < len(p.Steps) && p.Steps[p.CurrentStep].Status == StepSkipped {
+		p.CurrentStep++
+	}
+
+	if p.CurrentStep < len(p.Steps) {
+		p.Steps[p.CurrentStep].Status = StepRunning
+		p.Steps[p.CurrentStep].StartTime = time.Now()
 	}
 }
 
@@ -93,6 +127,12 @@ func (p *ProcessingState) NextStep() {
 		p.Steps[p.CurrentStep].EndTime = time.Now()
 	}
 	p.CurrentStep++
+
+	// Skip any already-skipped steps
+	for p.CurrentStep < len(p.Steps) && p.Steps[p.CurrentStep].Status == StepSkipped {
+		p.CurrentStep++
+	}
+
 	if p.CurrentStep < len(p.Steps) {
 		p.Steps[p.CurrentStep].Status = StepRunning
 		p.Steps[p.CurrentStep].StartTime = time.Now()
@@ -303,11 +343,11 @@ func renderStepLine(step ProcessingStep, isCurrent bool, frame int) string {
 		nameStyle = lipgloss.NewStyle().Foreground(ColorRed)
 
 	case StepSkipped:
-		indicator = lipgloss.NewStyle().Foreground(ColorGray).Render("○")
-		nameStyle = lipgloss.NewStyle().Foreground(ColorGray).Strikethrough(true)
+		indicator = lipgloss.NewStyle().Foreground(ColorGray).Render("–")
+		nameStyle = lipgloss.NewStyle().Foreground(ColorGray)
 	}
 
-	// Progress bar or duration
+	// Progress bar or duration or skipped indicator
 	var suffix string
 	if step.Status == StepRunning && step.Progress >= 0 {
 		// Show progress bar for running steps with known progress
@@ -317,6 +357,10 @@ func renderStepLine(step ProcessingStep, isCurrent bool, frame int) string {
 		d := step.EndTime.Sub(step.StartTime).Round(100 * time.Millisecond)
 		durationStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
 		suffix = durationStyle.Render(fmt.Sprintf(" (%s)", d))
+	} else if step.Status == StepSkipped {
+		// Show "skipped" for skipped steps
+		skippedStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
+		suffix = skippedStyle.Render(" (skipped)")
 	}
 
 	return fmt.Sprintf("  %s %s%s", indicator, nameStyle.Render(step.Name), suffix)

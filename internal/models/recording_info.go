@@ -85,13 +85,30 @@ type FileInfo struct {
 
 // RecordingSettings contains the settings used for recording
 type RecordingSettings struct {
-	HardwareAccel    bool   `json:"hardware_accel"`
-	AudioDevice      string `json:"audio_device"`
-	WebcamDevice     string `json:"webcam_device,omitempty"`
-	WebcamFPS        int    `json:"webcam_fps,omitempty"`
-	WebcamEnabled    bool   `json:"webcam_enabled"`
-	AudioEnabled     bool   `json:"audio_enabled"`
-	NormalizeEnabled bool   `json:"normalize_enabled"`
+	// Recording sources
+	ScreenEnabled  bool `json:"screen_enabled"`
+	AudioEnabled   bool `json:"audio_enabled"`
+	WebcamEnabled  bool `json:"webcam_enabled"`
+
+	// Output options
+	VerticalEnabled bool `json:"vertical_enabled"` // Whether vertical video will be created
+	LogosEnabled    bool `json:"logos_enabled"`    // Whether logos will be added
+
+	// Hardware/device settings
+	HardwareAccel bool   `json:"hardware_accel"`
+	AudioDevice   string `json:"audio_device"`
+	WebcamDevice  string `json:"webcam_device,omitempty"`
+	WebcamFPS     int    `json:"webcam_fps,omitempty"`
+
+	// Processing options
+	NormalizeEnabled bool `json:"normalize_enabled"`
+
+	// Logo settings (if logos enabled)
+	LeftLogo    string `json:"left_logo,omitempty"`
+	RightLogo   string `json:"right_logo,omitempty"`
+	BottomLogo  string `json:"bottom_logo,omitempty"`
+	TitleColor  string `json:"title_color,omitempty"`
+	GifLoopMode string `json:"gif_loop_mode,omitempty"`
 }
 
 // ProcessingInfo contains information about post-processing

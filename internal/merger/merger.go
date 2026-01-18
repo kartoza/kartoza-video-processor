@@ -457,7 +457,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 	}
 
 	// Add logo overlays if logos are provided
-	// Using shortest=1 ensures animated GIFs stop when the base video ends
+	// Using eof_action=repeat ensures logos stay visible for the full video duration
 	// For GIFs, we add a white background using split and overlay to handle transparency
 	if logo1Path != "" {
 		// Product logo 1 in top-left of webcam area
@@ -469,12 +469,12 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 					"[logo1_raw]split[logo1_a][logo1_b];"+
 					"[logo1_a]drawbox=c=white:t=fill[logo1_bg];"+
 					"[logo1_bg][logo1_b]overlay=0:0:format=auto[logo1];"+
-					"%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
+					"%s[logo1]overlay=10:%d:format=auto:eof_action=repeat[out1]",
 				logoInputIndex, currentOutput, logoY,
 			)
 		} else {
 			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
+				";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:eof_action=repeat[out1]",
 				logoInputIndex, currentOutput, logoY,
 			)
 		}
@@ -492,12 +492,12 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 					"[logo2_raw]split[logo2_a][logo2_b];"+
 					"[logo2_a]drawbox=c=white:t=fill[logo2_bg];"+
 					"[logo2_bg][logo2_b]overlay=0:0:format=auto[logo2];"+
-					"%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
+					"%s[logo2]overlay=W-w-10:%d:format=auto:eof_action=repeat[out2]",
 				logoInputIndex, currentOutput, logoY,
 			)
 		} else {
 			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
+				";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:eof_action=repeat[out2]",
 				logoInputIndex, currentOutput, logoY,
 			)
 		}
@@ -516,13 +516,13 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 					"[complogo_raw]split[complogo_a][complogo_b];"+
 					"[complogo_a]drawbox=c=white:t=fill[complogo_bg];"+
 					"[complogo_bg][complogo_b]overlay=0:0:format=auto[complogo];"+
-					"%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
+					"%s[complogo]overlay=10:%d:format=auto:eof_action=repeat[out3];"+
 					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
 				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
 			)
 		} else {
 			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
+				";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:eof_action=repeat[out3];"+
 					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
 				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
 			)
@@ -531,8 +531,9 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		filterComplex += fmt.Sprintf(";%s[outv]", currentOutput)
 	}
 
-	// Get video duration for progress calculation
+	// Get video duration for progress calculation and to set output duration
 	durationUs := getVideoDurationUs(videoFile)
+	durationSecs := float64(durationUs) / 1000000.0
 
 	args := append(inputs,
 		"-filter_complex", filterComplex,
@@ -545,7 +546,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "320k",
-		"-shortest",
+		"-t", fmt.Sprintf("%.3f", durationSecs), // Match screen recording duration
 		outputFile,
 	)
 
@@ -635,6 +636,7 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 	}
 
 	// Add logo overlays (same logic as createVerticalVideo)
+	// Using eof_action=repeat ensures logos stay visible for the full video duration
 	if logo1Path != "" {
 		logoY := scaledScreenHeight + 10
 		if isGif(logo1Path) {
@@ -643,12 +645,12 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 					"[logo1_raw]split[logo1_a][logo1_b];"+
 					"[logo1_a]drawbox=c=white:t=fill[logo1_bg];"+
 					"[logo1_bg][logo1_b]overlay=0:0:format=auto[logo1];"+
-					"%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
+					"%s[logo1]overlay=10:%d:format=auto:eof_action=repeat[out1]",
 				logoInputIndex, currentOutput, logoY,
 			)
 		} else {
 			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
+				";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:eof_action=repeat[out1]",
 				logoInputIndex, currentOutput, logoY,
 			)
 		}
@@ -664,12 +666,12 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 					"[logo2_raw]split[logo2_a][logo2_b];"+
 					"[logo2_a]drawbox=c=white:t=fill[logo2_bg];"+
 					"[logo2_bg][logo2_b]overlay=0:0:format=auto[logo2];"+
-					"%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
+					"%s[logo2]overlay=W-w-10:%d:format=auto:eof_action=repeat[out2]",
 				logoInputIndex, currentOutput, logoY,
 			)
 		} else {
 			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
+				";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:eof_action=repeat[out2]",
 				logoInputIndex, currentOutput, logoY,
 			)
 		}
@@ -685,13 +687,13 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 					"[complogo_raw]split[complogo_a][complogo_b];"+
 					"[complogo_a]drawbox=c=white:t=fill[complogo_bg];"+
 					"[complogo_bg][complogo_b]overlay=0:0:format=auto[complogo];"+
-					"%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
+					"%s[complogo]overlay=10:%d:format=auto:eof_action=repeat[out3];"+
 					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
 				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
 			)
 		} else {
 			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
+				";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:eof_action=repeat[out3];"+
 					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
 				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
 			)
@@ -700,7 +702,9 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 		filterComplex += fmt.Sprintf(";%s[outv]", currentOutput)
 	}
 
+	// Get video duration for progress calculation and to set output duration
 	durationUs := getVideoDurationUs(videoFile)
+	durationSecs := float64(durationUs) / 1000000.0
 
 	// Build args without audio mapping
 	args := append(inputs,
@@ -712,7 +716,7 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 		"-r", "30",
 		"-pix_fmt", "yuv420p",
 		"-an", // No audio
-		"-shortest",
+		"-t", fmt.Sprintf("%.3f", durationSecs), // Match screen recording duration
 		outputFile,
 	)
 

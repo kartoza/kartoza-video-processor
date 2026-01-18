@@ -469,6 +469,17 @@ func (m AppModel) handleRecordingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Stop recording - transition to processing state
 			m.state = stateProcessing
 			m.processing.Reset()
+
+			// Configure which steps are applicable based on recording settings
+			if m.recordingInfo != nil {
+				m.processing.ConfigureSteps(
+					m.recordingInfo.Settings.AudioEnabled,
+					m.recordingInfo.Settings.ScreenEnabled,
+					m.recordingInfo.Settings.WebcamEnabled,
+					m.recordingInfo.Settings.VerticalEnabled,
+				)
+			}
+
 			m.processing.Start()
 			m.processingFrame = 0
 
@@ -597,8 +608,20 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 
 		// Set recording settings from setup form
 		if m.recordingSetup != nil {
+			logoSelection := m.recordingSetup.GetLogoSelection()
+
+			m.recordingInfo.Settings.ScreenEnabled = m.recordingSetup.recordScreen
 			m.recordingInfo.Settings.AudioEnabled = m.recordingSetup.recordAudio
 			m.recordingInfo.Settings.WebcamEnabled = m.recordingSetup.recordWebcam
+			m.recordingInfo.Settings.VerticalEnabled = m.recordingSetup.verticalVideo && m.recordingSetup.recordWebcam && m.recordingSetup.recordScreen
+			m.recordingInfo.Settings.LogosEnabled = m.recordingSetup.addLogos
+
+			// Logo details
+			m.recordingInfo.Settings.LeftLogo = logoSelection.LeftLogo
+			m.recordingInfo.Settings.RightLogo = logoSelection.RightLogo
+			m.recordingInfo.Settings.BottomLogo = logoSelection.BottomLogo
+			m.recordingInfo.Settings.TitleColor = logoSelection.TitleColor
+			m.recordingInfo.Settings.GifLoopMode = string(logoSelection.GifLoopMode)
 		}
 
 		// Save initial recording.json
@@ -622,10 +645,7 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 		if m.recordingSetup != nil {
 			opts.NoAudio = !m.recordingSetup.recordAudio
 			opts.NoWebcam = !m.recordingSetup.recordWebcam
-			// If recordScreen is false, we shouldn't record at all (this is a safety check)
-			if !m.recordingSetup.recordScreen {
-				opts.Monitor = "" // This will cause an error if no webcam/audio
-			}
+			opts.NoScreen = !m.recordingSetup.recordScreen
 			// Set logo selection and save for future recordings
 			opts.LogoSelection = m.recordingSetup.GetLogoSelection()
 			_ = m.recordingSetup.SaveLogoSelection() // Save for next time

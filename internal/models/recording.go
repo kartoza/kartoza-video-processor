@@ -35,6 +35,7 @@ type RecordingOptions struct {
 	OutputDir        string `json:"output_dir"`
 	NoAudio          bool   `json:"no_audio"`
 	NoWebcam         bool   `json:"no_webcam"`
+	NoScreen         bool   `json:"no_screen"`
 	HWAccel          bool   `json:"hw_accel"`
 	WebcamDevice     string `json:"webcam_device"`
 	WebcamFPS        int    `json:"webcam_fps"`
