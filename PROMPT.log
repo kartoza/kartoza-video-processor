@@ -90,3 +90,105 @@
 1. Add `--nosplash` flag to the root command
 2. When specified, skip both entry and exit splash screens
 3. Useful for faster startup when splash animation is not desired
+
+---
+
+**Prompt:** the application is very unresponsive when stopping recording - it should provide some initial state change and then for background processing it should be in a processing state with nice termdash donut indicators for each process as it is running. when the processing phases is underway, the keybindings to start recording should be disabled
+
+**Summary:** Add processing state with visual progress indicators:
+1. Add `stateProcessing` app state that shows after stopping recording
+2. Create animated donut/spinner indicators for each processing step
+3. Show steps: Stopping recorders, Denoising audio, Normalizing audio, Merging video & audio, Creating vertical video
+4. Disable all keybindings except quit during processing
+5. Show elapsed time and step completion status
+6. Transition back to menu when processing completes
+
+---
+
+**Prompt:** the application needs a main menu when it starts with entries for: 1. new recording, 2. recording history, 3. options, 4. quit. See again the timesheet app for an example of how we implement this. Vim movement keys as well as arrow keys should be supported as standard
+
+**Summary:** Add main menu with screen navigation:
+1. Create main menu with 4 entries: New Recording, Recording History, Options, Quit
+2. Support vim navigation keys (j/k) as well as arrow keys (up/down)
+3. Use enter or space to select menu items
+4. Refactor TUI into AppModel with multiple screens
+5. Menu screen, Recording screen, History screen (placeholder), Options screen (placeholder)
+6. Proper back navigation with ESC key
+7. If recording is in progress on startup, go directly to recording screen
+
+---
+
+**Prompt:** are you able to create proper progress indicators for each of the post processing steps. the new recording menu should first take you to a configuration screen where you have inputs for the video title (required) description (optional, large text area), topic (with a topic manager added to the main application options panel, presenter (defaulting to name last used)
+
+**Summary:** Add real-time processing progress indicators and recording setup screen:
+1. Modified merger to use ProgressCallback for reporting step progress
+2. Updated ProcessingState to support 6 steps: Stopping recorders, Denoising audio, Analyzing audio levels, Normalizing audio, Merging video & audio, Creating vertical video
+3. Processing steps update in real-time with animated donut spinners
+4. Steps show completed/skipped/failed status with timing
+5. Created RecordingSetupModel with form fields:
+   - Recording # (editable counter, defaults to next number)
+   - Title (required text input)
+   - Description (optional textarea)
+   - Topic (horizontal selection from configurable list)
+   - Presenter (text input, defaults to last used value)
+6. Topics configurable in config.json, defaults to: Tutorial, Demo, Presentation, Meeting, Training, Code Review, Other
+7. Presenter name saved to config for reuse
+8. Form supports tab/arrow navigation, vim keys (j/k/h/l)
+9. Added RecordingMetadata model for storing recording info
+10. Created comprehensive unit tests for recorder, menu, processing, and config modules
+11. Added Options screen with topic management (add/remove topics)
+12. Persistent recording counter in config
+
+---
+
+**Prompt:** when the recording is made, all the products should be placed in a subfolder of the screencasts directory. The name for the folder should be Counter-VideoTitle. The counter should be a persistent incrementing counter that is managed by the user. The video prep screen can allow the user to override the default generated counter if they wish. The history listing should show all the folder names. When the user presses enter or space on a history item, it should show the video details in read only format with an e keybiding that allows you to edit any of the descriptive properties and rerender the video if needed. This same view should be used to present the user with a post recording summary after the recording is done. If the terminal (e.g. kitty) supports in-terminal images, a thumbnail of the video, webcam and vertical video should be shown on the video summary page.
+
+**Summary:** Add recording folder structure and metadata:
+1. Recordings saved in subfolder format: NNN-sanitized-title (e.g., "001-my-tutorial")
+2. Persistent recording counter stored in config, auto-increments
+3. Counter editable in recording setup form with folder preview
+4. Each recording folder contains recording.json with:
+   - User metadata (title, description, topic, presenter, number)
+   - Timing (start time, end time, duration)
+   - Environment info (OS, desktop, Wayland compositor, monitor)
+   - File info with sizes (video, audio, webcam, merged, vertical)
+   - Recording settings used
+   - Processing info (what was applied, errors)
+5. RecordingInfo model with Save/Load methods
+6. Helper functions for formatting duration and file sizes
+
+---
+
+**Prompt:** for every recording folder, a json document should be placed in the folder that contains all of the configuration details for the video (title, description, topics etc) as well as metadata like video start time, end time, length, operating system and desktop environment, file sizes etc
+
+**Summary:** (Included in above summary - recording.json with comprehensive metadata)
+
+---
+
+**Prompt:** the history view should be assembled by listing all of the standard compliant folders in the screencasts folder. By standard compliant I mean adhering to the structure we have laid out here, with a folder and the json metadata document. The history view should be implemented with a user experience very similar to the timesheet apps history view
+
+**Summary:** Implemented full history view for recordings:
+1. Scans screencasts folder for directories containing recording.json
+2. Three view modes: List, Detail, and Edit (same pattern as timesheet app)
+3. Scrollable list with cursor navigation and scroll bar
+4. Vim keys (j/k/h/l) and arrow key navigation support
+5. Detail view shows: folder name, title, topic, presenter, date, duration, file sizes, description
+6. Edit mode allows modifying: title, description, topic, presenter
+7. Changes saved to recording.json with Ctrl+S
+8. Proper error/success message display
+
+---
+
+**Prompt:** the video creation form is not meeting my standards. Again reference the timesheet applications desktop association management forms to get a sense of the ux I want
+
+**Summary:** Rewrote recording setup form to match workspace associations UX pattern:
+1. Bordered input boxes with focus highlighting (orange border when active)
+2. Right-aligned labels with focused state styling
+3. Container with rounded border in brand blue
+4. Topic selection as horizontal chips with background highlighting
+5. Required field marker (*) for title
+6. Live folder name preview below title field
+7. Start Recording button with active/inactive states
+8. Validation messages displayed below form
+9. Tab/vim navigation between all fields
+10. Consistent width and spacing throughout

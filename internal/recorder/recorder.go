@@ -177,15 +177,16 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		numRecorders++
 	}
 
-	// Channel to collect readiness
+	// Channel to collect readiness and started confirmation
 	ready := make(chan string, numRecorders)
+	started := make(chan string, numRecorders)
 	errors := make(chan error, numRecorders)
 
 	// Start video recorder in goroutine
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
-		r.startVideoRecorder(opts.HWAccel, ready, errors)
+		r.startVideoRecorder(opts.HWAccel, ready, started, errors)
 	}()
 
 	// Start audio recorder in goroutine
@@ -197,7 +198,7 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
-			r.startAudioRecorder(audioDevice, ready, errors)
+			r.startAudioRecorder(audioDevice, ready, started, errors)
 		}()
 	}
 
@@ -206,7 +207,7 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		r.wg.Add(1)
 		go func() {
 			defer r.wg.Done()
-			r.startWebcamRecorder(opts, ready, errors)
+			r.startWebcamRecorder(opts, ready, started, errors)
 		}()
 	}
 
@@ -232,6 +233,26 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 	// All ready - signal them to start simultaneously
 	close(r.startBarrier)
 
+	// Wait for recorders to actually start (with timeout)
+	startedCount := 0
+	expectedStarted := numRecorders
+	startTimeout := time.After(5 * time.Second)
+
+waitStarted:
+	for startedCount < expectedStarted {
+		select {
+		case name := <-started:
+			startedCount++
+			_ = name
+		case err := <-errors:
+			// Error during start - reduce expected count
+			notify.Warning("Recorder Error", err.Error())
+			expectedStarted--
+		case <-startTimeout:
+			break waitStarted
+		}
+	}
+
 	// Record start time
 	startTime := time.Now()
 	os.WriteFile(config.StatusFile, []byte(startTime.Format(time.RFC3339)), 0644)
@@ -255,7 +276,7 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 }
 
 // startVideoRecorder starts the video recorder and waits for the start signal
-func (r *Recorder) startVideoRecorder(hwAccel bool, ready chan<- string, errors chan<- error) {
+func (r *Recorder) startVideoRecorder(hwAccel bool, ready, started chan<- string, errors chan<- error) {
 	args := []string{}
 
 	// Software encoding by default (more compatible)
@@ -288,6 +309,9 @@ func (r *Recorder) startVideoRecorder(hwAccel bool, ready chan<- string, errors 
 	r.video.pid = r.video.cmd.Process.Pid
 	r.video.started = true
 
+	// Signal that we've started
+	started <- "video"
+
 	// Wait for stop signal or process exit
 	done := make(chan error, 1)
 	go func() {
@@ -305,7 +329,7 @@ func (r *Recorder) startVideoRecorder(hwAccel bool, ready chan<- string, errors 
 }
 
 // startAudioRecorder starts the audio recorder and waits for the start signal
-func (r *Recorder) startAudioRecorder(device string, ready chan<- string, errors chan<- error) {
+func (r *Recorder) startAudioRecorder(device string, ready, started chan<- string, errors chan<- error) {
 	audioRecorder := audio.NewRecorder(device, r.audio.file)
 
 	// Signal we're ready
@@ -323,12 +347,15 @@ func (r *Recorder) startAudioRecorder(device string, ready chan<- string, errors
 	r.audio.pid = audioRecorder.PID()
 	r.audio.started = true
 
+	// Signal that we've started
+	started <- "audio"
+
 	// Wait for stop signal
 	<-r.stopSignal
 }
 
 // startWebcamRecorder starts the webcam recorder and waits for the start signal
-func (r *Recorder) startWebcamRecorder(opts Options, ready chan<- string, errors chan<- error) {
+func (r *Recorder) startWebcamRecorder(opts Options, ready, started chan<- string, errors chan<- error) {
 	webcamOpts := webcam.Options{
 		Device:     opts.WebcamDevice,
 		FPS:        opts.WebcamFPS,
@@ -356,6 +383,9 @@ func (r *Recorder) startWebcamRecorder(opts Options, ready chan<- string, errors
 
 	r.webcam.pid = cam.PID()
 	r.webcam.started = true
+
+	// Signal that we've started
+	started <- "webcam"
 
 	// Wait for stop signal
 	<-r.stopSignal
@@ -437,8 +467,18 @@ func (r *Recorder) IsRecordingLocked() bool {
 		checkPID(config.WebcamPIDFile)
 }
 
-// processRecordings merges the recorded files
-func (r *Recorder) processRecordings() {
+// ProgressUpdate represents a progress update from the processing pipeline
+type ProgressUpdate struct {
+	Step      int  // Step index (0-based, add 1 for TUI which has "stopping recorders" as step 0)
+	Completed bool
+	Skipped   bool
+	Error     error
+}
+
+// ProcessWithProgress processes recordings and sends progress updates to the channel
+func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
+	defer close(progressChan)
+
 	videoFile := readPath(config.VideoPathFile)
 	audioFile := readPath(config.AudioPathFile)
 	webcamFile := readPath(config.WebcamPathFile)
@@ -448,6 +488,19 @@ func (r *Recorder) processRecordings() {
 	}
 
 	m := merger.New(r.config.AudioProcessing)
+
+	// Set up progress callback
+	m.SetProgressCallback(func(step merger.ProcessingStep, completed bool, skipped bool, err error) {
+		// Map merger steps to TUI steps (add 1 because TUI step 0 is "stopping recorders")
+		tuiStep := int(step) + 1
+		progressChan <- ProgressUpdate{
+			Step:      tuiStep,
+			Completed: completed,
+			Skipped:   skipped,
+			Error:     err,
+		}
+	})
+
 	_, err := m.Merge(merger.MergeOptions{
 		VideoFile:      videoFile,
 		AudioFile:      audioFile,
@@ -464,6 +517,17 @@ func (r *Recorder) processRecordings() {
 	os.Remove(config.AudioPathFile)
 	os.Remove(config.WebcamPathFile)
 	os.Remove(config.StatusFile)
+}
+
+// processRecordings merges the recorded files (legacy method without progress)
+func (r *Recorder) processRecordings() {
+	progressChan := make(chan ProgressUpdate, 10)
+	go func() {
+		// Drain the channel
+		for range progressChan {
+		}
+	}()
+	r.ProcessWithProgress(progressChan)
 }
 
 // Helper functions

@@ -30,9 +30,12 @@ const (
 
 // Config holds the application configuration
 type Config struct {
-	OutputDir        string                    `json:"output_dir"`
-	DefaultOptions   models.RecordingOptions   `json:"default_options"`
-	AudioProcessing  models.AudioProcessingOptions `json:"audio_processing"`
+	OutputDir         string                        `json:"output_dir"`
+	DefaultOptions    models.RecordingOptions       `json:"default_options"`
+	AudioProcessing   models.AudioProcessingOptions `json:"audio_processing"`
+	Topics            []models.Topic                `json:"topics,omitempty"`
+	DefaultPresenter  string                        `json:"default_presenter,omitempty"`
+	RecordingCounter  int                           `json:"recording_counter"`
 }
 
 // DefaultConfig returns the default configuration
@@ -114,4 +117,28 @@ func Save(cfg *Config) error {
 	}
 
 	return os.WriteFile(configPath, data, 0644)
+}
+
+// GetNextRecordingNumber returns the next recording number and increments the counter
+func GetNextRecordingNumber() (int, error) {
+	cfg, err := Load()
+	if err != nil {
+		return 1, err
+	}
+
+	cfg.RecordingCounter++
+	if err := Save(cfg); err != nil {
+		return cfg.RecordingCounter, err
+	}
+
+	return cfg.RecordingCounter, nil
+}
+
+// GetCurrentRecordingNumber returns the current recording counter without incrementing
+func GetCurrentRecordingNumber() int {
+	cfg, err := Load()
+	if err != nil {
+		return 1
+	}
+	return cfg.RecordingCounter + 1 // Return what the next number will be
 }

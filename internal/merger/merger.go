@@ -12,14 +12,41 @@ import (
 	"github.com/kartoza/kartoza-video-processor/internal/webcam"
 )
 
+// ProcessingStep represents a step in the processing pipeline
+type ProcessingStep int
+
+const (
+	StepDenoising ProcessingStep = iota
+	StepAnalyzingAudio
+	StepNormalizing
+	StepMerging
+	StepCreatingVertical
+)
+
+// ProgressCallback is called when a processing step starts or completes
+type ProgressCallback func(step ProcessingStep, completed bool, skipped bool, err error)
+
 // Merger handles merging of video, audio, and webcam recordings
 type Merger struct {
 	audioOpts models.AudioProcessingOptions
+	onProgress ProgressCallback
 }
 
 // New creates a new Merger
 func New(audioOpts models.AudioProcessingOptions) *Merger {
 	return &Merger{audioOpts: audioOpts}
+}
+
+// SetProgressCallback sets the callback for progress updates
+func (m *Merger) SetProgressCallback(cb ProgressCallback) {
+	m.onProgress = cb
+}
+
+// reportProgress reports progress if callback is set
+func (m *Merger) reportProgress(step ProcessingStep, completed bool, skipped bool, err error) {
+	if m.onProgress != nil {
+		m.onProgress(step, completed, skipped, err)
+	}
 }
 
 // MergeOptions contains options for merging recordings
@@ -44,32 +71,83 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	normalizedAudio := strings.TrimSuffix(opts.AudioFile, ".wav") + "-normalized.wav"
 	processor := audio.NewProcessor(m.audioOpts)
 
-	if err := processor.Process(opts.AudioFile, normalizedAudio); err != nil {
-		// Use original audio if processing fails
-		normalizedAudio = opts.AudioFile
+	// Step 1: Denoise
+	m.reportProgress(StepDenoising, false, false, nil)
+	denoisedAudio := strings.TrimSuffix(opts.AudioFile, ".wav") + "-denoised.wav"
+	currentAudio := opts.AudioFile
+
+	if m.audioOpts.DenoiseEnabled {
+		if err := processor.Denoise(opts.AudioFile, denoisedAudio); err != nil {
+			m.reportProgress(StepDenoising, true, true, err)
+			notify.Warning("Noise Reduction Warning", "Skipping noise reduction")
+		} else {
+			currentAudio = denoisedAudio
+			m.reportProgress(StepDenoising, true, false, nil)
+		}
+	} else {
+		m.reportProgress(StepDenoising, true, true, nil)
 	}
 
-	// Merge video and audio
+	// Step 2: Analyze audio levels
+	m.reportProgress(StepAnalyzingAudio, false, false, nil)
+	var stats *models.LoudnormStats
+	if m.audioOpts.NormalizeEnabled {
+		var err error
+		stats, err = processor.AnalyzeLoudness(currentAudio)
+		if err != nil {
+			m.reportProgress(StepAnalyzingAudio, true, true, err)
+			notify.Warning("Audio Analysis Warning", "Skipping normalization")
+		} else {
+			m.reportProgress(StepAnalyzingAudio, true, false, nil)
+		}
+	} else {
+		m.reportProgress(StepAnalyzingAudio, true, true, nil)
+	}
+
+	// Step 3: Normalize audio
+	m.reportProgress(StepNormalizing, false, false, nil)
+	if m.audioOpts.NormalizeEnabled && stats != nil {
+		if err := processor.Normalize(currentAudio, normalizedAudio, stats); err != nil {
+			m.reportProgress(StepNormalizing, true, true, err)
+			notify.Warning("Audio Normalization Warning", "Using original audio")
+			normalizedAudio = currentAudio
+		} else {
+			m.reportProgress(StepNormalizing, true, false, nil)
+		}
+	} else {
+		normalizedAudio = currentAudio
+		m.reportProgress(StepNormalizing, true, true, nil)
+	}
+
+	// Step 4: Merge video and audio
+	m.reportProgress(StepMerging, false, false, nil)
 	outputFile := strings.TrimSuffix(opts.VideoFile, ".mp4") + "-merged.mp4"
 	notify.ProcessingStep("Merging video and audio...")
 
 	if err := m.mergeVideoAudio(opts.VideoFile, normalizedAudio, outputFile); err != nil {
+		m.reportProgress(StepMerging, true, false, err)
 		return nil, fmt.Errorf("failed to merge video and audio: %w", err)
 	}
+	m.reportProgress(StepMerging, true, false, nil)
 
 	result.MergedFile = outputFile
 	notify.RecordingComplete(filepath.Base(outputFile))
 
-	// Create vertical video with webcam if available
+	// Step 5: Create vertical video with webcam if available
+	m.reportProgress(StepCreatingVertical, false, false, nil)
 	if opts.CreateVertical && opts.WebcamFile != "" {
 		verticalFile := strings.TrimSuffix(opts.VideoFile, ".mp4") + "-vertical.mp4"
 
 		if err := m.createVerticalVideo(opts.VideoFile, opts.WebcamFile, normalizedAudio, verticalFile); err != nil {
+			m.reportProgress(StepCreatingVertical, true, true, err)
 			notify.Warning("Vertical Video Warning", "Failed to create vertical video")
 		} else {
 			result.VerticalFile = verticalFile
+			m.reportProgress(StepCreatingVertical, true, false, nil)
 			notify.VerticalComplete(filepath.Base(verticalFile))
 		}
+	} else {
+		m.reportProgress(StepCreatingVertical, true, true, nil)
 	}
 
 	return result, nil

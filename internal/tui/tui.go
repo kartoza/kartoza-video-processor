@@ -20,6 +20,7 @@ const (
 	stateReady appState = iota
 	stateCountdown
 	stateRecording
+	stateProcessing
 )
 
 // Key bindings
@@ -59,17 +60,19 @@ type startRecordingMsg struct{}
 
 // Model is the main TUI model
 type Model struct {
-	recorder      *recorder.Recorder
-	status        models.RecordingStatus
-	monitors      []models.Monitor
-	spinner       spinner.Model
-	width         int
-	height        int
-	showHelp      bool
-	blinkOn       bool
-	err           error
-	state         appState
-	countdownNum  int
+	recorder        *recorder.Recorder
+	status          models.RecordingStatus
+	monitors        []models.Monitor
+	spinner         spinner.Model
+	width           int
+	height          int
+	showHelp        bool
+	blinkOn         bool
+	err             error
+	state           appState
+	countdownNum    int
+	processing      *ProcessingState
+	processingFrame int
 }
 
 // NewModel creates a new TUI model
@@ -88,12 +91,14 @@ func NewModel() Model {
 	}
 
 	return Model{
-		recorder:     rec,
-		spinner:      s,
-		blinkOn:      true,
-		state:        initialState,
-		status:       status,
-		countdownNum: 5,
+		recorder:        rec,
+		spinner:         s,
+		blinkOn:         true,
+		state:           initialState,
+		status:          status,
+		countdownNum:    5,
+		processing:      NewProcessingState(),
+		processingFrame: 0,
 	}
 }
 
@@ -112,6 +117,17 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle processing state - only allow quit
+		if m.state == stateProcessing {
+			// During processing, only allow quit (but warn user)
+			if key.Matches(msg, keys.Quit) {
+				// Allow quitting but processing continues in background
+				return m, tea.Quit
+			}
+			// Ignore all other keys during processing
+			return m, nil
+		}
+
 		// Handle cancel during countdown
 		if m.state == stateCountdown {
 			if key.Matches(msg, keys.Cancel) || msg.String() == "q" {
@@ -129,12 +145,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, keys.Toggle):
 			if m.status.IsRecording {
-				// Stop recording immediately
-				if err := m.recorder.Stop(); err != nil {
-					m.err = err
-				}
-				m.state = stateReady
-				return m, updateStatus(m.recorder)
+				// Stop recording - transition to processing state
+				m.state = stateProcessing
+				m.processing.Reset()
+				m.processing.Start()
+				m.processingFrame = 0
+
+				// Start stop and processing in background
+				return m, tea.Batch(
+					processingTickCmd(),
+					m.stopAndProcess(),
+				)
 			} else {
 				// Start countdown
 				m.state = stateCountdown
@@ -213,10 +234,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case processingTickMsg:
+		if m.state == stateProcessing {
+			m.processingFrame++
+			return m, processingTickCmd()
+		}
+		return m, nil
+
+	case processingStepMsg:
+		if m.state == stateProcessing && m.processing != nil {
+			if msg.Step < 0 {
+				// Skip step
+				m.processing.SkipStep()
+			} else {
+				m.processing.NextStep()
+			}
+		}
+		return m, nil
+
+	case processingCompleteMsg:
+		if m.state == stateProcessing && m.processing != nil {
+			m.processing.Complete()
+			// Brief delay to show completion, then return to ready
+			return m, tea.Tick(1500*time.Millisecond, func(t time.Time) tea.Msg {
+				return processingDoneMsg{}
+			})
+		}
+		return m, nil
+
+	case processingDoneMsg:
+		m.state = stateReady
+		m.processing.Reset()
+		return m, updateStatus(m.recorder)
+
+	case processingErrorMsg:
+		if m.state == stateProcessing && m.processing != nil {
+			m.processing.FailStep(msg.Error)
+			m.err = msg.Error
+		}
+		return m, nil
 	}
 
 	return m, nil
 }
+
+// processingDoneMsg signals processing display is complete
+type processingDoneMsg struct{}
 
 // View renders the UI using the standard layout
 func (m Model) View() string {
@@ -227,6 +291,11 @@ func (m Model) View() string {
 	// Show countdown screen if in countdown state
 	if m.state == stateCountdown {
 		return m.renderCountdownView()
+	}
+
+	// Show processing screen if in processing state
+	if m.state == stateProcessing {
+		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame)
 	}
 
 	// Build header state
@@ -499,6 +568,34 @@ func updateMonitors() tea.Cmd {
 	}
 }
 
+// stopAndProcess stops recording and runs post-processing with step updates
+func (m Model) stopAndProcess() tea.Cmd {
+	return func() tea.Msg {
+		// Get file paths before stopping
+		status := m.recorder.GetStatus()
+		videoFile := status.VideoFile
+		audioFile := status.AudioFile
+		webcamFile := status.WebcamFile
+
+		// Step 0: Stop recorders
+		if err := m.recorder.Stop(); err != nil {
+			return processingErrorMsg{Error: err}
+		}
+
+		// The recorder.Stop() already handles merging in background via processRecordings()
+		// We'll simulate the steps for now - in a full implementation, the recorder
+		// would send progress updates via channels
+
+		// For now, we'll just signal completion after a brief delay
+		// The actual processing happens in recorder.processRecordings()
+		_ = videoFile
+		_ = audioFile
+		_ = webcamFile
+
+		return processingCompleteMsg{}
+	}
+}
+
 // Run starts the TUI application with optional splash screens
 func Run(noSplash bool) error {
 	// Show entry splash screen (3 seconds, skippable with any key)
@@ -509,8 +606,8 @@ func Run(noSplash bool) error {
 		}
 	}
 
-	// Run main application
-	p := tea.NewProgram(NewModel(), tea.WithAltScreen())
+	// Run main application with new AppModel
+	p := tea.NewProgram(NewAppModel(), tea.WithAltScreen())
 	_, err := p.Run()
 
 	// Show exit splash screen (2 seconds, skippable with any key)

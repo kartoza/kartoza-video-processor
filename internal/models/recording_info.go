@@ -1,0 +1,270 @@
+package models
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+)
+
+// RecordingInfo contains all information about a recording
+type RecordingInfo struct {
+	// User-provided metadata
+	Metadata RecordingMetadata `json:"metadata"`
+
+	// Timing information
+	StartTime time.Time     `json:"start_time"`
+	EndTime   time.Time     `json:"end_time"`
+	Duration  time.Duration `json:"duration"`
+
+	// Recording environment
+	Environment EnvironmentInfo `json:"environment"`
+
+	// File information
+	Files FileInfo `json:"files"`
+
+	// Recording settings used
+	Settings RecordingSettings `json:"settings"`
+
+	// Processing information
+	Processing ProcessingInfo `json:"processing"`
+
+	// Version info
+	AppVersion string `json:"app_version"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// EnvironmentInfo contains system environment details
+type EnvironmentInfo struct {
+	OS                 string `json:"os"`
+	Arch               string `json:"arch"`
+	Hostname           string `json:"hostname"`
+	DesktopEnvironment string `json:"desktop_environment"`
+	WaylandCompositor  string `json:"wayland_compositor,omitempty"`
+	Monitor            string `json:"monitor"`
+	MonitorResolution  string `json:"monitor_resolution"`
+}
+
+// FileInfo contains information about recording files
+type FileInfo struct {
+	FolderPath   string    `json:"folder_path"`
+	VideoFile    string    `json:"video_file,omitempty"`
+	AudioFile    string    `json:"audio_file,omitempty"`
+	WebcamFile   string    `json:"webcam_file,omitempty"`
+	MergedFile   string    `json:"merged_file,omitempty"`
+	VerticalFile string    `json:"vertical_file,omitempty"`
+	VideoSize    int64     `json:"video_size,omitempty"`
+	AudioSize    int64     `json:"audio_size,omitempty"`
+	WebcamSize   int64     `json:"webcam_size,omitempty"`
+	MergedSize   int64     `json:"merged_size,omitempty"`
+	VerticalSize int64     `json:"vertical_size,omitempty"`
+	TotalSize    int64     `json:"total_size"`
+}
+
+// RecordingSettings contains the settings used for recording
+type RecordingSettings struct {
+	HardwareAccel   bool   `json:"hardware_accel"`
+	AudioDevice     string `json:"audio_device"`
+	WebcamDevice    string `json:"webcam_device,omitempty"`
+	WebcamFPS       int    `json:"webcam_fps,omitempty"`
+	WebcamEnabled   bool   `json:"webcam_enabled"`
+	AudioEnabled    bool   `json:"audio_enabled"`
+	DenoiseEnabled  bool   `json:"denoise_enabled"`
+	NormalizeEnabled bool  `json:"normalize_enabled"`
+}
+
+// ProcessingInfo contains information about post-processing
+type ProcessingInfo struct {
+	ProcessedAt     time.Time     `json:"processed_at,omitempty"`
+	ProcessingTime  time.Duration `json:"processing_time,omitempty"`
+	DenoiseApplied  bool          `json:"denoise_applied"`
+	NormalizeApplied bool         `json:"normalize_applied"`
+	VerticalCreated bool          `json:"vertical_created"`
+	Errors          []string      `json:"errors,omitempty"`
+}
+
+// NewRecordingInfo creates a new RecordingInfo with system information populated
+func NewRecordingInfo(metadata RecordingMetadata, monitor, resolution string) *RecordingInfo {
+	hostname, _ := os.Hostname()
+
+	return &RecordingInfo{
+		Metadata:  metadata,
+		StartTime: time.Now(),
+		Environment: EnvironmentInfo{
+			OS:                 runtime.GOOS,
+			Arch:               runtime.GOARCH,
+			Hostname:           hostname,
+			DesktopEnvironment: getDesktopEnvironment(),
+			WaylandCompositor:  getWaylandCompositor(),
+			Monitor:            monitor,
+			MonitorResolution:  resolution,
+		},
+		AppVersion: "1.0.0",
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+}
+
+// SetEndTime sets the recording end time and calculates duration
+func (r *RecordingInfo) SetEndTime(t time.Time) {
+	r.EndTime = t
+	r.Duration = t.Sub(r.StartTime)
+	r.UpdatedAt = time.Now()
+}
+
+// Save saves the recording info to a JSON file in the recording folder
+func (r *RecordingInfo) Save() error {
+	if r.Files.FolderPath == "" {
+		return nil
+	}
+
+	infoPath := filepath.Join(r.Files.FolderPath, "recording.json")
+	r.UpdatedAt = time.Now()
+
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(infoPath, data, 0644)
+}
+
+// LoadRecordingInfo loads recording info from a folder
+func LoadRecordingInfo(folderPath string) (*RecordingInfo, error) {
+	infoPath := filepath.Join(folderPath, "recording.json")
+
+	data, err := os.ReadFile(infoPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var info RecordingInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
+// UpdateFileSizes updates the file size information
+func (r *RecordingInfo) UpdateFileSizes() {
+	r.Files.TotalSize = 0
+
+	if r.Files.VideoFile != "" {
+		if stat, err := os.Stat(r.Files.VideoFile); err == nil {
+			r.Files.VideoSize = stat.Size()
+			r.Files.TotalSize += stat.Size()
+		}
+	}
+
+	if r.Files.AudioFile != "" {
+		if stat, err := os.Stat(r.Files.AudioFile); err == nil {
+			r.Files.AudioSize = stat.Size()
+			r.Files.TotalSize += stat.Size()
+		}
+	}
+
+	if r.Files.WebcamFile != "" {
+		if stat, err := os.Stat(r.Files.WebcamFile); err == nil {
+			r.Files.WebcamSize = stat.Size()
+			r.Files.TotalSize += stat.Size()
+		}
+	}
+
+	if r.Files.MergedFile != "" {
+		if stat, err := os.Stat(r.Files.MergedFile); err == nil {
+			r.Files.MergedSize = stat.Size()
+			r.Files.TotalSize += stat.Size()
+		}
+	}
+
+	if r.Files.VerticalFile != "" {
+		if stat, err := os.Stat(r.Files.VerticalFile); err == nil {
+			r.Files.VerticalSize = stat.Size()
+			r.Files.TotalSize += stat.Size()
+		}
+	}
+
+	r.UpdatedAt = time.Now()
+}
+
+// Helper functions
+
+func getDesktopEnvironment() string {
+	// Check common environment variables
+	if de := os.Getenv("XDG_CURRENT_DESKTOP"); de != "" {
+		return de
+	}
+	if de := os.Getenv("DESKTOP_SESSION"); de != "" {
+		return de
+	}
+	if os.Getenv("GNOME_DESKTOP_SESSION_ID") != "" {
+		return "GNOME"
+	}
+	if os.Getenv("KDE_FULL_SESSION") != "" {
+		return "KDE"
+	}
+	return "Unknown"
+}
+
+func getWaylandCompositor() string {
+	// Check for common Wayland compositors
+	if os.Getenv("HYPRLAND_INSTANCE_SIGNATURE") != "" {
+		return "Hyprland"
+	}
+	if os.Getenv("SWAYSOCK") != "" {
+		return "Sway"
+	}
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		// Try to get compositor from loginctl
+		cmd := exec.Command("loginctl", "show-session", "", "--property=Type")
+		if output, err := cmd.Output(); err == nil {
+			if strings.Contains(string(output), "wayland") {
+				return "Wayland (unknown compositor)"
+			}
+		}
+	}
+	return ""
+}
+
+// FormatDuration formats a duration for display
+func FormatDuration(d time.Duration) string {
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+
+	if h > 0 {
+		return fmt.Sprintf("%dh%02dm%02ds", h, m, s)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm%02ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
+// FormatFileSize formats a file size in bytes for display
+func FormatFileSize(bytes int64) string {
+	const (
+		KB float64 = 1024
+		MB         = KB * 1024
+		GB         = MB * 1024
+	)
+
+	b := float64(bytes)
+
+	switch {
+	case b >= GB:
+		return fmt.Sprintf("%.1f GB", b/GB)
+	case b >= MB:
+		return fmt.Sprintf("%.1f MB", b/MB)
+	case b >= KB:
+		return fmt.Sprintf("%.1f KB", b/KB)
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
+}
