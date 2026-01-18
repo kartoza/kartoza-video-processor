@@ -613,6 +613,9 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 			if !m.recordingSetup.recordScreen {
 				opts.Monitor = "" // This will cause an error if no webcam/audio
 			}
+			// Set logo selection and save for future recordings
+			opts.LogoSelection = m.recordingSetup.GetLogoSelection()
+			_ = m.recordingSetup.SaveLogoSelection() // Save for next time
 		}
 
 		if err := m.recorder.StartWithOptions(opts); err != nil {

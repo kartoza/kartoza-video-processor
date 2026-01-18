@@ -359,3 +359,26 @@ copies of these resources should be written into the project folder during proce
 7. Shows folders in blue with 📁 icon, files in white
 8. Filters to only show .png, .jpg, .jpeg, .svg files
 9. Scrolling support for long directory listings
+
+---
+
+**Prompt:** ok lets take a slightly different approach for the logos. Rather in the options page, the user can simply set the logo search directory. Then in the video creation screen they can optionally choose the left logo, right logo and bottom logo from the logo search directory. When you start a new video it should default to the items used in the last created video. It should also be possible to clear any logo
+
+**Summary:** Redesigned logo handling approach:
+1. Config changes:
+   - Added LogoSelection struct with LeftLogo, RightLogo, BottomLogo paths
+   - Replaced individual logo path fields with LogoDirectory and LastUsedLogos
+2. Options screen simplified:
+   - Single "Logo Directory" setting with directory browser
+   - Directory browser shows only directories (not files)
+3. Recording setup screen:
+   - Added "Add Logos" toggle (Yes/No)
+   - When enabled, shows Left Logo, Right Logo, Bottom Logo selectors
+   - Selectors cycle through available logos in the configured directory
+   - First option is always "(none)" to clear a logo
+   - Default values come from last used logos in config
+4. Logo selection flow:
+   - When recording starts, selected logos are saved to config.LastUsedLogos
+   - Next recording defaults to these selections
+   - Logos passed through recorder.Options to the merger
+5. Supports .png, .jpg, .jpeg, .svg image formats

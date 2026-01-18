@@ -32,6 +32,7 @@ type Options struct {
 	Metadata       *models.RecordingMetadata
 	RecordingInfo  *models.RecordingInfo
 	CreateVertical bool
+	LogoSelection  config.LogoSelection
 }
 
 // recorderInstance holds a single recorder's state
@@ -57,6 +58,7 @@ type Recorder struct {
 	// Recording metadata
 	recordingInfo  *models.RecordingInfo
 	createVertical bool
+	logoSelection  config.LogoSelection
 
 	// Synchronization
 	startBarrier chan struct{}
@@ -159,6 +161,7 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 	// Store recording info and settings
 	r.recordingInfo = opts.RecordingInfo
 	r.createVertical = opts.CreateVertical
+	r.logoSelection = opts.LogoSelection
 
 	// Generate simplified filenames (no timestamp needed since they're in unique folder)
 	videoFile := filepath.Join(outputDir, "screen.mp4")
@@ -547,14 +550,12 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		CreateVertical: r.createVertical && webcamFile != "",
 	}
 
-	// Add logo options from config
-	if r.config != nil {
-		mergeOpts.ProductLogo1 = r.config.ProductLogo1Path
-		mergeOpts.ProductLogo2 = r.config.ProductLogo2Path
-		mergeOpts.CompanyLogo = r.config.CompanyLogoPath
-		// Check if any logos are configured
-		mergeOpts.AddLogos = mergeOpts.ProductLogo1 != "" || mergeOpts.ProductLogo2 != "" || mergeOpts.CompanyLogo != ""
-	}
+	// Add logo options from the recording's logo selection
+	mergeOpts.ProductLogo1 = r.logoSelection.LeftLogo
+	mergeOpts.ProductLogo2 = r.logoSelection.RightLogo
+	mergeOpts.CompanyLogo = r.logoSelection.BottomLogo
+	// Check if any logos are configured
+	mergeOpts.AddLogos = mergeOpts.ProductLogo1 != "" || mergeOpts.ProductLogo2 != "" || mergeOpts.CompanyLogo != ""
 
 	// Get video title and output directory from recording info
 	if r.recordingInfo != nil {

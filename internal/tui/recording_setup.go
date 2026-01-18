@@ -2,6 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -25,6 +28,9 @@ const (
 	fieldMonitor
 	fieldVerticalVideo
 	fieldAddLogos
+	fieldLeftLogo
+	fieldRightLogo
+	fieldBottomLogo
 	fieldDescription
 	fieldConfirm
 	fieldCount
@@ -53,6 +59,16 @@ type RecordingSetupModel struct {
 	recordScreen  bool
 	verticalVideo bool
 	addLogos      bool
+
+	// Logo selection
+	logoDirectory    string   // Directory containing logos
+	availableLogos   []string // List of logo files in the directory
+	leftLogo         string   // Selected left logo path
+	rightLogo        string   // Selected right logo path
+	bottomLogo       string   // Selected bottom logo path
+	selectedLeftIdx  int      // Index in availableLogos for left
+	selectedRightIdx int      // Index in availableLogos for right
+	selectedBottomIdx int     // Index in availableLogos for bottom
 
 	// Screen selection
 	monitors        []models.Monitor
@@ -115,9 +131,71 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 		topics:          topics,
 		selectedTopic:   0,
 		confirmSelected: true, // Default to "Go Live"
+		logoDirectory:   cfg.LogoDirectory,
+		leftLogo:        cfg.LastUsedLogos.LeftLogo,
+		rightLogo:       cfg.LastUsedLogos.RightLogo,
+		bottomLogo:      cfg.LastUsedLogos.BottomLogo,
 	}
 
+	// Load available logos from directory
+	m.loadAvailableLogos()
+
 	return m
+}
+
+// loadAvailableLogos scans the logo directory for image files
+func (m *RecordingSetupModel) loadAvailableLogos() {
+	m.availableLogos = []string{"(none)"} // First option is always "none"
+
+	if m.logoDirectory == "" {
+		return
+	}
+
+	entries, err := os.ReadDir(m.logoDirectory)
+	if err != nil {
+		return
+	}
+
+	var logos []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".svg" {
+			logos = append(logos, entry.Name())
+		}
+	}
+
+	sort.Strings(logos)
+	m.availableLogos = append(m.availableLogos, logos...)
+
+	// Find indices for current selections
+	m.selectedLeftIdx = m.findLogoIndex(m.leftLogo)
+	m.selectedRightIdx = m.findLogoIndex(m.rightLogo)
+	m.selectedBottomIdx = m.findLogoIndex(m.bottomLogo)
+}
+
+// findLogoIndex finds the index of a logo path in availableLogos
+func (m *RecordingSetupModel) findLogoIndex(logoPath string) int {
+	if logoPath == "" {
+		return 0 // (none)
+	}
+	name := filepath.Base(logoPath)
+	for i, logo := range m.availableLogos {
+		if logo == name {
+			return i
+		}
+	}
+	return 0
+}
+
+// getLogoPath returns the full path for a selected logo index
+func (m *RecordingSetupModel) getLogoPath(idx int) string {
+	if idx == 0 || idx >= len(m.availableLogos) || m.logoDirectory == "" {
+		return ""
+	}
+	return filepath.Join(m.logoDirectory, m.availableLogos[idx])
 }
 
 func (m *RecordingSetupModel) Init() tea.Cmd {
@@ -253,9 +331,23 @@ func (m *RecordingSetupModel) nextField() {
 	m.blurAll()
 	m.focusedField++
 
-	// Skip monitor field if screen recording is disabled
-	if m.focusedField == fieldMonitor && !m.recordScreen {
+	// Skip fields based on conditions
+	for {
+		skip := false
+		if m.focusedField == fieldMonitor && !m.recordScreen {
+			skip = true
+		}
+		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo) && !m.addLogos {
+			skip = true
+		}
+		if !skip {
+			break
+		}
 		m.focusedField++
+		if m.focusedField >= fieldCount {
+			m.focusedField = fieldTitle
+			break
+		}
 	}
 
 	if m.focusedField >= fieldCount {
@@ -268,9 +360,23 @@ func (m *RecordingSetupModel) prevField() {
 	m.blurAll()
 	m.focusedField--
 
-	// Skip monitor field if screen recording is disabled
-	if m.focusedField == fieldMonitor && !m.recordScreen {
+	// Skip fields based on conditions
+	for {
+		skip := false
+		if m.focusedField == fieldMonitor && !m.recordScreen {
+			skip = true
+		}
+		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo) && !m.addLogos {
+			skip = true
+		}
+		if !skip {
+			break
+		}
 		m.focusedField--
+		if m.focusedField < fieldTitle {
+			m.focusedField = fieldConfirm
+			break
+		}
 	}
 
 	if m.focusedField < fieldTitle {
@@ -309,6 +415,24 @@ func (m *RecordingSetupModel) handleLeft() {
 		if m.selectedMonitor < 0 {
 			m.selectedMonitor = len(m.monitors) - 1
 		}
+	case fieldLeftLogo:
+		m.selectedLeftIdx--
+		if m.selectedLeftIdx < 0 {
+			m.selectedLeftIdx = len(m.availableLogos) - 1
+		}
+		m.leftLogo = m.getLogoPath(m.selectedLeftIdx)
+	case fieldRightLogo:
+		m.selectedRightIdx--
+		if m.selectedRightIdx < 0 {
+			m.selectedRightIdx = len(m.availableLogos) - 1
+		}
+		m.rightLogo = m.getLogoPath(m.selectedRightIdx)
+	case fieldBottomLogo:
+		m.selectedBottomIdx--
+		if m.selectedBottomIdx < 0 {
+			m.selectedBottomIdx = len(m.availableLogos) - 1
+		}
+		m.bottomLogo = m.getLogoPath(m.selectedBottomIdx)
 	case fieldRecordAudio, fieldRecordWebcam, fieldRecordScreen, fieldVerticalVideo, fieldAddLogos:
 		m.handleToggle()
 	case fieldConfirm:
@@ -328,6 +452,24 @@ func (m *RecordingSetupModel) handleRight() {
 		if m.selectedMonitor >= len(m.monitors) {
 			m.selectedMonitor = 0
 		}
+	case fieldLeftLogo:
+		m.selectedLeftIdx++
+		if m.selectedLeftIdx >= len(m.availableLogos) {
+			m.selectedLeftIdx = 0
+		}
+		m.leftLogo = m.getLogoPath(m.selectedLeftIdx)
+	case fieldRightLogo:
+		m.selectedRightIdx++
+		if m.selectedRightIdx >= len(m.availableLogos) {
+			m.selectedRightIdx = 0
+		}
+		m.rightLogo = m.getLogoPath(m.selectedRightIdx)
+	case fieldBottomLogo:
+		m.selectedBottomIdx++
+		if m.selectedBottomIdx >= len(m.availableLogos) {
+			m.selectedBottomIdx = 0
+		}
+		m.bottomLogo = m.getLogoPath(m.selectedBottomIdx)
 	case fieldRecordAudio, fieldRecordWebcam, fieldRecordScreen, fieldVerticalVideo, fieldAddLogos:
 		m.handleToggle()
 	case fieldConfirm:
@@ -424,6 +566,28 @@ func (m *RecordingSetupModel) GetRecordingOptions() models.RecordingOptions {
 	}
 }
 
+// GetLogoSelection returns the selected logos
+func (m *RecordingSetupModel) GetLogoSelection() config.LogoSelection {
+	if !m.addLogos {
+		return config.LogoSelection{}
+	}
+	return config.LogoSelection{
+		LeftLogo:   m.leftLogo,
+		RightLogo:  m.rightLogo,
+		BottomLogo: m.bottomLogo,
+	}
+}
+
+// SaveLogoSelection saves the current logo selection to config for next time
+func (m *RecordingSetupModel) SaveLogoSelection() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	cfg.LastUsedLogos = m.GetLogoSelection()
+	return config.Save(cfg)
+}
+
 // View renders the two-column form layout
 func (m *RecordingSetupModel) View() string {
 	// Column widths
@@ -488,6 +652,18 @@ func (m *RecordingSetupModel) View() string {
 
 	// Add Logos
 	rows = append(rows, m.renderRow(fieldAddLogos, "Add Logos", m.renderToggle(m.addLogos, m.focusedField == fieldAddLogos), labelStyle, labelFocusedStyle, widgetStyle))
+
+	// Logo selection fields (only show if addLogos is enabled)
+	if m.addLogos {
+		leftLogoValue := m.renderLogoSelector(m.selectedLeftIdx, m.focusedField == fieldLeftLogo)
+		rows = append(rows, m.renderRow(fieldLeftLogo, "Left Logo", leftLogoValue, labelStyle, labelFocusedStyle, widgetStyle))
+
+		rightLogoValue := m.renderLogoSelector(m.selectedRightIdx, m.focusedField == fieldRightLogo)
+		rows = append(rows, m.renderRow(fieldRightLogo, "Right Logo", rightLogoValue, labelStyle, labelFocusedStyle, widgetStyle))
+
+		bottomLogoValue := m.renderLogoSelector(m.selectedBottomIdx, m.focusedField == fieldBottomLogo)
+		rows = append(rows, m.renderRow(fieldBottomLogo, "Bottom Logo", bottomLogoValue, labelStyle, labelFocusedStyle, widgetStyle))
+	}
 
 	// Spacer
 	rows = append(rows, "")
@@ -575,6 +751,22 @@ func (m *RecordingSetupModel) renderMonitorSelector() string {
 
 	if m.focusedField == fieldMonitor {
 		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
+	}
+	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
+}
+
+func (m *RecordingSetupModel) renderLogoSelector(selectedIdx int, focused bool) string {
+	if len(m.availableLogos) == 0 {
+		return lipgloss.NewStyle().Foreground(ColorGray).Render("(no logos)")
+	}
+
+	name := m.availableLogos[selectedIdx]
+
+	if focused {
+		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
+	}
+	if name == "(none)" {
+		return lipgloss.NewStyle().Foreground(ColorGray).Render(name)
 	}
 	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
 }

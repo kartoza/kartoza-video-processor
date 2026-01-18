@@ -29,19 +29,25 @@ const (
 	StopSignalFile = "/tmp/kartoza-video.stop"
 )
 
+// LogoSelection holds the selected logos for a recording
+type LogoSelection struct {
+	LeftLogo   string `json:"left_logo,omitempty"`   // Top-left logo
+	RightLogo  string `json:"right_logo,omitempty"`  // Top-right logo
+	BottomLogo string `json:"bottom_logo,omitempty"` // Lower third logo
+}
+
 // Config holds the application configuration
 type Config struct {
-	OutputDir         string                        `json:"output_dir"`
-	DefaultOptions    models.RecordingOptions       `json:"default_options"`
-	AudioProcessing   models.AudioProcessingOptions `json:"audio_processing"`
-	Topics            []models.Topic                `json:"topics,omitempty"`
-	DefaultPresenter  string                        `json:"default_presenter,omitempty"`
-	RecordingCounter  int                           `json:"recording_counter"`
+	OutputDir        string                        `json:"output_dir"`
+	DefaultOptions   models.RecordingOptions       `json:"default_options"`
+	AudioProcessing  models.AudioProcessingOptions `json:"audio_processing"`
+	Topics           []models.Topic                `json:"topics,omitempty"`
+	DefaultPresenter string                        `json:"default_presenter,omitempty"`
+	RecordingCounter int                           `json:"recording_counter"`
 
-	// Logo paths for video overlays
-	ProductLogo1Path  string `json:"product_logo_1_path,omitempty"` // Top-left logo
-	ProductLogo2Path  string `json:"product_logo_2_path,omitempty"` // Top-right logo
-	CompanyLogoPath   string `json:"company_logo_path,omitempty"`   // Lower third with title
+	// Logo settings
+	LogoDirectory  string        `json:"logo_directory,omitempty"`   // Directory to browse for logos
+	LastUsedLogos  LogoSelection `json:"last_used_logos,omitempty"`  // Last used logo selection
 }
 
 // DefaultConfig returns the default configuration

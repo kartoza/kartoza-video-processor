@@ -28,20 +28,8 @@ const (
 	OptionsFieldAddTopic
 	OptionsFieldRemoveTopic
 	OptionsFieldDefaultPresenter
-	OptionsFieldProductLogo1
-	OptionsFieldProductLogo2
-	OptionsFieldCompanyLogo
+	OptionsFieldLogoDirectory
 	OptionsFieldSave
-)
-
-// LogoType identifies which logo is being selected
-type LogoType int
-
-const (
-	LogoNone LogoType = iota
-	LogoProduct1
-	LogoProduct2
-	LogoCompany
 )
 
 // FileBrowserField represents which part of the file browser is focused
@@ -71,20 +59,18 @@ type OptionsModel struct {
 	newTopicInput  textinput.Model
 	presenterInput textinput.Model
 
-	// Logo paths (displayed as text, selected via file browser)
-	productLogo1Path string
-	productLogo2Path string
-	companyLogoPath  string
+	// Logo directory path
+	logoDirectory string
 
-	// Custom file browser
-	showFileBrowser   bool
-	selectingLogoFor  LogoType
-	browserCurrentDir string
-	browserEntries    []fileEntry
-	browserSelected   int
-	browserScrollTop  int
-	browserPathInput  textinput.Model
-	browserField      FileBrowserField
+	// Custom file browser (for selecting logo directory)
+	showFileBrowser      bool
+	selectingDirectory   bool // true when selecting directory, not file
+	browserCurrentDir    string
+	browserEntries       []fileEntry
+	browserSelected      int
+	browserScrollTop     int
+	browserPathInput     textinput.Model
+	browserField         FileBrowserField
 
 	// State
 	message string
@@ -122,24 +108,26 @@ func NewOptionsModel() *OptionsModel {
 	pathInput.CharLimit = 500
 	pathInput.Width = 50
 
-	// Start in home directory
+	// Start in home directory or logo directory if set
 	home, _ := os.UserHomeDir()
+	browserDir := home
+	if cfg.LogoDirectory != "" {
+		browserDir = cfg.LogoDirectory
+	}
 
 	return &OptionsModel{
-		config:            cfg,
-		topics:            topics,
-		selectedTopic:     0,
-		focusedField:      OptionsFieldTopicList,
-		newTopicInput:     newTopicInput,
-		presenterInput:    presenterInput,
-		productLogo1Path:  cfg.ProductLogo1Path,
-		productLogo2Path:  cfg.ProductLogo2Path,
-		companyLogoPath:   cfg.CompanyLogoPath,
-		showFileBrowser:   false,
-		selectingLogoFor:  LogoNone,
-		browserCurrentDir: home,
-		browserPathInput:  pathInput,
-		browserField:      FileBrowserFieldList,
+		config:             cfg,
+		topics:             topics,
+		selectedTopic:      0,
+		focusedField:       OptionsFieldTopicList,
+		newTopicInput:      newTopicInput,
+		presenterInput:     presenterInput,
+		logoDirectory:      cfg.LogoDirectory,
+		showFileBrowser:    false,
+		selectingDirectory: false,
+		browserCurrentDir:  browserDir,
+		browserPathInput:   pathInput,
+		browserField:       FileBrowserFieldList,
 	}
 }
 
@@ -163,8 +151,8 @@ func (m *OptionsModel) loadBrowserEntries() {
 		})
 	}
 
-	// Separate dirs and files
-	var dirs, files []fileEntry
+	// Collect directories (and files if not selecting directory)
+	var dirs []fileEntry
 	for _, entry := range entries {
 		// Skip hidden files
 		if strings.HasPrefix(entry.Name(), ".") {
@@ -180,32 +168,22 @@ func (m *OptionsModel) loadBrowserEntries() {
 
 		if entry.IsDir() {
 			dirs = append(dirs, fe)
-		} else {
-			// Only show image files
-			ext := strings.ToLower(filepath.Ext(entry.Name()))
-			if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".svg" {
-				files = append(files, fe)
-			}
 		}
+		// When selecting directory, we only show directories
 	}
 
 	// Sort alphabetically
 	sort.Slice(dirs, func(i, j int) bool {
 		return strings.ToLower(dirs[i].name) < strings.ToLower(dirs[j].name)
 	})
-	sort.Slice(files, func(i, j int) bool {
-		return strings.ToLower(files[i].name) < strings.ToLower(files[j].name)
-	})
 
-	// Dirs first, then files
 	m.browserEntries = append(m.browserEntries, dirs...)
-	m.browserEntries = append(m.browserEntries, files...)
 }
 
-// openFileBrowser opens the file browser for selecting a logo
-func (m *OptionsModel) openFileBrowser(logoType LogoType) {
+// openDirectoryBrowser opens the file browser for selecting a directory
+func (m *OptionsModel) openDirectoryBrowser() {
 	m.showFileBrowser = true
-	m.selectingLogoFor = logoType
+	m.selectingDirectory = true
 	m.browserField = FileBrowserFieldList
 	m.browserPathInput.SetValue(m.browserCurrentDir)
 	m.browserPathInput.Blur()
@@ -215,7 +193,7 @@ func (m *OptionsModel) openFileBrowser(logoType LogoType) {
 // closeFileBrowser closes the file browser
 func (m *OptionsModel) closeFileBrowser() {
 	m.showFileBrowser = false
-	m.selectingLogoFor = LogoNone
+	m.selectingDirectory = false
 }
 
 // IsFileBrowserActive returns true if the file browser is currently shown
@@ -289,14 +267,8 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 			case OptionsFieldRemoveTopic:
 				m.removeTopic()
 				return m, nil
-			case OptionsFieldProductLogo1:
-				m.openFileBrowser(LogoProduct1)
-				return m, nil
-			case OptionsFieldProductLogo2:
-				m.openFileBrowser(LogoProduct2)
-				return m, nil
-			case OptionsFieldCompanyLogo:
-				m.openFileBrowser(LogoCompany)
+			case OptionsFieldLogoDirectory:
+				m.openDirectoryBrowser()
 				return m, nil
 			case OptionsFieldSave:
 				m.save()
@@ -307,19 +279,10 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 			}
 
 		case "c":
-			// Clear logo path if on a logo field
-			switch m.focusedField {
-			case OptionsFieldProductLogo1:
-				m.productLogo1Path = ""
-				m.message = "Product Logo 1 cleared"
-				return m, nil
-			case OptionsFieldProductLogo2:
-				m.productLogo2Path = ""
-				m.message = "Product Logo 2 cleared"
-				return m, nil
-			case OptionsFieldCompanyLogo:
-				m.companyLogoPath = ""
-				m.message = "Company Logo cleared"
+			// Clear logo directory if on that field
+			if m.focusedField == OptionsFieldLogoDirectory {
+				m.logoDirectory = ""
+				m.message = "Logo directory cleared"
 				return m, nil
 			}
 
@@ -432,9 +395,7 @@ func (m *OptionsModel) removeTopic() {
 func (m *OptionsModel) save() {
 	m.config.Topics = m.topics
 	m.config.DefaultPresenter = strings.TrimSpace(m.presenterInput.Value())
-	m.config.ProductLogo1Path = m.productLogo1Path
-	m.config.ProductLogo2Path = m.productLogo2Path
-	m.config.CompanyLogoPath = m.companyLogoPath
+	m.config.LogoDirectory = m.logoDirectory
 
 	if err := config.Save(m.config); err != nil {
 		m.err = err
@@ -540,47 +501,27 @@ func (m *OptionsModel) View() string {
 	// Logo Settings Section
 	logoSection := sectionStyle.Render("Logos")
 
-	// Helper to format logo path for display
-	formatLogoPath := func(path string, focused bool) string {
-		if path == "" {
-			if focused {
-				return valueActiveStyle.Render("(browse...)")
-			}
-			return hintStyle.Render("(not set)")
+	// Logo directory
+	logoDirLabel := labelStyle.Render("Directory: ")
+	if m.focusedField == OptionsFieldLogoDirectory {
+		logoDirLabel = labelActiveStyle.Render("Directory: ")
+	}
+	var logoDirValue string
+	if m.logoDirectory == "" {
+		if m.focusedField == OptionsFieldLogoDirectory {
+			logoDirValue = valueActiveStyle.Render("(browse...)")
+		} else {
+			logoDirValue = hintStyle.Render("(not set)")
 		}
-		name := filepath.Base(path)
-		if len(name) > 30 {
-			name = name[:27] + "..."
+	} else {
+		if m.focusedField == OptionsFieldLogoDirectory {
+			logoDirValue = valueActiveStyle.Render(m.logoDirectory)
+		} else {
+			logoDirValue = valueStyle.Render(m.logoDirectory)
 		}
-		if focused {
-			return valueActiveStyle.Render(name)
-		}
-		return valueStyle.Render(name)
 	}
-
-	// Product Logo 1
-	logo1Label := labelStyle.Render("Product 1: ")
-	if m.focusedField == OptionsFieldProductLogo1 {
-		logo1Label = labelActiveStyle.Render("Product 1: ")
-	}
-	logo1Value := formatLogoPath(m.productLogo1Path, m.focusedField == OptionsFieldProductLogo1)
-	logo1Row := lipgloss.JoinHorizontal(lipgloss.Center, logo1Label, logo1Value, hintStyle.Render("  top-left"))
-
-	// Product Logo 2
-	logo2Label := labelStyle.Render("Product 2: ")
-	if m.focusedField == OptionsFieldProductLogo2 {
-		logo2Label = labelActiveStyle.Render("Product 2: ")
-	}
-	logo2Value := formatLogoPath(m.productLogo2Path, m.focusedField == OptionsFieldProductLogo2)
-	logo2Row := lipgloss.JoinHorizontal(lipgloss.Center, logo2Label, logo2Value, hintStyle.Render("  top-right"))
-
-	// Company Logo
-	companyLabel := labelStyle.Render("Company: ")
-	if m.focusedField == OptionsFieldCompanyLogo {
-		companyLabel = labelActiveStyle.Render("Company: ")
-	}
-	companyValue := formatLogoPath(m.companyLogoPath, m.focusedField == OptionsFieldCompanyLogo)
-	companyRow := lipgloss.JoinHorizontal(lipgloss.Center, companyLabel, companyValue, hintStyle.Render("  lower third"))
+	logoDirRow := lipgloss.JoinHorizontal(lipgloss.Center, logoDirLabel, logoDirValue)
+	logoDirHint := hintStyle.Render("                    logos selected per-recording")
 
 	// Save button
 	saveLabel := labelStyle.Render("")
@@ -613,9 +554,8 @@ func (m *OptionsModel) View() string {
 		presenterSection,
 		presenterRow,
 		logoSection,
-		logo1Row,
-		logo2Row,
-		companyRow,
+		logoDirRow,
+		logoDirHint,
 		"",
 		saveRow,
 		"",
@@ -646,13 +586,6 @@ func (m *OptionsModel) updateFileBrowser(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 					if info.IsDir() {
 						m.browserCurrentDir = path
 						m.loadBrowserEntries()
-					} else {
-						// It's a file - select it if valid
-						ext := strings.ToLower(filepath.Ext(path))
-						if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".svg" {
-							m.selectFile(path)
-							return m, nil
-						}
 					}
 				}
 				m.browserField = FileBrowserFieldList
@@ -700,10 +633,16 @@ func (m *OptionsModel) updateFileBrowser(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 					m.browserCurrentDir = entry.path
 					m.browserPathInput.SetValue(entry.path)
 					m.loadBrowserEntries()
-				} else {
-					// Select the file
-					m.selectFile(entry.path)
 				}
+			}
+			return m, nil
+
+		case "s":
+			// Select current directory (when selecting directory)
+			if m.selectingDirectory {
+				m.logoDirectory = m.browserCurrentDir
+				m.message = "Logo directory set: " + m.browserCurrentDir
+				m.closeFileBrowser()
 			}
 			return m, nil
 
@@ -736,34 +675,10 @@ func (m *OptionsModel) updateFileBrowser(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 	return m, nil
 }
 
-// selectFile selects a file and closes the browser
-func (m *OptionsModel) selectFile(path string) {
-	switch m.selectingLogoFor {
-	case LogoProduct1:
-		m.productLogo1Path = path
-	case LogoProduct2:
-		m.productLogo2Path = path
-	case LogoCompany:
-		m.companyLogoPath = path
-	}
-	m.message = "Logo selected: " + filepath.Base(path)
-	m.closeFileBrowser()
-}
-
 // renderFileBrowser renders the custom file browser
 func (m *OptionsModel) renderFileBrowser() string {
 	// Page title
-	var pageTitle string
-	switch m.selectingLogoFor {
-	case LogoProduct1:
-		pageTitle = "Select Product Logo 1"
-	case LogoProduct2:
-		pageTitle = "Select Product Logo 2"
-	case LogoCompany:
-		pageTitle = "Select Company Logo"
-	default:
-		pageTitle = "Select Logo"
-	}
+	pageTitle := "Select Logo Directory"
 
 	header := RenderHeader(pageTitle)
 
@@ -781,9 +696,6 @@ func (m *OptionsModel) renderFileBrowser() string {
 
 	dirStyle := lipgloss.NewStyle().
 		Foreground(ColorBlue)
-
-	fileStyle := lipgloss.NewStyle().
-		Foreground(ColorWhite)
 
 	selectedStyle := lipgloss.NewStyle().
 		Background(ColorOrange).
@@ -812,22 +724,19 @@ func (m *OptionsModel) renderFileBrowser() string {
 		var line string
 		if entry.isDir {
 			line = dirStyle.Render("📁 " + entry.name)
-		} else {
-			line = fileStyle.Render("   " + entry.name)
 		}
 
 		if i == m.browserSelected && m.browserField == FileBrowserFieldList {
-			line = selectedStyle.Render("▶ " + entry.name)
-			if entry.isDir {
-				line = selectedStyle.Render("▶ 📁 " + entry.name)
-			}
+			line = selectedStyle.Render("▶ 📁 " + entry.name)
 		}
-		fileLines = append(fileLines, line)
+		if line != "" {
+			fileLines = append(fileLines, line)
+		}
 	}
 
 	fileList := lipgloss.JoinVertical(lipgloss.Left, fileLines...)
 	if len(m.browserEntries) == 0 {
-		fileList = lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("(no image files in this directory)")
+		fileList = lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("(no subdirectories)")
 	}
 
 	// Content
@@ -839,7 +748,7 @@ func (m *OptionsModel) renderFileBrowser() string {
 	)
 
 	// Help footer
-	helpText := "↑/k ↓/j: navigate • enter: select • backspace: parent • tab: edit path • ~: home • esc: cancel"
+	helpText := "↑/k ↓/j: navigate • enter: open dir • s: select this dir • backspace: parent • ~: home • esc: cancel"
 	footer := RenderHelpFooter(helpText, m.width)
 
 	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
