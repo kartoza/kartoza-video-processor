@@ -18,6 +18,9 @@ const (
 	OptionsFieldAddTopic
 	OptionsFieldRemoveTopic
 	OptionsFieldDefaultPresenter
+	OptionsFieldProductLogo1
+	OptionsFieldProductLogo2
+	OptionsFieldCompanyLogo
 	OptionsFieldSave
 )
 
@@ -37,8 +40,11 @@ type OptionsModel struct {
 	focusedField OptionsField
 
 	// Inputs
-	newTopicInput    textinput.Model
-	presenterInput   textinput.Model
+	newTopicInput      textinput.Model
+	presenterInput     textinput.Model
+	productLogo1Input  textinput.Model
+	productLogo2Input  textinput.Model
+	companyLogoInput   textinput.Model
 
 	// State
 	message string
@@ -65,18 +71,48 @@ func NewOptionsModel() *OptionsModel {
 	presenterInput := textinput.New()
 	presenterInput.Placeholder = "Default presenter name"
 	presenterInput.CharLimit = 100
-	presenterInput.Width = 30
+	presenterInput.Width = 40
 	if cfg.DefaultPresenter != "" {
 		presenterInput.SetValue(cfg.DefaultPresenter)
 	}
 
+	// Product Logo 1 input (top-left)
+	productLogo1Input := textinput.New()
+	productLogo1Input.Placeholder = "/path/to/logo1.png"
+	productLogo1Input.CharLimit = 255
+	productLogo1Input.Width = 40
+	if cfg.ProductLogo1Path != "" {
+		productLogo1Input.SetValue(cfg.ProductLogo1Path)
+	}
+
+	// Product Logo 2 input (top-right)
+	productLogo2Input := textinput.New()
+	productLogo2Input.Placeholder = "/path/to/logo2.png"
+	productLogo2Input.CharLimit = 255
+	productLogo2Input.Width = 40
+	if cfg.ProductLogo2Path != "" {
+		productLogo2Input.SetValue(cfg.ProductLogo2Path)
+	}
+
+	// Company Logo input (lower third)
+	companyLogoInput := textinput.New()
+	companyLogoInput.Placeholder = "/path/to/company_logo.png"
+	companyLogoInput.CharLimit = 255
+	companyLogoInput.Width = 40
+	if cfg.CompanyLogoPath != "" {
+		companyLogoInput.SetValue(cfg.CompanyLogoPath)
+	}
+
 	return &OptionsModel{
-		config:         cfg,
-		topics:         topics,
-		selectedTopic:  0,
-		focusedField:   OptionsFieldTopicList,
-		newTopicInput:  newTopicInput,
-		presenterInput: presenterInput,
+		config:            cfg,
+		topics:            topics,
+		selectedTopic:     0,
+		focusedField:      OptionsFieldTopicList,
+		newTopicInput:     newTopicInput,
+		presenterInput:    presenterInput,
+		productLogo1Input: productLogo1Input,
+		productLogo2Input: productLogo2Input,
+		companyLogoInput:  companyLogoInput,
 	}
 }
 
@@ -161,6 +197,21 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 		var cmd tea.Cmd
 		m.presenterInput, cmd = m.presenterInput.Update(msg)
 		cmds = append(cmds, cmd)
+
+	case OptionsFieldProductLogo1:
+		var cmd tea.Cmd
+		m.productLogo1Input, cmd = m.productLogo1Input.Update(msg)
+		cmds = append(cmds, cmd)
+
+	case OptionsFieldProductLogo2:
+		var cmd tea.Cmd
+		m.productLogo2Input, cmd = m.productLogo2Input.Update(msg)
+		cmds = append(cmds, cmd)
+
+	case OptionsFieldCompanyLogo:
+		var cmd tea.Cmd
+		m.companyLogoInput, cmd = m.companyLogoInput.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -190,6 +241,9 @@ func (m *OptionsModel) prevField() {
 func (m *OptionsModel) unfocusAll() {
 	m.newTopicInput.Blur()
 	m.presenterInput.Blur()
+	m.productLogo1Input.Blur()
+	m.productLogo2Input.Blur()
+	m.companyLogoInput.Blur()
 }
 
 // focusCurrent focuses the current field
@@ -199,6 +253,12 @@ func (m *OptionsModel) focusCurrent() {
 		m.newTopicInput.Focus()
 	case OptionsFieldDefaultPresenter:
 		m.presenterInput.Focus()
+	case OptionsFieldProductLogo1:
+		m.productLogo1Input.Focus()
+	case OptionsFieldProductLogo2:
+		m.productLogo2Input.Focus()
+	case OptionsFieldCompanyLogo:
+		m.companyLogoInput.Focus()
 	}
 }
 
@@ -251,6 +311,9 @@ func (m *OptionsModel) removeTopic() {
 func (m *OptionsModel) save() {
 	m.config.Topics = m.topics
 	m.config.DefaultPresenter = strings.TrimSpace(m.presenterInput.Value())
+	m.config.ProductLogo1Path = strings.TrimSpace(m.productLogo1Input.Value())
+	m.config.ProductLogo2Path = strings.TrimSpace(m.productLogo2Input.Value())
+	m.config.CompanyLogoPath = strings.TrimSpace(m.companyLogoInput.Value())
 
 	if err := config.Save(m.config); err != nil {
 		m.err = err
@@ -340,11 +403,47 @@ func (m *OptionsModel) View() string {
 
 	// Default Presenter Section
 	presenterSection := sectionStyle.Render("Default Presenter")
-	presenterStyle := inactiveStyle
+	presenterInputStyle := inactiveStyle
 	if m.focusedField == OptionsFieldDefaultPresenter {
-		presenterStyle = activeStyle
+		presenterInputStyle = activeStyle
 	}
-	presenterRow := presenterStyle.Render(m.presenterInput.View())
+	presenterRow := presenterInputStyle.Render(m.presenterInput.View())
+
+	// Logo Settings Section
+	logoSection := sectionStyle.Render("Logo Settings")
+
+	// Product Logo 1 (top-left)
+	logo1Style := inactiveStyle
+	if m.focusedField == OptionsFieldProductLogo1 {
+		logo1Style = activeStyle
+	}
+	logo1Row := lipgloss.JoinHorizontal(lipgloss.Center,
+		labelStyle.Width(20).Render("Product Logo 1: "),
+		logo1Style.Render(m.productLogo1Input.View()),
+	)
+	logo1Hint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (top-left corner)")
+
+	// Product Logo 2 (top-right)
+	logo2Style := inactiveStyle
+	if m.focusedField == OptionsFieldProductLogo2 {
+		logo2Style = activeStyle
+	}
+	logo2Row := lipgloss.JoinHorizontal(lipgloss.Center,
+		labelStyle.Width(20).Render("Product Logo 2: "),
+		logo2Style.Render(m.productLogo2Input.View()),
+	)
+	logo2Hint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (top-right corner)")
+
+	// Company Logo (lower third)
+	companyLogoStyle := inactiveStyle
+	if m.focusedField == OptionsFieldCompanyLogo {
+		companyLogoStyle = activeStyle
+	}
+	companyLogoRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		labelStyle.Width(20).Render("Company Logo: "),
+		companyLogoStyle.Render(m.companyLogoInput.View()),
+	)
+	companyLogoHint := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("  (lower third with title)")
 
 	// Save button
 	saveBtn := inactiveButtonStyle.Render("Save Settings")
@@ -384,6 +483,14 @@ func (m *OptionsModel) View() string {
 		"",
 		presenterSection,
 		presenterRow,
+		"",
+		logoSection,
+		logo1Row,
+		logo1Hint,
+		logo2Row,
+		logo2Hint,
+		companyLogoRow,
+		companyLogoHint,
 		"",
 		saveBtn,
 		"",

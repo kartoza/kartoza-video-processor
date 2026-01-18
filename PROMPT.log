@@ -324,3 +324,20 @@ I still cannot start the recording
 1. Row 1: Topic, Date (YYYY-MM-DD), Duration, Size
 2. Row 2: Folder name with folder icon
 3. Removed title and description from list view (still visible in detail view)
+
+---
+
+**Prompt:** add three new options for the options screen.
+Product Logo: 1 - to be shown in the top left of the webcam view in vertical mode and the top left of the screen in screen only video
+Product Logo: 2 - to be shown in the top right of the webcam view in vertical mode and the top right of the screen in screen only video
+Company Logo: - Shown as a lower third and will have the video title drawn onto it.
+copies of these resources should be written into the project folder during processing and ffmpeg should be used to overlay them onto the video during the rendering workflow.
+
+**Summary:** Added logo configuration options:
+1. Added ProductLogo1Path, ProductLogo2Path, CompanyLogoPath to Config struct
+2. Added three new text input fields to Options screen for logo paths
+3. Product Logo 1: For top-left corner overlay
+4. Product Logo 2: For top-right corner overlay
+5. Company Logo: For lower third with video title overlay
+6. Logo paths are saved to config.json
+7. Note: FFmpeg overlay implementation will be done in merger during processing

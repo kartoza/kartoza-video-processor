@@ -37,6 +37,11 @@ type Config struct {
 	Topics            []models.Topic                `json:"topics,omitempty"`
 	DefaultPresenter  string                        `json:"default_presenter,omitempty"`
 	RecordingCounter  int                           `json:"recording_counter"`
+
+	// Logo paths for video overlays
+	ProductLogo1Path  string `json:"product_logo_1_path,omitempty"` // Top-left logo
+	ProductLogo2Path  string `json:"product_logo_2_path,omitempty"` // Top-right logo
+	CompanyLogoPath   string `json:"company_logo_path,omitempty"`   // Lower third with title
 }
 
 // DefaultConfig returns the default configuration
