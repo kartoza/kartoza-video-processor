@@ -15,15 +15,6 @@ type LoudnormStats struct {
 
 // AudioProcessingOptions contains options for audio post-processing
 type AudioProcessingOptions struct {
-	// DenoiseEnabled enables FFT-based background noise reduction
-	DenoiseEnabled bool
-	// HighpassFreq is the frequency for highpass filter (removes rumble)
-	HighpassFreq int
-	// NoiseFloor is the noise floor level for afftdn filter
-	NoiseFloor int
-	// TrackNoise enables adaptive noise tracking
-	TrackNoise bool
-
 	// NormalizeEnabled enables EBU R128 loudness normalization
 	NormalizeEnabled bool
 	// TargetLoudness is the target integrated loudness in LUFS
@@ -37,11 +28,6 @@ type AudioProcessingOptions struct {
 // DefaultAudioProcessingOptions returns sensible defaults for audio processing
 func DefaultAudioProcessingOptions() AudioProcessingOptions {
 	return AudioProcessingOptions{
-		DenoiseEnabled: true,
-		HighpassFreq:   200,
-		NoiseFloor:     -25,
-		TrackNoise:     true,
-
 		NormalizeEnabled: true,
 		TargetLoudness:   -14.0, // Louder than broadcast, good for screen recordings
 		TruePeak:         -1.5,  // Prevents clipping

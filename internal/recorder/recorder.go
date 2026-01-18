@@ -591,7 +591,6 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		if mergeResult.VerticalFile != "" {
 			r.recordingInfo.Files.VerticalFile = mergeResult.VerticalFile
 		}
-		r.recordingInfo.Processing.DenoiseApplied = mergeResult.DenoiseApplied
 		r.recordingInfo.Processing.NormalizeApplied = mergeResult.NormalizeApplied
 		r.recordingInfo.Processing.VerticalCreated = mergeResult.VerticalFile != ""
 		r.recordingInfo.UpdateFileSizes()

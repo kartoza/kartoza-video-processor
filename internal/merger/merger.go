@@ -20,8 +20,7 @@ import (
 type ProcessingStep int
 
 const (
-	StepDenoising ProcessingStep = iota
-	StepAnalyzingAudio
+	StepAnalyzingAudio ProcessingStep = iota
 	StepNormalizing
 	StepMerging
 	StepCreatingVertical
@@ -154,7 +153,6 @@ type MergeOptions struct {
 type MergeResult struct {
 	MergedFile       string
 	VerticalFile     string
-	DenoiseApplied   bool
 	NormalizeApplied bool
 }
 
@@ -165,26 +163,9 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	// Process audio first
 	normalizedAudio := strings.TrimSuffix(opts.AudioFile, ".wav") + "-normalized.wav"
 	processor := audio.NewProcessor(m.audioOpts)
-
-	// Step 1: Denoise
-	m.reportProgress(StepDenoising, false, false, nil)
-	denoisedAudio := strings.TrimSuffix(opts.AudioFile, ".wav") + "-denoised.wav"
 	currentAudio := opts.AudioFile
 
-	if m.audioOpts.DenoiseEnabled {
-		if err := processor.Denoise(opts.AudioFile, denoisedAudio); err != nil {
-			m.reportProgress(StepDenoising, true, true, err)
-			notify.Warning("Noise Reduction Warning", "Skipping noise reduction")
-		} else {
-			currentAudio = denoisedAudio
-			result.DenoiseApplied = true
-			m.reportProgress(StepDenoising, true, false, nil)
-		}
-	} else {
-		m.reportProgress(StepDenoising, true, true, nil)
-	}
-
-	// Step 2: Analyze audio levels
+	// Step 1: Analyze audio levels
 	m.reportProgress(StepAnalyzingAudio, false, false, nil)
 	var stats *models.LoudnormStats
 	if m.audioOpts.NormalizeEnabled {
@@ -200,7 +181,7 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 		m.reportProgress(StepAnalyzingAudio, true, true, nil)
 	}
 
-	// Step 3: Normalize audio
+	// Step 2: Normalize audio
 	m.reportProgress(StepNormalizing, false, false, nil)
 	if m.audioOpts.NormalizeEnabled && stats != nil {
 		if err := processor.Normalize(currentAudio, normalizedAudio, stats); err != nil {

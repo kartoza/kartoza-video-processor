@@ -438,3 +438,47 @@ copies of these resources should be written into the project folder during proce
 **Summary:** Fixed title text centering in vertical video:
 - Changed drawtext x position from fixed "x=220" to "x=(w-text_w)/2"
 - This centers the title text horizontally based on the text width
+---
+
+**Prompt:** the progress bars just show 100% while it is processing instead of actually tracking the progress ... It still just jumps to 100% e.g. when generating the vertical video
+
+**Summary:** Fixed real-time progress bar updates:
+1. Changed from out_time_ms to out_time_us (FFmpeg outputs microseconds, not milliseconds)
+2. Updated getVideoDurationUs() to return microseconds
+3. Changed TUI to use non-blocking waitForProgressUpdate pattern instead of blocking startProcessingPipeline
+4. Added -stats_period 0.5 to FFmpeg commands for frequent progress output every 0.5 seconds
+5. Progress now updates smoothly from 0% to 100% during encoding
+
+---
+
+**Prompt:** why does the vertical video take so much longer to generate than everything else ... we can also reduce the output to 30fps for all the video products right?
+
+**Summary:** Improved encoding performance:
+1. Changed preset from "veryslow" to "medium" (~5x faster)
+2. Changed framerate from 60fps to 30fps
+3. Changed CRF from 0 (lossless) to 18 (high quality, reasonable size)
+4. Applied to both mergeVideoAudio() and createVerticalVideo() functions
+
+---
+
+**Prompt:** I think we can ditch the denoised sound processing and just keep and use the normalised audio
+
+**Summary:** Removed denoising audio processing:
+1. Removed StepDenoising from ProcessingStep enum in merger.go
+2. Removed "Denoising audio" step from TUI processing state
+3. Removed DenoiseEnabled, HighpassFreq, NoiseFloor, TrackNoise from AudioProcessingOptions
+4. Removed Denoise() function from audio.go
+5. Removed DenoiseApplied from ProcessingInfo and MergeResult
+6. Simplified Process() function to only do normalization
+7. Updated processing_test.go to expect 5 steps instead of 6
+
+---
+
+**Prompt:** on the recording screen provide some guidance on the expected size (image dimensions) of the logos and banner so that the banner spans the whole width of the video and the logos are 1/5 of the screen width
+
+**Summary:** Added logo size guidance to recording setup screen:
+1. When "Add Logos" is enabled, display hint text with recommended dimensions
+2. Hint: "Logos: 216x216px (1/5 width) • Banner: 1080px wide"
+3. Renamed "Bottom Logo" to "Bottom Banner" for clarity
+
+---

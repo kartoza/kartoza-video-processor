@@ -13,8 +13,8 @@ func TestNewProcessingState(t *testing.T) {
 		t.Fatal("NewProcessingState returned nil")
 	}
 
-	if len(p.Steps) != 6 {
-		t.Errorf("expected 6 steps, got %d", len(p.Steps))
+	if len(p.Steps) != 5 {
+		t.Errorf("expected 5 steps, got %d", len(p.Steps))
 	}
 
 	if p.CurrentStep != -1 {
@@ -127,8 +127,8 @@ func TestProcessingState_Complete(t *testing.T) {
 	p := NewProcessingState()
 	p.Start()
 
-	// Move through all steps
-	for i := 0; i < 5; i++ {
+	// Move through all steps (5 steps now: stop, analyze, normalize, merge, vertical)
+	for i := 0; i < 4; i++ {
 		p.NextStep()
 	}
 
@@ -139,8 +139,8 @@ func TestProcessingState_Complete(t *testing.T) {
 		t.Error("expected IsProcessing to be false after Complete")
 	}
 
-	if p.Steps[5].Status != StepComplete {
-		t.Errorf("expected last step to be StepComplete, got %d", p.Steps[5].Status)
+	if p.Steps[4].Status != StepComplete {
+		t.Errorf("expected last step to be StepComplete, got %d", p.Steps[4].Status)
 	}
 }
 
@@ -224,7 +224,7 @@ func TestRenderProcessingView_Animation(t *testing.T) {
 func TestRenderProcessingView_Complete(t *testing.T) {
 	p := NewProcessingState()
 	p.Start()
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 5; i++ {
 		p.NextStep()
 	}
 	p.Complete()

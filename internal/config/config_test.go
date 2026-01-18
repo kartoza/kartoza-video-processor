@@ -22,10 +22,6 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("expected TruePeak to be -1.5, got %f", cfg.AudioProcessing.TruePeak)
 	}
 
-	if !cfg.AudioProcessing.DenoiseEnabled {
-		t.Error("expected DenoiseEnabled to be true by default")
-	}
-
 	if !cfg.AudioProcessing.NormalizeEnabled {
 		t.Error("expected NormalizeEnabled to be true by default")
 	}

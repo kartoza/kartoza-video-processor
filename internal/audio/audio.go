@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
-	"strings"
 	"syscall"
 
 	"github.com/kartoza/kartoza-video-processor/internal/models"
@@ -75,35 +74,6 @@ func NewProcessor(opts models.AudioProcessingOptions) *Processor {
 	return &Processor{options: opts}
 }
 
-// Denoise removes background noise from audio
-func (p *Processor) Denoise(inputFile, outputFile string) error {
-	notify.ProcessingStep("Removing background noise...")
-
-	// Build filter chain
-	// - highpass: Remove low-frequency rumble
-	// - afftdn: FFT-based denoiser for constant background noise
-	filter := fmt.Sprintf("highpass=f=%d,afftdn=nf=%d:tn=%d",
-		p.options.HighpassFreq,
-		p.options.NoiseFloor,
-		boolToInt(p.options.TrackNoise),
-	)
-
-	cmd := exec.Command("ffmpeg",
-		"-y",
-		"-i", inputFile,
-		"-af", filter,
-		"-c:a", "pcm_s16le",
-		outputFile,
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("noise reduction failed: %w, output: %s", err, output)
-	}
-
-	return nil
-}
-
 // AnalyzeLoudness performs first-pass loudnorm analysis
 func (p *Processor) AnalyzeLoudness(inputFile string) (*models.LoudnormStats, error) {
 	notify.ProcessingStep("Analyzing audio levels...")
@@ -168,27 +138,14 @@ func (p *Processor) Normalize(inputFile, outputFile string, stats *models.Loudno
 
 // Process performs full audio processing pipeline
 func (p *Processor) Process(inputFile, outputFile string) error {
-	currentFile := inputFile
-	tempDenoised := strings.TrimSuffix(outputFile, ".wav") + "-denoised.wav"
-
-	// Step 1: Denoise if enabled
-	if p.options.DenoiseEnabled {
-		if err := p.Denoise(currentFile, tempDenoised); err != nil {
-			notify.Warning("Noise Reduction Warning", "Skipping noise reduction")
-		} else {
-			currentFile = tempDenoised
-		}
-	}
-
-	// Step 2: Normalize if enabled
 	if p.options.NormalizeEnabled {
-		stats, err := p.AnalyzeLoudness(currentFile)
+		stats, err := p.AnalyzeLoudness(inputFile)
 		if err != nil {
 			notify.Warning("Audio Normalization Warning", "Using original audio")
 			return nil
 		}
 
-		if err := p.Normalize(currentFile, outputFile, stats); err != nil {
+		if err := p.Normalize(inputFile, outputFile, stats); err != nil {
 			notify.Warning("Audio Normalization Warning", "Using original audio")
 			return nil
 		}
@@ -245,9 +202,3 @@ func extractLoudnormValues(output string) models.LoudnormStats {
 	return stats
 }
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}

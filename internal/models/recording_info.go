@@ -85,24 +85,22 @@ type FileInfo struct {
 
 // RecordingSettings contains the settings used for recording
 type RecordingSettings struct {
-	HardwareAccel   bool   `json:"hardware_accel"`
-	AudioDevice     string `json:"audio_device"`
-	WebcamDevice    string `json:"webcam_device,omitempty"`
-	WebcamFPS       int    `json:"webcam_fps,omitempty"`
-	WebcamEnabled   bool   `json:"webcam_enabled"`
-	AudioEnabled    bool   `json:"audio_enabled"`
-	DenoiseEnabled  bool   `json:"denoise_enabled"`
-	NormalizeEnabled bool  `json:"normalize_enabled"`
+	HardwareAccel    bool   `json:"hardware_accel"`
+	AudioDevice      string `json:"audio_device"`
+	WebcamDevice     string `json:"webcam_device,omitempty"`
+	WebcamFPS        int    `json:"webcam_fps,omitempty"`
+	WebcamEnabled    bool   `json:"webcam_enabled"`
+	AudioEnabled     bool   `json:"audio_enabled"`
+	NormalizeEnabled bool   `json:"normalize_enabled"`
 }
 
 // ProcessingInfo contains information about post-processing
 type ProcessingInfo struct {
-	ProcessedAt     time.Time     `json:"processed_at,omitempty"`
-	ProcessingTime  time.Duration `json:"processing_time,omitempty"`
-	DenoiseApplied  bool          `json:"denoise_applied"`
-	NormalizeApplied bool         `json:"normalize_applied"`
-	VerticalCreated bool          `json:"vertical_created"`
-	Errors          []string      `json:"errors,omitempty"`
+	ProcessedAt      time.Time     `json:"processed_at,omitempty"`
+	ProcessingTime   time.Duration `json:"processing_time,omitempty"`
+	NormalizeApplied bool          `json:"normalize_applied"`
+	VerticalCreated  bool          `json:"vertical_created"`
+	Errors           []string      `json:"errors,omitempty"`
 }
 
 // NewRecordingInfo creates a new RecordingInfo with system information populated

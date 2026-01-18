@@ -43,7 +43,6 @@ func NewProcessingState() *ProcessingState {
 	return &ProcessingState{
 		Steps: []ProcessingStep{
 			{Name: "Stopping recorders", Status: StepPending},
-			{Name: "Denoising audio", Status: StepPending},
 			{Name: "Analyzing audio levels", Status: StepPending},
 			{Name: "Normalizing audio", Status: StepPending},
 			{Name: "Merging video & audio", Status: StepPending},
