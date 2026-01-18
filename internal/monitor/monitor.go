@@ -4,14 +4,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/kartoza/kartoza-video-processor/internal/deps"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 )
 
-// ListMonitors returns all available monitors from Hyprland
+// ListMonitors returns all available monitors
 func ListMonitors() ([]models.Monitor, error) {
+	switch deps.DetectDisplayServer() {
+	case deps.DisplayServerWayland:
+		return listMonitorsWayland()
+	case deps.DisplayServerX11:
+		return listMonitorsX11()
+	default:
+		// Try Wayland first, then X11
+		monitors, err := listMonitorsWayland()
+		if err == nil {
+			return monitors, nil
+		}
+		return listMonitorsX11()
+	}
+}
+
+// listMonitorsWayland returns monitors using hyprctl (Wayland/Hyprland)
+func listMonitorsWayland() ([]models.Monitor, error) {
 	cmd := exec.Command("hyprctl", "monitors", "-j")
 	output, err := cmd.Output()
 	if err != nil {
@@ -26,8 +45,70 @@ func ListMonitors() ([]models.Monitor, error) {
 	return monitors, nil
 }
 
+// listMonitorsX11 returns monitors using xrandr (X11)
+func listMonitorsX11() ([]models.Monitor, error) {
+	cmd := exec.Command("xrandr", "--query")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run xrandr: %w", err)
+	}
+
+	var monitors []models.Monitor
+	lines := strings.Split(string(output), "\n")
+
+	// Pattern: "DP-0 connected primary 1920x1080+0+0 ..."
+	// or: "HDMI-0 connected 1920x1080+1920+0 ..."
+	re := regexp.MustCompile(`^(\S+)\s+connected\s+(primary\s+)?(\d+)x(\d+)\+(\d+)\+(\d+)`)
+
+	for _, line := range lines {
+		matches := re.FindStringSubmatch(line)
+		if matches == nil {
+			continue
+		}
+
+		name := matches[1]
+		isPrimary := matches[2] != ""
+		width, _ := strconv.Atoi(matches[3])
+		height, _ := strconv.Atoi(matches[4])
+		x, _ := strconv.Atoi(matches[5])
+		y, _ := strconv.Atoi(matches[6])
+
+		monitors = append(monitors, models.Monitor{
+			Name:    name,
+			Width:   width,
+			Height:  height,
+			X:       x,
+			Y:       y,
+			Focused: isPrimary, // Use primary as "focused" for X11
+		})
+	}
+
+	if len(monitors) == 0 {
+		return nil, fmt.Errorf("no monitors found via xrandr")
+	}
+
+	return monitors, nil
+}
+
 // GetCursorPosition returns the current cursor position
 func GetCursorPosition() (models.CursorPosition, error) {
+	switch deps.DetectDisplayServer() {
+	case deps.DisplayServerWayland:
+		return getCursorPositionWayland()
+	case deps.DisplayServerX11:
+		return getCursorPositionX11()
+	default:
+		// Try Wayland first
+		pos, err := getCursorPositionWayland()
+		if err == nil {
+			return pos, nil
+		}
+		return getCursorPositionX11()
+	}
+}
+
+// getCursorPositionWayland gets cursor position using hyprctl
+func getCursorPositionWayland() (models.CursorPosition, error) {
 	cmd := exec.Command("hyprctl", "cursorpos")
 	output, err := cmd.Output()
 	if err != nil {
@@ -48,6 +129,27 @@ func GetCursorPosition() (models.CursorPosition, error) {
 	y, err := strconv.Atoi(strings.TrimSpace(parts[1]))
 	if err != nil {
 		return models.CursorPosition{}, fmt.Errorf("failed to parse cursor Y: %w", err)
+	}
+
+	return models.CursorPosition{X: x, Y: y}, nil
+}
+
+// getCursorPositionX11 gets cursor position using xdotool
+func getCursorPositionX11() (models.CursorPosition, error) {
+	cmd := exec.Command("xdotool", "getmouselocation", "--shell")
+	output, err := cmd.Output()
+	if err != nil {
+		return models.CursorPosition{}, fmt.Errorf("failed to get cursor position: %w", err)
+	}
+
+	// Parse format: "X=123\nY=456\nSCREEN=0\nWINDOW=..."
+	var x, y int
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.HasPrefix(line, "X=") {
+			x, _ = strconv.Atoi(strings.TrimPrefix(line, "X="))
+		} else if strings.HasPrefix(line, "Y=") {
+			y, _ = strconv.Atoi(strings.TrimPrefix(line, "Y="))
+		}
 	}
 
 	return models.CursorPosition{X: x, Y: y}, nil

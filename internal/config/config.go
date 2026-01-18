@@ -57,6 +57,28 @@ type LogoSelection struct {
 	GifLoopMode GifLoopMode `json:"gif_loop_mode,omitempty"` // How to loop animated GIFs
 }
 
+// RecordingPresets holds the user's preferred recording settings
+// These are saved and restored between sessions (excludes title, description, number)
+type RecordingPresets struct {
+	RecordAudio   bool   `json:"record_audio"`
+	RecordWebcam  bool   `json:"record_webcam"`
+	RecordScreen  bool   `json:"record_screen"`
+	VerticalVideo bool   `json:"vertical_video"`
+	AddLogos      bool   `json:"add_logos"`
+	Topic         string `json:"topic,omitempty"` // Last selected topic name
+}
+
+// DefaultRecordingPresets returns sensible defaults for recording presets
+func DefaultRecordingPresets() RecordingPresets {
+	return RecordingPresets{
+		RecordAudio:   true,
+		RecordWebcam:  true,
+		RecordScreen:  true,
+		VerticalVideo: true,
+		AddLogos:      true,
+	}
+}
+
 // DefaultTitleColor is the default color for title text (Kartoza blue)
 const DefaultTitleColor = "#62A4C7"
 
@@ -75,6 +97,9 @@ type Config struct {
 	// Logo settings
 	LogoDirectory  string        `json:"logo_directory,omitempty"`   // Directory to browse for logos
 	LastUsedLogos  LogoSelection `json:"last_used_logos,omitempty"`  // Last used logo selection
+
+	// Recording presets (saved between sessions)
+	RecordingPresets RecordingPresets `json:"recording_presets,omitempty"`
 }
 
 // DefaultConfig returns the default configuration

@@ -19,9 +19,25 @@ var depsCmd = &cobra.Command{
 		green := lipgloss.NewStyle().Foreground(lipgloss.Color("#4CAF50"))
 		red := lipgloss.NewStyle().Foreground(lipgloss.Color("#E95420"))
 		gray := lipgloss.NewStyle().Foreground(lipgloss.Color("#9A9EA0"))
+		cyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00BCD4"))
 		bold := lipgloss.NewStyle().Bold(true)
 
 		fmt.Println()
+
+		// Show detected display server
+		displayServer := deps.DetectDisplayServer()
+		fmt.Printf("%s %s\n\n", bold.Render("Display Server:"), cyan.Render(deps.GetDisplayServerName()))
+
+		// Show which screen recording method will be used
+		switch displayServer {
+		case deps.DisplayServerWayland:
+			fmt.Printf("%s wl-screenrec (Wayland native)\n\n", gray.Render("Screen recording:"))
+		case deps.DisplayServerX11:
+			fmt.Printf("%s ffmpeg x11grab (X11)\n\n", gray.Render("Screen recording:"))
+		default:
+			fmt.Printf("%s Unknown display server\n\n", gray.Render("Screen recording:"))
+		}
+
 		fmt.Println(bold.Render("Required Dependencies:"))
 		fmt.Println()
 

@@ -574,3 +574,11 @@ copies of these resources should be written into the project folder during proce
    - Green ✓ for available, Red ✗ for missing required, Gray ○ for missing optional
 
 ---
+The title colour on the video creation form should show an ascii block in the colour of the title to act as a preview
+if the user omits an optional input we should handle it gracefully.
+
+If no sound recording is made, the video should be created without sound.
+If no webcam recording is made, only the merged video should be made
+If no webcam and no sound then only the video output should be made
+If no screen recording then combine the other inputs and so on
+whatever presets are used in a recording should become the default the next time a recording is made. This excludes the description and title and video number

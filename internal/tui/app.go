@@ -192,7 +192,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle recording setup completion messages first (from any screen)
 	switch msg.(type) {
 	case recordingSetupCompleteMsg:
-		// Recording setup is complete, save metadata and start countdown
+		// Recording setup is complete, save presets for next time and start countdown
+		m.recordingSetup.SaveAllPresets()
 		m.metadata = m.recordingSetup.GetMetadata()
 		m.screen = ScreenRecording
 		m.state = stateCountdown
@@ -355,7 +356,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMenuAction(msg.action)
 
 	case recordingSetupCompleteMsg:
-		// Recording setup is complete, save metadata and start countdown
+		// Recording setup is complete, save presets for next time and start countdown
+		m.recordingSetup.SaveAllPresets()
 		m.metadata = m.recordingSetup.GetMetadata()
 		m.screen = ScreenRecording
 		m.state = stateCountdown

@@ -12,6 +12,7 @@ import (
 
 	"github.com/kartoza/kartoza-video-processor/internal/audio"
 	"github.com/kartoza/kartoza-video-processor/internal/config"
+	"github.com/kartoza/kartoza-video-processor/internal/deps"
 	"github.com/kartoza/kartoza-video-processor/internal/merger"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 	"github.com/kartoza/kartoza-video-processor/internal/monitor"
@@ -303,6 +304,19 @@ waitStarted:
 
 // startVideoRecorder starts the video recorder and waits for the start signal
 func (r *Recorder) startVideoRecorder(hwAccel bool, ready, started chan<- string, errors chan<- error) {
+	displayServer := deps.DetectDisplayServer()
+
+	switch displayServer {
+	case deps.DisplayServerX11:
+		r.startVideoRecorderX11(ready, started, errors)
+	default:
+		// Wayland or unknown - use wl-screenrec
+		r.startVideoRecorderWayland(hwAccel, ready, started, errors)
+	}
+}
+
+// startVideoRecorderWayland starts video recording using wl-screenrec (Wayland)
+func (r *Recorder) startVideoRecorderWayland(hwAccel bool, ready, started chan<- string, errors chan<- error) {
 	args := []string{}
 
 	// Software encoding by default (more compatible)
@@ -328,6 +342,72 @@ func (r *Recorder) startVideoRecorder(hwAccel bool, ready, started chan<- string
 
 	if err := r.video.cmd.Start(); err != nil {
 		r.video.err = fmt.Errorf("failed to start wl-screenrec: %w", err)
+		errors <- r.video.err
+		return
+	}
+
+	r.video.pid = r.video.cmd.Process.Pid
+	r.video.started = true
+
+	// Signal that we've started
+	started <- "video"
+
+	// Wait for stop signal or process exit
+	done := make(chan error, 1)
+	go func() {
+		done <- r.video.cmd.Wait()
+	}()
+
+	select {
+	case <-r.stopSignal:
+		// Stop requested
+	case err := <-done:
+		if err != nil {
+			r.video.err = err
+		}
+	}
+}
+
+// startVideoRecorderX11 starts video recording using ffmpeg with x11grab (X11)
+func (r *Recorder) startVideoRecorderX11(ready, started chan<- string, errors chan<- error) {
+	// Get monitor info for position and size
+	mon, err := monitor.GetMonitorByName(r.video.name)
+	if err != nil {
+		// Fallback to full screen capture
+		mon = &models.Monitor{X: 0, Y: 0, Width: 1920, Height: 1080}
+	}
+
+	// Build ffmpeg x11grab command
+	// ffmpeg -f x11grab -framerate 60 -video_size WxH -i :0.0+X,Y -c:v libx264 -pix_fmt yuv420p output.mp4
+	display := os.Getenv("DISPLAY")
+	if display == "" {
+		display = ":0"
+	}
+
+	args := []string{
+		"-f", "x11grab",
+		"-framerate", "60",
+		"-video_size", fmt.Sprintf("%dx%d", mon.Width, mon.Height),
+		"-i", fmt.Sprintf("%s+%d,%d", display, mon.X, mon.Y),
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-pix_fmt", "yuv420p",
+		"-y", // Overwrite output
+		r.video.file,
+	}
+
+	r.video.cmd = exec.Command("ffmpeg", args...)
+	r.video.cmd.Stdout = nil
+	r.video.cmd.Stderr = nil
+
+	// Signal we're ready
+	ready <- "video"
+
+	// Wait for synchronized start signal
+	<-r.startBarrier
+
+	if err := r.video.cmd.Start(); err != nil {
+		r.video.err = fmt.Errorf("failed to start ffmpeg x11grab: %w", err)
 		errors <- r.video.err
 		return
 	}

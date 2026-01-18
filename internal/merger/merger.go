@@ -160,20 +160,37 @@ type MergeResult struct {
 }
 
 // Merge merges video and audio recordings
+// Handles all combinations of missing inputs gracefully:
+// - Video only: copies video to output
+// - Video + audio: merges them
+// - Video + webcam: creates vertical video without audio
+// - Video + webcam + audio: full merge with vertical video
+// - Audio only: copies audio (no video output)
+// - Webcam only: copies webcam to output
+// - Webcam + audio: merges webcam with audio
 func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	result := &MergeResult{}
 
-	// Process audio first
-	normalizedAudio := strings.TrimSuffix(opts.AudioFile, ".wav") + "-normalized.wav"
-	processor := audio.NewProcessor(m.audioOpts)
-	currentAudio := opts.AudioFile
+	// Check what inputs we have
+	hasVideo := opts.VideoFile != "" && fileExists(opts.VideoFile)
+	hasAudio := opts.AudioFile != "" && fileExists(opts.AudioFile)
+	hasWebcam := opts.WebcamFile != "" && fileExists(opts.WebcamFile)
 
-	// Step 1: Analyze audio levels
+	// If we have no inputs at all, return early
+	if !hasVideo && !hasAudio && !hasWebcam {
+		return result, fmt.Errorf("no input files provided")
+	}
+
+	// Process audio if available
+	var normalizedAudio string
+	processor := audio.NewProcessor(m.audioOpts)
+
+	// Step 1: Analyze audio levels (skip if no audio)
 	m.reportProgress(StepAnalyzingAudio, false, false, nil)
 	var stats *models.LoudnormStats
-	if m.audioOpts.NormalizeEnabled {
+	if hasAudio && m.audioOpts.NormalizeEnabled {
 		var err error
-		stats, err = processor.AnalyzeLoudness(currentAudio)
+		stats, err = processor.AnalyzeLoudness(opts.AudioFile)
 		if err != nil {
 			m.reportProgress(StepAnalyzingAudio, true, true, err)
 			notify.Warning("Audio Analysis Warning", "Skipping normalization")
@@ -184,43 +201,88 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 		m.reportProgress(StepAnalyzingAudio, true, true, nil)
 	}
 
-	// Step 2: Normalize audio
+	// Step 2: Normalize audio (skip if no audio)
 	m.reportProgress(StepNormalizing, false, false, nil)
-	if m.audioOpts.NormalizeEnabled && stats != nil {
-		if err := processor.Normalize(currentAudio, normalizedAudio, stats); err != nil {
-			m.reportProgress(StepNormalizing, true, true, err)
-			notify.Warning("Audio Normalization Warning", "Using original audio")
-			normalizedAudio = currentAudio
+	if hasAudio {
+		normalizedAudio = strings.TrimSuffix(opts.AudioFile, ".wav") + "-normalized.wav"
+		if m.audioOpts.NormalizeEnabled && stats != nil {
+			if err := processor.Normalize(opts.AudioFile, normalizedAudio, stats); err != nil {
+				m.reportProgress(StepNormalizing, true, true, err)
+				notify.Warning("Audio Normalization Warning", "Using original audio")
+				normalizedAudio = opts.AudioFile
+			} else {
+				result.NormalizeApplied = true
+				m.reportProgress(StepNormalizing, true, false, nil)
+			}
 		} else {
-			result.NormalizeApplied = true
-			m.reportProgress(StepNormalizing, true, false, nil)
+			normalizedAudio = opts.AudioFile
+			m.reportProgress(StepNormalizing, true, true, nil)
 		}
 	} else {
-		normalizedAudio = currentAudio
 		m.reportProgress(StepNormalizing, true, true, nil)
 	}
 
-	// Step 4: Merge video and audio
+	// Step 3: Create merged output
 	m.reportProgress(StepMerging, false, false, nil)
-	outputFile := strings.TrimSuffix(opts.VideoFile, ".mp4") + "-merged.mp4"
-	notify.ProcessingStep("Merging video and audio...")
 
-	if err := m.mergeVideoAudio(opts.VideoFile, normalizedAudio, outputFile); err != nil {
-		m.reportProgress(StepMerging, true, false, err)
-		return nil, fmt.Errorf("failed to merge video and audio: %w", err)
+	// Determine base file for output naming
+	baseFile := opts.VideoFile
+	if baseFile == "" {
+		baseFile = opts.WebcamFile
+	}
+	if baseFile == "" {
+		// Audio only - skip video merge
+		m.reportProgress(StepMerging, true, true, nil)
+		m.reportProgress(StepCreatingVertical, true, true, nil)
+		return result, nil
+	}
+
+	outputFile := strings.TrimSuffix(baseFile, ".mp4") + "-merged.mp4"
+
+	// Handle different input combinations
+	var mergeErr error
+	switch {
+	case hasVideo && hasAudio:
+		// Standard merge: video + audio
+		notify.ProcessingStep("Merging video and audio...")
+		mergeErr = m.mergeVideoAudio(opts.VideoFile, normalizedAudio, outputFile)
+	case hasVideo && !hasAudio:
+		// Video only: copy/re-encode video without audio
+		notify.ProcessingStep("Processing video (no audio)...")
+		mergeErr = m.processVideoOnly(opts.VideoFile, outputFile)
+	case !hasVideo && hasWebcam && hasAudio:
+		// Webcam + audio only (no screen video)
+		notify.ProcessingStep("Merging webcam and audio...")
+		mergeErr = m.mergeVideoAudio(opts.WebcamFile, normalizedAudio, outputFile)
+	case !hasVideo && hasWebcam && !hasAudio:
+		// Webcam only: copy/re-encode webcam without audio
+		notify.ProcessingStep("Processing webcam video (no audio)...")
+		mergeErr = m.processVideoOnly(opts.WebcamFile, outputFile)
+	}
+
+	if mergeErr != nil {
+		m.reportProgress(StepMerging, true, false, mergeErr)
+		return nil, fmt.Errorf("failed to merge recordings: %w", mergeErr)
 	}
 	m.reportProgress(StepMerging, true, false, nil)
 
 	result.MergedFile = outputFile
 	notify.RecordingComplete(filepath.Base(outputFile))
 
-	// Step 5: Create vertical video with webcam if available
+	// Step 4: Create vertical video with webcam if available
 	m.reportProgress(StepCreatingVertical, false, false, nil)
-	if opts.CreateVertical && opts.WebcamFile != "" {
+	if opts.CreateVertical && hasVideo && hasWebcam {
 		verticalFile := strings.TrimSuffix(opts.VideoFile, ".mp4") + "-vertical.mp4"
 
-		if err := m.createVerticalVideo(opts.VideoFile, opts.WebcamFile, normalizedAudio, verticalFile, &opts); err != nil {
-			m.reportProgress(StepCreatingVertical, true, true, err)
+		var verticalErr error
+		if hasAudio {
+			verticalErr = m.createVerticalVideo(opts.VideoFile, opts.WebcamFile, normalizedAudio, verticalFile, &opts)
+		} else {
+			verticalErr = m.createVerticalVideoNoAudio(opts.VideoFile, opts.WebcamFile, verticalFile, &opts)
+		}
+
+		if verticalErr != nil {
+			m.reportProgress(StepCreatingVertical, true, true, verticalErr)
 			notify.Warning("Vertical Video Warning", "Failed to create vertical video")
 		} else {
 			result.VerticalFile = verticalFile
@@ -232,6 +294,33 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	}
 
 	return result, nil
+}
+
+// fileExists checks if a file exists and is not a directory
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return err == nil && !info.IsDir()
+}
+
+// processVideoOnly re-encodes a video file without audio
+func (m *Merger) processVideoOnly(videoFile, outputFile string) error {
+	durationUs := getVideoDurationUs(videoFile)
+
+	args := []string{
+		"-y",
+		"-i", videoFile,
+		"-c:v", "libx264",
+		"-preset", "medium",
+		"-crf", "18",
+		"-r", "30",
+		"-an", // No audio
+		outputFile,
+	}
+
+	return m.runFFmpegWithProgress(StepMerging, durationUs, args...)
 }
 
 // mergeVideoAudio merges video and audio using ffmpeg
@@ -456,6 +545,173 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "320k",
+		"-shortest",
+		outputFile,
+	)
+
+	return m.runFFmpegWithProgress(StepCreatingVertical, durationUs, args...)
+}
+
+// createVerticalVideoNoAudio creates a vertical video with webcam but without audio
+// Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
+func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile string, opts *MergeOptions) error {
+	notify.ProcessingStep("Creating vertical video (1080x1920) with webcam (no audio)...")
+
+	// Get screen video dimensions
+	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
+	if err != nil {
+		return fmt.Errorf("failed to get screen dimensions: %w", err)
+	}
+
+	// Get webcam dimensions
+	webcamWidth, webcamHeight, err := webcam.GetVideoInfo(webcamFile)
+	if err != nil {
+		return fmt.Errorf("failed to get webcam dimensions: %w", err)
+	}
+
+	// Calculate layout (same as createVerticalVideo)
+	scaledScreenWidth := YouTubeShortsWidth
+	scaledScreenHeight := screenHeight * YouTubeShortsWidth / screenWidth
+	remainingHeight := YouTubeShortsHeight - scaledScreenHeight
+	scaledWebcamWidth := YouTubeShortsWidth
+	scaledWebcamHeight := webcamHeight * YouTubeShortsWidth / webcamWidth
+
+	if scaledWebcamHeight > remainingHeight {
+		scaledWebcamHeight = remainingHeight
+		scaledWebcamWidth = webcamWidth * remainingHeight / webcamHeight
+	}
+
+	webcamPadX := (YouTubeShortsWidth - scaledWebcamWidth) / 2
+
+	// Build inputs list (no audio input)
+	inputs := []string{"-y", "-i", videoFile, "-i", webcamFile}
+
+	// Copy logos to output directory if needed
+	var logo1Path, logo2Path, companyLogoPath string
+	gifLoopMode := opts.GifLoopMode
+	if gifLoopMode == "" {
+		gifLoopMode = config.GifLoopContinuous
+	}
+	if opts != nil && opts.AddLogos && opts.OutputDir != "" {
+		if opts.ProductLogo1 != "" {
+			logo1Path = m.copyLogoToOutputDir(opts.ProductLogo1, opts.OutputDir, "product_logo_1")
+			if logo1Path != "" {
+				inputs = appendLogoInput(inputs, logo1Path, gifLoopMode)
+			}
+		}
+		if opts.ProductLogo2 != "" {
+			logo2Path = m.copyLogoToOutputDir(opts.ProductLogo2, opts.OutputDir, "product_logo_2")
+			if logo2Path != "" {
+				inputs = appendLogoInput(inputs, logo2Path, gifLoopMode)
+			}
+		}
+		if opts.CompanyLogo != "" {
+			companyLogoPath = m.copyLogoToOutputDir(opts.CompanyLogo, opts.OutputDir, "company_logo")
+			if companyLogoPath != "" {
+				inputs = appendLogoInput(inputs, companyLogoPath, gifLoopMode)
+			}
+		}
+	}
+
+	// Build filter complex (same as createVerticalVideo but without audio mapping)
+	filterComplex := fmt.Sprintf(
+		"[0:v]scale=%d:%d:flags=lanczos[screen];"+
+			"[1:v]scale=%d:%d:flags=lanczos[webcam];"+
+			"color=black:size=%dx%d:duration=99999[bg];"+
+			"[bg][screen]overlay=(W-w)/2:0[with_screen];"+
+			"[with_screen][webcam]overlay=%d:%d[stacked]",
+		scaledScreenWidth, scaledScreenHeight,
+		scaledWebcamWidth, scaledWebcamHeight,
+		YouTubeShortsWidth, YouTubeShortsHeight,
+		webcamPadX, scaledScreenHeight,
+	)
+
+	currentOutput := "[stacked]"
+	logoInputIndex := 2 // Start after video, webcam (no audio)
+
+	titleColor := "white"
+	if opts != nil && opts.TitleColor != "" {
+		titleColor = opts.TitleColor
+	}
+
+	// Add logo overlays (same logic as createVerticalVideo)
+	if logo1Path != "" {
+		logoY := scaledScreenHeight + 10
+		if isGif(logo1Path) {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=iw/4:-1[logo1_raw];"+
+					"[logo1_raw]split[logo1_a][logo1_b];"+
+					"[logo1_a]drawbox=c=white:t=fill[logo1_bg];"+
+					"[logo1_bg][logo1_b]overlay=0:0:format=auto[logo1];"+
+					"%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
+				logoInputIndex, currentOutput, logoY,
+			)
+		} else {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:shortest=1[out1]",
+				logoInputIndex, currentOutput, logoY,
+			)
+		}
+		currentOutput = "[out1]"
+		logoInputIndex++
+	}
+
+	if logo2Path != "" {
+		logoY := scaledScreenHeight + 10
+		if isGif(logo2Path) {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=iw/4:-1[logo2_raw];"+
+					"[logo2_raw]split[logo2_a][logo2_b];"+
+					"[logo2_a]drawbox=c=white:t=fill[logo2_bg];"+
+					"[logo2_bg][logo2_b]overlay=0:0:format=auto[logo2];"+
+					"%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
+				logoInputIndex, currentOutput, logoY,
+			)
+		} else {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:shortest=1[out2]",
+				logoInputIndex, currentOutput, logoY,
+			)
+		}
+		currentOutput = "[out2]"
+		logoInputIndex++
+	}
+
+	if companyLogoPath != "" && opts != nil && opts.VideoTitle != "" {
+		lowerThirdY := YouTubeShortsHeight - 100
+		if isGif(companyLogoPath) {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=200:-1[complogo_raw];"+
+					"[complogo_raw]split[complogo_a][complogo_b];"+
+					"[complogo_a]drawbox=c=white:t=fill[complogo_bg];"+
+					"[complogo_bg][complogo_b]overlay=0:0:format=auto[complogo];"+
+					"%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
+					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
+			)
+		} else {
+			filterComplex += fmt.Sprintf(
+				";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:shortest=1[out3];"+
+					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
+			)
+		}
+	} else {
+		filterComplex += fmt.Sprintf(";%s[outv]", currentOutput)
+	}
+
+	durationUs := getVideoDurationUs(videoFile)
+
+	// Build args without audio mapping
+	args := append(inputs,
+		"-filter_complex", filterComplex,
+		"-map", "[outv]",
+		"-c:v", "libx264",
+		"-preset", "medium",
+		"-crf", "18",
+		"-r", "30",
+		"-pix_fmt", "yuv420p",
+		"-an", // No audio
 		"-shortest",
 		outputFile,
 	)

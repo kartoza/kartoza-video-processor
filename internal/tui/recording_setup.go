@@ -149,21 +149,40 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 		}
 	}
 
+	// Load recording presets (use defaults if not set)
+	presets := cfg.RecordingPresets
+	// Check if presets have been saved before (if all bools are false, use defaults)
+	presetsExist := presets.RecordAudio || presets.RecordWebcam || presets.RecordScreen || presets.VerticalVideo || presets.AddLogos
+	if !presetsExist {
+		presets = config.DefaultRecordingPresets()
+	}
+
+	// Find topic index from saved preset
+	selectedTopicIdx := 0
+	if presets.Topic != "" {
+		for i, t := range topics {
+			if t.Name == presets.Topic {
+				selectedTopicIdx = i
+				break
+			}
+		}
+	}
+
 	m := &RecordingSetupModel{
 		config:             cfg,
 		focusedField:       fieldTitle,
 		titleInput:         titleInput,
 		numberInput:        numberInput,
 		descInput:          descInput,
-		recordAudio:        true,
-		recordWebcam:       true,
-		recordScreen:       true,
-		verticalVideo:      true,
-		addLogos:           true,
+		recordAudio:        presets.RecordAudio,
+		recordWebcam:       presets.RecordWebcam,
+		recordScreen:       presets.RecordScreen,
+		verticalVideo:      presets.VerticalVideo,
+		addLogos:           presets.AddLogos,
 		monitors:           monitors,
 		selectedMonitor:    0,
 		topics:             topics,
-		selectedTopic:      0,
+		selectedTopic:      selectedTopicIdx,
 		confirmSelected:    true, // Default to "Go Live"
 		logoDirectory:      cfg.LogoDirectory,
 		leftLogo:           cfg.LastUsedLogos.LeftLogo,
@@ -669,6 +688,40 @@ func (m *RecordingSetupModel) SaveLogoSelection() error {
 	return config.Save(cfg)
 }
 
+// GetRecordingPresets returns the current recording presets
+func (m *RecordingSetupModel) GetRecordingPresets() config.RecordingPresets {
+	topic := ""
+	if m.selectedTopic >= 0 && m.selectedTopic < len(m.topics) {
+		topic = m.topics[m.selectedTopic].Name
+	}
+
+	return config.RecordingPresets{
+		RecordAudio:   m.recordAudio,
+		RecordWebcam:  m.recordWebcam,
+		RecordScreen:  m.recordScreen,
+		VerticalVideo: m.verticalVideo,
+		AddLogos:      m.addLogos,
+		Topic:         topic,
+	}
+}
+
+// SaveAllPresets saves all recording presets (toggles, topic, logos) to config
+// This should be called when starting a recording to remember settings for next time
+func (m *RecordingSetupModel) SaveAllPresets() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	// Save recording presets (toggles and topic)
+	cfg.RecordingPresets = m.GetRecordingPresets()
+
+	// Save logo selection
+	cfg.LastUsedLogos = m.GetLogoSelection()
+
+	return config.Save(cfg)
+}
+
 // View renders the two-column form layout
 func (m *RecordingSetupModel) View() string {
 	// Column widths
@@ -868,10 +921,22 @@ func (m *RecordingSetupModel) renderLogoSelector(selectedIdx int, focused bool) 
 func (m *RecordingSetupModel) renderColorSelector(focused bool) string {
 	name := m.titleColor
 
-	if focused {
-		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
+	// Create a color preview block - use the actual color for the block
+	// Handle both hex colors (#rrggbb) and named colors
+	colorBlock := "██"
+	var previewStyle lipgloss.Style
+	if strings.HasPrefix(m.titleColor, "#") {
+		previewStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(m.titleColor))
+	} else {
+		// Named colors - map to lipgloss colors
+		previewStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(m.titleColor))
 	}
-	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
+	preview := previewStyle.Render(colorBlock)
+
+	if focused {
+		return fmt.Sprintf("◀ %s %s ▶", preview, lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
+	}
+	return fmt.Sprintf("%s %s", preview, lipgloss.NewStyle().Foreground(ColorWhite).Render(name))
 }
 
 func (m *RecordingSetupModel) renderGifLoopSelector(focused bool) string {
