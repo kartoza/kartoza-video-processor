@@ -72,8 +72,9 @@ func (m *Merger) reportPercent(step ProcessingStep, percent float64) {
 // runFFmpegWithProgress runs an FFmpeg command and reports progress
 // durationUs is the expected duration in microseconds for calculating percentage
 func (m *Merger) runFFmpegWithProgress(step ProcessingStep, durationUs int64, args ...string) error {
-	// Add progress pipe to args
-	progressArgs := append([]string{"-progress", "pipe:1", "-nostats"}, args...)
+	// Add progress pipe and stats period to args for frequent updates
+	// -stats_period 0.5 outputs progress every 0.5 seconds
+	progressArgs := append([]string{"-progress", "pipe:1", "-stats_period", "0.5", "-nostats"}, args...)
 
 	cmd := exec.Command("ffmpeg", progressArgs...)
 
@@ -96,36 +97,23 @@ func (m *Merger) runFFmpegWithProgress(step ProcessingStep, durationUs int64, ar
 
 	// Parse progress output
 	// FFmpeg outputs progress in key=value format, one per line
-	// We're looking for out_time_us (microseconds) or out_time_ms (milliseconds)
+	// We're looking for out_time_us (microseconds)
+	// Note: out_time_us can be "N/A" at the start, which we skip
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// Try out_time_us first (microseconds) - this is the standard format
+		// Parse out_time_us (microseconds)
 		if strings.HasPrefix(line, "out_time_us=") {
 			timeStr := strings.TrimPrefix(line, "out_time_us=")
-			if timeUs, err := strconv.ParseInt(timeStr, 10, 64); err == nil && durationUs > 0 {
-				percent := float64(timeUs) / float64(durationUs) * 100
-				if percent > 100 {
-					percent = 100
-				}
-				if percent < 0 {
-					percent = 0
-				}
-				m.reportPercent(step, percent)
+			// Skip N/A values
+			if timeStr == "N/A" {
+				continue
 			}
-		} else if strings.HasPrefix(line, "out_time_ms=") {
-			// Fallback to out_time_ms (milliseconds)
-			timeStr := strings.TrimPrefix(line, "out_time_ms=")
-			if timeMs, err := strconv.ParseInt(timeStr, 10, 64); err == nil && durationUs > 0 {
-				// Convert ms to us for comparison
-				timeUs := timeMs * 1000
+			if timeUs, err := strconv.ParseInt(timeStr, 10, 64); err == nil && durationUs > 0 && timeUs >= 0 {
 				percent := float64(timeUs) / float64(durationUs) * 100
 				if percent > 100 {
 					percent = 100
-				}
-				if percent < 0 {
-					percent = 0
 				}
 				m.reportPercent(step, percent)
 			}
