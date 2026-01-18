@@ -502,10 +502,11 @@ func (r *Recorder) IsRecordingLocked() bool {
 
 // ProgressUpdate represents a progress update from the processing pipeline
 type ProgressUpdate struct {
-	Step      int  // Step index (0-based, add 1 for TUI which has "stopping recorders" as step 0)
+	Step      int     // Step index (0-based, add 1 for TUI which has "stopping recorders" as step 0)
 	Completed bool
 	Skipped   bool
 	Error     error
+	Percent   float64 // Progress percentage (0-100), -1 means not a percent update
 }
 
 // ProcessWithProgress processes recordings and sends progress updates to the channel
@@ -539,6 +540,16 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 			Completed: completed,
 			Skipped:   skipped,
 			Error:     err,
+			Percent:   -1, // Not a percent update
+		}
+	})
+
+	// Set up percent callback for progress bars
+	m.SetPercentCallback(func(step merger.ProcessingStep, percent float64) {
+		tuiStep := int(step) + 1
+		progressChan <- ProgressUpdate{
+			Step:    tuiStep,
+			Percent: percent,
 		}
 	})
 

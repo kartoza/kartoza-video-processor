@@ -1,11 +1,13 @@
 package merger
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/kartoza/kartoza-video-processor/internal/audio"
@@ -28,10 +30,14 @@ const (
 // ProgressCallback is called when a processing step starts or completes
 type ProgressCallback func(step ProcessingStep, completed bool, skipped bool, err error)
 
+// PercentCallback is called to report progress percentage during a step
+type PercentCallback func(step ProcessingStep, percent float64)
+
 // Merger handles merging of video, audio, and webcam recordings
 type Merger struct {
-	audioOpts models.AudioProcessingOptions
+	audioOpts  models.AudioProcessingOptions
 	onProgress ProgressCallback
+	onPercent  PercentCallback
 }
 
 // New creates a new Merger
@@ -44,11 +50,77 @@ func (m *Merger) SetProgressCallback(cb ProgressCallback) {
 	m.onProgress = cb
 }
 
+// SetPercentCallback sets the callback for percentage progress updates
+func (m *Merger) SetPercentCallback(cb PercentCallback) {
+	m.onPercent = cb
+}
+
 // reportProgress reports progress if callback is set
 func (m *Merger) reportProgress(step ProcessingStep, completed bool, skipped bool, err error) {
 	if m.onProgress != nil {
 		m.onProgress(step, completed, skipped, err)
 	}
+}
+
+// reportPercent reports percentage progress if callback is set
+func (m *Merger) reportPercent(step ProcessingStep, percent float64) {
+	if m.onPercent != nil {
+		m.onPercent(step, percent)
+	}
+}
+
+// runFFmpegWithProgress runs an FFmpeg command and reports progress
+// durationMs is the expected duration in milliseconds for calculating percentage
+func (m *Merger) runFFmpegWithProgress(step ProcessingStep, durationMs int64, args ...string) error {
+	// Add progress pipe to args
+	progressArgs := append([]string{"-progress", "pipe:1", "-nostats"}, args...)
+
+	cmd := exec.Command("ffmpeg", progressArgs...)
+
+	// Capture stdout for progress
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	// Capture stderr for errors
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	// Parse progress output
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "out_time_ms=") {
+			timeStr := strings.TrimPrefix(line, "out_time_ms=")
+			if timeMs, err := strconv.ParseInt(timeStr, 10, 64); err == nil && durationMs > 0 {
+				percent := float64(timeMs) / float64(durationMs) * 100
+				if percent > 100 {
+					percent = 100
+				}
+				m.reportPercent(step, percent)
+			}
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("ffmpeg failed: %w, stderr: %s", err, stderrBuf.String())
+	}
+
+	return nil
+}
+
+// getVideoDurationMs returns the duration of a video in milliseconds
+func getVideoDurationMs(filepath string) int64 {
+	meta, err := webcam.GetFullVideoInfo(filepath)
+	if err != nil {
+		return 0
+	}
+	return int64(meta.Duration * 1000)
 }
 
 // MergeOptions contains options for merging recordings
@@ -167,9 +239,12 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 
 // mergeVideoAudio merges video and audio using ffmpeg
 func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string) error {
+	// Get video duration for progress calculation
+	durationMs := getVideoDurationMs(videoFile)
+
 	// CRF 0 = completely lossless, preset veryslow = best quality/compression
 	// AAC at 320k for highest audio quality
-	cmd := exec.Command("ffmpeg",
+	args := []string{
 		"-y",
 		"-i", videoFile,
 		"-i", audioFile,
@@ -180,14 +255,9 @@ func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string) error 
 		"-b:a", "320k",
 		"-shortest",
 		outputFile,
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("ffmpeg merge failed: %w, output: %s", err, output)
 	}
 
-	return nil
+	return m.runFFmpegWithProgress(StepMerging, durationMs, args...)
 }
 
 // YouTube Shorts recommended dimensions
@@ -313,15 +383,19 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 
 	if companyLogoPath != "" && opts != nil && opts.VideoTitle != "" {
 		// Company logo as lower third with title overlay
+		// Title text is horizontally centered using (w-text_w)/2
 		lowerThirdY := YouTubeShortsHeight - 100 // Position near bottom
 		filterComplex += fmt.Sprintf(
 			";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto[out3];"+
-				"[out3]drawtext=text='%s':fontcolor=white:fontsize=36:x=220:y=%d[outv]",
+				"[out3]drawtext=text='%s':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
 			logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), lowerThirdY+30,
 		)
 	} else {
 		filterComplex += fmt.Sprintf(";%s[outv]", currentOutput)
 	}
+
+	// Get video duration for progress calculation
+	durationMs := getVideoDurationMs(videoFile)
 
 	args := append(inputs,
 		"-filter_complex", filterComplex,
@@ -337,14 +411,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 		outputFile,
 	)
 
-	cmd := exec.Command("ffmpeg", args...)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("ffmpeg vertical failed: %w, output: %s", err, output)
-	}
-
-	return nil
+	return m.runFFmpegWithProgress(StepCreatingVertical, durationMs, args...)
 }
 
 // copyLogoToOutputDir copies a logo file to the output directory

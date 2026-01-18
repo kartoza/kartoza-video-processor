@@ -657,6 +657,12 @@ func startProcessingPipeline(rec *recorder.Recorder, processing *ProcessingState
 
 		// Process all updates
 		for update := range progressChan {
+			// Check if this is a percent update (no status change, just progress)
+			if update.Percent >= 0 && !update.Completed && !update.Skipped && update.Error == nil {
+				processing.SetStepProgress(update.Step, update.Percent)
+				continue
+			}
+
 			// Update the processing state directly (thread-safe via the state machine)
 			if !update.Completed {
 				processing.SetStepByIndex(update.Step, StepRunning)

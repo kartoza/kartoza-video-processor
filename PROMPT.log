@@ -415,3 +415,26 @@ copies of these resources should be written into the project folder during proce
    - Standard: 1920x1080 (16:9) or 3840x2160 (4K)
    - Shorts: 1080x1920 (9:16)
    - Format: MP4 with H.264 video, AAC audio
+
+---
+
+**Prompt:** can you make more informative progress tracking when the videos are rendering - I would like to see progress bars instead of just spinning indicators
+
+**Summary:** Added progress bars for video rendering steps:
+1. Added Progress field to ProcessingStep struct (0-100, -1 for indeterminate)
+2. Added SetStepProgress() method to update progress during a step
+3. Added renderProgressBar() function using Unicode block characters (█░)
+4. Updated renderStepLine() to show progress bar when progress >= 0
+5. Added PercentCallback to merger for reporting progress percentage
+6. Added runFFmpegWithProgress() helper that parses FFmpeg's -progress output
+7. Extracts out_time_ms from FFmpeg progress and calculates percentage
+8. Progress bars show during "Merging video & audio" and "Creating vertical video" steps
+9. Format: ████████████░░░░░░░░ 60%
+
+---
+
+**Prompt:** the title text should be horizontally centered when it is overlaid over the video
+
+**Summary:** Fixed title text centering in vertical video:
+- Changed drawtext x position from fixed "x=220" to "x=(w-text_w)/2"
+- This centers the title text horizontally based on the text width

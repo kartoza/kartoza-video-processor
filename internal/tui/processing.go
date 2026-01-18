@@ -15,6 +15,7 @@ type ProcessingStep struct {
 	Status    StepStatus
 	StartTime time.Time
 	EndTime   time.Time
+	Progress  float64 // Progress percentage (0-100), -1 means indeterminate
 }
 
 // StepStatus represents the status of a processing step
@@ -58,11 +59,20 @@ func (p *ProcessingState) SetStepByIndex(index int, status StepStatus) {
 	if index >= 0 && index < len(p.Steps) {
 		if status == StepRunning {
 			p.Steps[index].StartTime = time.Now()
+			p.Steps[index].Progress = -1 // Indeterminate by default
 			p.CurrentStep = index
 		} else if status == StepComplete || status == StepSkipped || status == StepFailed {
 			p.Steps[index].EndTime = time.Now()
+			p.Steps[index].Progress = 100 // Mark as complete
 		}
 		p.Steps[index].Status = status
+	}
+}
+
+// SetStepProgress updates the progress percentage for a step
+func (p *ProcessingState) SetStepProgress(index int, progress float64) {
+	if index >= 0 && index < len(p.Steps) {
+		p.Steps[index].Progress = progress
 	}
 }
 
@@ -236,6 +246,35 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int) 
 	)
 }
 
+// Progress bar characters
+const (
+	progressBarWidth = 20
+	progressFilled   = "█"
+	progressEmpty    = "░"
+)
+
+// renderProgressBar renders a progress bar for a given percentage
+func renderProgressBar(progress float64, width int) string {
+	if progress < 0 {
+		return "" // Indeterminate, don't show bar
+	}
+	if progress > 100 {
+		progress = 100
+	}
+
+	filled := int(progress / 100 * float64(width))
+	empty := width - filled
+
+	filledStyle := lipgloss.NewStyle().Foreground(ColorOrange)
+	emptyStyle := lipgloss.NewStyle().Foreground(ColorGray)
+
+	bar := filledStyle.Render(strings.Repeat(progressFilled, filled)) +
+		emptyStyle.Render(strings.Repeat(progressEmpty, empty))
+
+	percentStyle := lipgloss.NewStyle().Foreground(ColorWhite).Width(4)
+	return fmt.Sprintf(" %s %s", bar, percentStyle.Render(fmt.Sprintf("%3.0f%%", progress)))
+}
+
 // renderStepLine renders a single processing step with appropriate indicator
 func renderStepLine(step ProcessingStep, isCurrent bool, frame int) string {
 	var indicator string
@@ -265,13 +304,17 @@ func renderStepLine(step ProcessingStep, isCurrent bool, frame int) string {
 		nameStyle = lipgloss.NewStyle().Foreground(ColorGray).Strikethrough(true)
 	}
 
-	// Duration for completed steps
-	var duration string
-	if step.Status == StepComplete || step.Status == StepFailed {
+	// Progress bar or duration
+	var suffix string
+	if step.Status == StepRunning && step.Progress >= 0 {
+		// Show progress bar for running steps with known progress
+		suffix = renderProgressBar(step.Progress, progressBarWidth)
+	} else if step.Status == StepComplete || step.Status == StepFailed {
+		// Duration for completed steps
 		d := step.EndTime.Sub(step.StartTime).Round(100 * time.Millisecond)
 		durationStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
-		duration = durationStyle.Render(fmt.Sprintf(" (%s)", d))
+		suffix = durationStyle.Render(fmt.Sprintf(" (%s)", d))
 	}
 
-	return fmt.Sprintf("  %s %s%s", indicator, nameStyle.Render(step.Name), duration)
+	return fmt.Sprintf("  %s %s%s", indicator, nameStyle.Render(step.Name), suffix)
 }
