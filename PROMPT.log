@@ -550,3 +550,27 @@ copies of these resources should be written into the project folder during proce
 6. Selection is saved to config and restored on next recording
 
 ---
+
+**Prompt:** when the application starts it should check if it has the needed dependencies for ffmpeg, screen and audio recorder etc. and let the user know if they are missing
+
+**Summary:** Added dependency checking at startup:
+1. Created internal/deps/deps.go package for dependency management
+2. Required dependencies checked:
+   - ffmpeg (video/audio processing)
+   - ffprobe (video metadata extraction)
+   - wl-screenrec (Wayland screen recording)
+   - pw-record (PipeWire audio recording)
+3. Optional dependencies tracked:
+   - notify-send (desktop notifications)
+   - paplay (countdown beeps)
+   - speaker-test (alternative countdown audio)
+4. At startup, if required deps missing:
+   - Shows formatted error with missing deps
+   - Includes installation hints for common package managers
+   - Exits with error instead of starting TUI
+5. Added `deps` CLI command to check all dependencies:
+   - Shows status of all required and optional deps
+   - Shows paths to found executables
+   - Green ✓ for available, Red ✗ for missing required, Gray ○ for missing optional
+
+---

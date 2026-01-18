@@ -2,12 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kartoza/kartoza-video-processor/internal/deps"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 	"github.com/kartoza/kartoza-video-processor/internal/monitor"
 	"github.com/kartoza/kartoza-video-processor/internal/recorder"
@@ -590,6 +592,13 @@ func (m Model) stopAndProcess() tea.Cmd {
 
 // Run starts the TUI application with optional splash screens
 func Run(noSplash bool) error {
+	// Check for required dependencies before starting
+	missing := deps.MissingRequired()
+	if len(missing) > 0 {
+		// Show dependency error screen instead of main app
+		return showDependencyError(missing, noSplash)
+	}
+
 	// Show entry splash screen (3 seconds, skippable with any key)
 	if !noSplash {
 		if err := ShowSplashScreen(3 * time.Second); err != nil {
@@ -611,4 +620,56 @@ func Run(noSplash bool) error {
 	}
 
 	return err
+}
+
+// showDependencyError displays missing dependencies and exits
+func showDependencyError(missing []deps.CheckResult, noSplash bool) error {
+	// Build error message
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString(lipgloss.NewStyle().
+		Bold(true).
+		Foreground(ColorRed).
+		Render("Missing Required Dependencies"))
+	sb.WriteString("\n\n")
+	sb.WriteString("The following required programs are not installed:\n\n")
+
+	for _, m := range missing {
+		sb.WriteString(fmt.Sprintf("  %s %s\n",
+			lipgloss.NewStyle().Foreground(ColorRed).Render("✗"),
+			lipgloss.NewStyle().Bold(true).Render(m.Dependency.Name)))
+		sb.WriteString(fmt.Sprintf("    %s\n\n",
+			lipgloss.NewStyle().Foreground(ColorGray).Render(m.Dependency.Description)))
+	}
+
+	sb.WriteString(lipgloss.NewStyle().Foreground(ColorGray).Render("Please install the missing dependencies and try again."))
+	sb.WriteString("\n\n")
+
+	// Installation hints based on what's missing
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Installation hints:"))
+	sb.WriteString("\n")
+	for _, m := range missing {
+		hint := getInstallHint(m.Dependency.Name)
+		if hint != "" {
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", m.Dependency.Name, hint))
+		}
+	}
+	sb.WriteString("\n")
+
+	fmt.Println(sb.String())
+	return fmt.Errorf("missing required dependencies")
+}
+
+// getInstallHint returns installation hints for common package managers
+func getInstallHint(name string) string {
+	hints := map[string]string{
+		"ffmpeg":       "apt install ffmpeg / pacman -S ffmpeg / nix-shell -p ffmpeg",
+		"ffprobe":      "(included with ffmpeg)",
+		"wl-screenrec": "cargo install wl-screenrec / nix-shell -p wl-screenrec",
+		"pw-record":    "apt install pipewire / pacman -S pipewire / nix-shell -p pipewire",
+	}
+	if hint, ok := hints[name]; ok {
+		return hint
+	}
+	return ""
 }
