@@ -224,25 +224,11 @@ jobs:
 
           # Create RPM build structure
           mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-          mkdir -p rpmbuild/BUILDROOT/kartoza-video-processor-${{ steps.version.outputs.version }}-1.x86_64/usr/bin
-          mkdir -p rpmbuild/BUILDROOT/kartoza-video-processor-${{ steps.version.outputs.version }}-1.x86_64/usr/share/applications
 
-          cp kartoza-video-processor rpmbuild/BUILDROOT/kartoza-video-processor-${{ steps.version.outputs.version }}-1.x86_64/usr/bin/
+          # Get the date for changelog
+          CHANGELOG_DATE=$(date '+%a %b %d %Y')
 
-          # Create desktop file
-          cat > rpmbuild/BUILDROOT/kartoza-video-processor-${{ steps.version.outputs.version }}-1.x86_64/usr/share/applications/kartoza-video-processor.desktop << 'EOF'
-          [Desktop Entry]
-          Name=Kartoza Video Processor
-          Comment=Screen recording tool for Wayland/X11
-          Exec=kartoza-video-processor
-          Icon=video-x-generic
-          Terminal=true
-          Type=Application
-          Categories=AudioVideo;Video;Recorder;
-          Keywords=screen;record;video;wayland;x11;
-          EOF
-
-          # Create spec file
+          # Create spec file with install section that copies files
           cat > rpmbuild/SPECS/kartoza-video-processor.spec << EOF
           Name:           kartoza-video-processor
           Version:        ${{ steps.version.outputs.version }}
@@ -267,14 +253,27 @@ jobs:
           - Logo overlays and title text
 
           %install
-          # Files are already in BUILDROOT
+          mkdir -p %{buildroot}/usr/bin
+          mkdir -p %{buildroot}/usr/share/applications
+          cp $(pwd)/kartoza-video-processor %{buildroot}/usr/bin/
+          cat > %{buildroot}/usr/share/applications/kartoza-video-processor.desktop << 'DESKTOP'
+          [Desktop Entry]
+          Name=Kartoza Video Processor
+          Comment=Screen recording tool for Wayland/X11
+          Exec=kartoza-video-processor
+          Icon=video-x-generic
+          Terminal=true
+          Type=Application
+          Categories=AudioVideo;Video;Recorder;
+          Keywords=screen;record;video;wayland;x11;
+          DESKTOP
 
           %files
           %attr(755, root, root) /usr/bin/kartoza-video-processor
           /usr/share/applications/kartoza-video-processor.desktop
 
           %changelog
-          * \$(date '+%a %b %d %Y') Tim Sutton <tim@kartoza.com> - ${{ steps.version.outputs.version }}-1
+          * ${CHANGELOG_DATE} Tim Sutton <tim@kartoza.com> - ${{ steps.version.outputs.version }}-1
           - Release ${{ steps.version.outputs.version }}
           EOF
 
