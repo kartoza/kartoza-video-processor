@@ -22,6 +22,7 @@ const (
 	HistoryListMode HistoryViewMode = iota
 	HistoryDetailMode
 	HistoryEditMode
+	HistoryDeleteConfirmMode
 )
 
 // HistoryModel displays recording history with navigation
@@ -55,6 +56,10 @@ type HistoryModel struct {
 	// State
 	err     error
 	loading bool
+
+	// Delete confirmation state
+	deleteConfirmRecording *models.RecordingInfo
+	deleteError            string
 }
 
 // NewHistoryModel creates a new history model
@@ -134,6 +139,8 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 			return h.updateDetailMode(msg)
 		case HistoryEditMode:
 			return h.updateEditMode(msg)
+		case HistoryDeleteConfirmMode:
+			return h.updateDeleteConfirmMode(msg)
 		}
 
 	case recordingsLoadedMsg:
@@ -218,6 +225,63 @@ func (h *HistoryModel) updateListMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
 		h.loading = true
 		h.cursor = 0
 		return h, h.loadRecordings()
+
+	case "d":
+		// Delete selected recording (with confirmation)
+		if len(h.recordings) > 0 && h.cursor < len(h.recordings) {
+			rec := h.recordings[h.cursor]
+			h.deleteConfirmRecording = &rec
+			h.deleteError = ""
+			h.mode = HistoryDeleteConfirmMode
+		}
+	}
+
+	return h, nil
+}
+
+// updateDeleteConfirmMode handles input in delete confirmation mode
+func (h *HistoryModel) updateDeleteConfirmMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return h, tea.Quit
+
+	case "esc", "n", "N":
+		// Cancel deletion
+		h.mode = HistoryListMode
+		h.deleteConfirmRecording = nil
+		h.deleteError = ""
+
+	case "y", "Y":
+		// Confirm deletion
+		if h.deleteConfirmRecording != nil {
+			folderPath := h.deleteConfirmRecording.Files.FolderPath
+			err := os.RemoveAll(folderPath)
+			if err != nil {
+				h.deleteError = fmt.Sprintf("Failed to delete: %v", err)
+				return h, nil
+			}
+
+			// Remove from list
+			for i := range h.recordings {
+				if h.recordings[i].Files.FolderPath == folderPath {
+					h.recordings = append(h.recordings[:i], h.recordings[i+1:]...)
+					break
+				}
+			}
+
+			// Adjust cursor if needed
+			if h.cursor >= len(h.recordings) && h.cursor > 0 {
+				h.cursor--
+			}
+
+			// Return to list mode
+			h.mode = HistoryListMode
+			h.deleteConfirmRecording = nil
+			h.deleteError = ""
+
+			// Update global recording count
+			updateGlobalAppState(GlobalAppState.IsRecording, GlobalAppState.BlinkOn, GlobalAppState.Status)
+		}
 	}
 
 	return h, nil
@@ -404,6 +468,8 @@ func (h *HistoryModel) View() string {
 		return h.renderDetailView()
 	case HistoryEditMode:
 		return h.renderEditView()
+	case HistoryDeleteConfirmMode:
+		return h.renderDeleteConfirmView()
 	default:
 		return h.renderListView()
 	}
@@ -549,7 +615,7 @@ func (h *HistoryModel) renderListView() string {
 		Width(h.width).
 		Align(lipgloss.Center)
 
-	helpText := "↑/↓: Navigate • Enter: View Details • r: Refresh • Esc/q: Back"
+	helpText := "↑/↓: Navigate • Enter: View Details • d: Delete • r: Refresh • Esc/q: Back"
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -738,6 +804,148 @@ func (h *HistoryModel) renderDetailView() string {
 		lipgloss.Left,
 		centeredMain,
 		helpFooter.Render(helpStyle.Render(helpText)),
+	)
+}
+
+// renderDeleteConfirmView renders the delete confirmation dialog
+func (h *HistoryModel) renderDeleteConfirmView() string {
+	if h.deleteConfirmRecording == nil {
+		return "No recording selected"
+	}
+
+	rec := h.deleteConfirmRecording
+	header := RenderHeader("Delete Recording")
+
+	// Styles
+	warningStyle := lipgloss.NewStyle().
+		Foreground(ColorRed).
+		Bold(true).
+		Align(lipgloss.Center)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Width(14).
+		Align(lipgloss.Right)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorRed).
+		Padding(1, 3).
+		Width(70)
+
+	// Build confirmation dialog
+	var rows []string
+
+	// Warning message
+	rows = append(rows, warningStyle.Width(62).Render("⚠ DELETE RECORDING ⚠"))
+	rows = append(rows, "")
+	rows = append(rows, warningStyle.Width(62).Render("This action cannot be undone!"))
+	rows = append(rows, "")
+
+	// Recording details
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		labelStyle.Render("Folder:"),
+		"  ",
+		valueStyle.Render(rec.Metadata.FolderName),
+	))
+
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		labelStyle.Render("Title:"),
+		"  ",
+		valueStyle.Render(rec.Metadata.Title),
+	))
+
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		labelStyle.Render("Date:"),
+		"  ",
+		valueStyle.Render(rec.StartTime.Format("2006-01-02")),
+	))
+
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		labelStyle.Render("Size:"),
+		"  ",
+		valueStyle.Render(models.FormatFileSize(rec.Files.TotalSize)),
+	))
+
+	rows = append(rows, "")
+
+	// Error message if any
+	if h.deleteError != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true).
+			Align(lipgloss.Center).
+			Width(62)
+		rows = append(rows, errorStyle.Render(h.deleteError))
+		rows = append(rows, "")
+	}
+
+	// Confirmation prompt
+	promptStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true).
+		Align(lipgloss.Center).
+		Width(62)
+	rows = append(rows, promptStyle.Render("Are you sure you want to delete this recording?"))
+	rows = append(rows, "")
+
+	// Buttons
+	yesStyle := lipgloss.NewStyle().
+		Foreground(ColorRed).
+		Bold(true).
+		Padding(0, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorRed)
+
+	noStyle := lipgloss.NewStyle().
+		Foreground(ColorGreen).
+		Bold(true).
+		Padding(0, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorGreen)
+
+	buttons := lipgloss.JoinHorizontal(lipgloss.Center,
+		yesStyle.Render("Y - Yes, Delete"),
+		"    ",
+		noStyle.Render("N - No, Cancel"),
+	)
+	buttonRow := lipgloss.NewStyle().Width(62).Align(lipgloss.Center).Render(buttons)
+	rows = append(rows, buttonRow)
+
+	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+
+	// Help text
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	mainSection := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		content,
+	)
+
+	centeredMain := lipgloss.Place(
+		h.width,
+		h.height-2,
+		lipgloss.Center,
+		lipgloss.Top,
+		mainSection,
+	)
+
+	helpFooter := lipgloss.NewStyle().
+		Width(h.width).
+		Align(lipgloss.Center)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		centeredMain,
+		helpFooter.Render(helpStyle.Render("Y: Confirm Delete • N/Esc: Cancel")),
 	)
 }
 

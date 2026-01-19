@@ -66,6 +66,8 @@ func DefaultRecordingOptions() RecordingOptions {
 // RecordingStatus is used for CLI/API status responses
 type RecordingStatus struct {
 	IsRecording bool      `json:"is_recording"`
+	IsPaused    bool      `json:"is_paused"`
+	CurrentPart int       `json:"current_part,omitempty"`
 	StartTime   time.Time `json:"start_time,omitempty"`
 	Monitor     string    `json:"monitor,omitempty"`
 	VideoFile   string    `json:"video_file,omitempty"`

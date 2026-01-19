@@ -150,6 +150,11 @@ type MergeOptions struct {
 	TitleColor     string             // Color for title text (e.g., "white", "black", "yellow")
 	GifLoopMode    config.GifLoopMode // How to loop animated GIFs
 	OutputDir      string             // Directory for output files
+
+	// Part files for pause/resume support (if set, these override single file options)
+	VideoParts  []string
+	AudioParts  []string
+	WebcamParts []string
 }
 
 // MergeResult contains the paths to merged files and processing info
@@ -157,6 +162,86 @@ type MergeResult struct {
 	MergedFile       string
 	VerticalFile     string
 	NormalizeApplied bool
+}
+
+// concatenateParts concatenates multiple video or audio parts into a single file
+// Uses FFmpeg's concat demuxer for lossless concatenation
+func concatenateParts(parts []string, outputFile string) error {
+	if len(parts) == 0 {
+		return fmt.Errorf("no parts to concatenate")
+	}
+
+	if len(parts) == 1 {
+		// Only one part, just copy/rename it
+		return copyFile(parts[0], outputFile)
+	}
+
+	// Filter to only existing parts
+	var existingParts []string
+	for _, part := range parts {
+		if fileExists(part) {
+			existingParts = append(existingParts, part)
+		}
+	}
+
+	if len(existingParts) == 0 {
+		return fmt.Errorf("no existing parts found")
+	}
+
+	if len(existingParts) == 1 {
+		return copyFile(existingParts[0], outputFile)
+	}
+
+	// Create a temporary file list for FFmpeg concat demuxer
+	listFile := outputFile + ".txt"
+	f, err := os.Create(listFile)
+	if err != nil {
+		return fmt.Errorf("failed to create concat list: %w", err)
+	}
+
+	for _, part := range existingParts {
+		// FFmpeg concat format: file 'path'
+		// Need to escape single quotes in path
+		escapedPath := strings.ReplaceAll(part, "'", "'\\''")
+		fmt.Fprintf(f, "file '%s'\n", escapedPath)
+	}
+	f.Close()
+	defer os.Remove(listFile)
+
+	// Run FFmpeg to concatenate
+	cmd := exec.Command("ffmpeg",
+		"-y",
+		"-f", "concat",
+		"-safe", "0",
+		"-i", listFile,
+		"-c", "copy",
+		outputFile,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg concat failed: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	_, err = io.Copy(destination, source)
+	return err
 }
 
 // Merge merges video and audio recordings
@@ -170,6 +255,37 @@ type MergeResult struct {
 // - Webcam + audio: merges webcam with audio
 func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	result := &MergeResult{}
+
+	// If we have multiple parts, concatenate them first
+	if len(opts.VideoParts) > 1 {
+		concatVideo := filepath.Join(opts.OutputDir, "screen.mp4")
+		if err := concatenateParts(opts.VideoParts, concatVideo); err != nil {
+			return result, fmt.Errorf("failed to concatenate video parts: %w", err)
+		}
+		opts.VideoFile = concatVideo
+	} else if len(opts.VideoParts) == 1 && fileExists(opts.VideoParts[0]) {
+		opts.VideoFile = opts.VideoParts[0]
+	}
+
+	if len(opts.AudioParts) > 1 {
+		concatAudio := filepath.Join(opts.OutputDir, "audio.wav")
+		if err := concatenateParts(opts.AudioParts, concatAudio); err != nil {
+			return result, fmt.Errorf("failed to concatenate audio parts: %w", err)
+		}
+		opts.AudioFile = concatAudio
+	} else if len(opts.AudioParts) == 1 && fileExists(opts.AudioParts[0]) {
+		opts.AudioFile = opts.AudioParts[0]
+	}
+
+	if len(opts.WebcamParts) > 1 {
+		concatWebcam := filepath.Join(opts.OutputDir, "webcam.mp4")
+		if err := concatenateParts(opts.WebcamParts, concatWebcam); err != nil {
+			return result, fmt.Errorf("failed to concatenate webcam parts: %w", err)
+		}
+		opts.WebcamFile = concatWebcam
+	} else if len(opts.WebcamParts) == 1 && fileExists(opts.WebcamParts[0]) {
+		opts.WebcamFile = opts.WebcamParts[0]
+	}
 
 	// Check what inputs we have
 	hasVideo := opts.VideoFile != "" && fileExists(opts.VideoFile)

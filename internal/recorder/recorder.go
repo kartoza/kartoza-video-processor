@@ -89,13 +89,16 @@ func (r *Recorder) GetStatus() models.RecordingStatus {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	isPaused := r.IsPaused()
 	status := models.RecordingStatus{
 		IsRecording: checkPID(config.VideoPIDFile) ||
 			checkPID(config.AudioPIDFile) ||
 			checkPID(config.WebcamPIDFile),
+		IsPaused:    isPaused,
+		CurrentPart: readPartNumber(),
 	}
 
-	if status.IsRecording {
+	if status.IsRecording || isPaused {
 		status.VideoPID = readPID(config.VideoPIDFile)
 		status.AudioPID = readPID(config.AudioPIDFile)
 		status.WebcamPID = readPID(config.WebcamPIDFile)
@@ -165,10 +168,22 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 	r.createVertical = opts.CreateVertical
 	r.logoSelection = opts.LogoSelection
 
-	// Generate simplified filenames (no timestamp needed since they're in unique folder)
-	videoFile := filepath.Join(outputDir, "screen.mp4")
-	audioFile := filepath.Join(outputDir, "audio.wav")
-	webcamFile := filepath.Join(outputDir, "webcam.mp4")
+	// Determine part number: reset to 0 for new recordings, use current for resume
+	var partNum int
+	if r.recordingInfo != nil && len(r.recordingInfo.Files.VideoParts) == 0 &&
+		len(r.recordingInfo.Files.AudioParts) == 0 && len(r.recordingInfo.Files.WebcamParts) == 0 {
+		// New recording - reset part number to 0
+		partNum = 0
+		writePartNumber(0)
+	} else {
+		// Resume - use current part number (already incremented by Pause)
+		partNum = readPartNumber()
+	}
+
+	// Generate filenames with part number suffix
+	videoFile := filepath.Join(outputDir, fmt.Sprintf("screen_part%03d.mp4", partNum))
+	audioFile := filepath.Join(outputDir, fmt.Sprintf("audio_part%03d.wav", partNum))
+	webcamFile := filepath.Join(outputDir, fmt.Sprintf("webcam_part%03d.mp4", partNum))
 
 	// Initialize recorder instances based on options
 	if !opts.NoScreen {
@@ -181,23 +196,28 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		r.webcam = &recorderInstance{name: "webcam", file: webcamFile}
 	}
 
-	// Update recording info with file paths
+	// Update recording info with file paths and part tracking
 	if r.recordingInfo != nil {
+		r.recordingInfo.Files.CurrentPart = partNum
 		if r.video != nil {
 			r.recordingInfo.Files.VideoFile = videoFile
+			r.recordingInfo.Files.VideoParts = append(r.recordingInfo.Files.VideoParts, videoFile)
 		}
 		if r.audio != nil {
 			r.recordingInfo.Files.AudioFile = audioFile
+			r.recordingInfo.Files.AudioParts = append(r.recordingInfo.Files.AudioParts, audioFile)
 		}
 		if r.webcam != nil {
 			r.recordingInfo.Files.WebcamFile = webcamFile
+			r.recordingInfo.Files.WebcamParts = append(r.recordingInfo.Files.WebcamParts, webcamFile)
 		}
 		// Save updated file paths
 		r.recordingInfo.Save()
 	}
 
-	// Save output directory for CLI stop command to find
+	// Save output directory and part number for CLI commands
 	os.WriteFile(config.OutputDirFile, []byte(outputDir), 0644)
+	writePartNumber(partNum)
 
 	// Create synchronization primitives
 	r.startBarrier = make(chan struct{})
@@ -534,61 +554,73 @@ func (r *Recorder) StopAndProcess(process bool) error {
 func (r *Recorder) stopInternal(waitForProcessing bool) error {
 	r.mu.Lock()
 
-	if !r.IsRecordingLocked() {
+	// Check if we have an active recording OR a paused recording session
+	isPaused := r.IsPaused()
+	isRecording := r.IsRecordingLocked()
+
+	if !isRecording && !isPaused {
 		r.mu.Unlock()
 		return fmt.Errorf("no recording in progress")
 	}
 
-	// Signal all recorders to stop simultaneously (only if we started them in this process)
-	if r.stopSignal != nil {
-		close(r.stopSignal)
+	// If paused, clear the paused state
+	if isPaused {
+		os.Remove(config.PausedFile)
 	}
 
-	// Stop all processes simultaneously using goroutines
-	var stopWg sync.WaitGroup
+	// Only stop processes if we're actively recording (not just paused)
+	if isRecording {
+		// Signal all recorders to stop simultaneously (only if we started them in this process)
+		if r.stopSignal != nil {
+			close(r.stopSignal)
+		}
 
-	// Stop video
-	if pid := readPID(config.VideoPIDFile); pid > 0 {
-		stopWg.Add(1)
-		go func(p int) {
-			defer stopWg.Done()
-			stopProcess(p)
-			os.Remove(config.VideoPIDFile)
-		}(pid)
+		// Stop all processes simultaneously using goroutines
+		var stopWg sync.WaitGroup
+
+		// Stop video
+		if pid := readPID(config.VideoPIDFile); pid > 0 {
+			stopWg.Add(1)
+			go func(p int) {
+				defer stopWg.Done()
+				stopProcess(p)
+				os.Remove(config.VideoPIDFile)
+			}(pid)
+		}
+
+		// Stop audio
+		if pid := readPID(config.AudioPIDFile); pid > 0 {
+			stopWg.Add(1)
+			go func(p int) {
+				defer stopWg.Done()
+				stopProcess(p)
+				os.Remove(config.AudioPIDFile)
+			}(pid)
+		}
+
+		// Stop webcam
+		if pid := readPID(config.WebcamPIDFile); pid > 0 {
+			stopWg.Add(1)
+			go func(p int) {
+				defer stopWg.Done()
+				stopProcess(p)
+				os.Remove(config.WebcamPIDFile)
+			}(pid)
+		}
+
+		// Wait for all stop operations to complete
+		stopWg.Wait()
+
+		// Wait for recorder goroutines to finish (only if we started them)
+		if r.stopSignal != nil {
+			r.wg.Wait()
+		}
+
+		notify.RecordingStopped()
+
+		// Wait for files to be fully written (only if we were actively recording)
+		time.Sleep(2 * time.Second)
 	}
-
-	// Stop audio
-	if pid := readPID(config.AudioPIDFile); pid > 0 {
-		stopWg.Add(1)
-		go func(p int) {
-			defer stopWg.Done()
-			stopProcess(p)
-			os.Remove(config.AudioPIDFile)
-		}(pid)
-	}
-
-	// Stop webcam
-	if pid := readPID(config.WebcamPIDFile); pid > 0 {
-		stopWg.Add(1)
-		go func(p int) {
-			defer stopWg.Done()
-			stopProcess(p)
-			os.Remove(config.WebcamPIDFile)
-		}(pid)
-	}
-
-	// Wait for all stop operations to complete
-	stopWg.Wait()
-
-	// Wait for recorder goroutines to finish (only if we started them)
-	if r.stopSignal != nil {
-		r.wg.Wait()
-	}
-
-	notify.RecordingStopped()
-
-	// Wait for files to be fully written
-	time.Sleep(2 * time.Second)
 
 	// Load output directory from file if not already set (CLI stop case)
 	outputDir := readPath(config.OutputDirFile)
@@ -616,6 +648,10 @@ func (r *Recorder) stopInternal(waitForProcessing bool) error {
 	r.video = nil
 	r.audio = nil
 	r.webcam = nil
+
+	// Clean up state files
+	os.Remove(config.PartNumberFile)
+	os.Remove(config.OutputDirFile)
 
 	r.mu.Unlock()
 
@@ -747,6 +783,13 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		CreateVertical: r.createVertical && webcamFile != "",
 	}
 
+	// Add part files if available (for pause/resume support)
+	if r.recordingInfo != nil && len(r.recordingInfo.Files.VideoParts) > 0 {
+		mergeOpts.VideoParts = r.recordingInfo.Files.VideoParts
+		mergeOpts.AudioParts = r.recordingInfo.Files.AudioParts
+		mergeOpts.WebcamParts = r.recordingInfo.Files.WebcamParts
+	}
+
 	// Add logo options from the recording's logo selection (in-memory)
 	// or from recording info settings (CLI stop case)
 	if r.logoSelection.LeftLogo != "" || r.logoSelection.RightLogo != "" || r.logoSelection.BottomLogo != "" {
@@ -829,6 +872,8 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 	os.Remove(config.WebcamPathFile)
 	os.Remove(config.StatusFile)
 	os.Remove(config.OutputDirFile)
+	os.Remove(config.PartNumberFile)
+	os.Remove(config.PausedFile)
 }
 
 // processRecordings merges the recorded files (legacy method without progress)
@@ -929,13 +974,141 @@ func stopProcess(pid int) error {
 		}
 	}
 
-	// Wait for process to finish (max 5 seconds)
+	// Wait for process to finish (max 2 seconds)
 	for i := 0; i < 10; i++ {
 		if err := process.Signal(syscall.Signal(0)); err != nil {
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	return nil
+}
+
+func readPartNumber() int {
+	data, err := os.ReadFile(config.PartNumberFile)
+	if err != nil {
+		return 0
+	}
+	num, err := strconv.Atoi(string(data))
+	if err != nil {
+		return 0
+	}
+	return num
+}
+
+func writePartNumber(num int) {
+	os.WriteFile(config.PartNumberFile, []byte(strconv.Itoa(num)), 0644)
+}
+
+// IsPaused checks if recording is currently paused
+func (r *Recorder) IsPaused() bool {
+	_, err := os.Stat(config.PausedFile)
+	return err == nil
+}
+
+// Pause pauses the current recording
+func (r *Recorder) Pause() error {
+	if !r.IsRecording() {
+		return fmt.Errorf("no recording in progress")
+	}
+
+	if r.IsPaused() {
+		return fmt.Errorf("recording is already paused")
+	}
+
+	// Stop all recording processes
+	var stopWg sync.WaitGroup
+
+	if pid := readPID(config.VideoPIDFile); pid > 0 {
+		stopWg.Add(1)
+		go func(p int) {
+			defer stopWg.Done()
+			stopProcess(p)
+			os.Remove(config.VideoPIDFile)
+		}(pid)
+	}
+
+	if pid := readPID(config.AudioPIDFile); pid > 0 {
+		stopWg.Add(1)
+		go func(p int) {
+			defer stopWg.Done()
+			stopProcess(p)
+			os.Remove(config.AudioPIDFile)
+		}(pid)
+	}
+
+	if pid := readPID(config.WebcamPIDFile); pid > 0 {
+		stopWg.Add(1)
+		go func(p int) {
+			defer stopWg.Done()
+			stopProcess(p)
+			os.Remove(config.WebcamPIDFile)
+		}(pid)
+	}
+
+	stopWg.Wait()
+
+	// Wait briefly for files to be written
+	time.Sleep(300 * time.Millisecond)
+
+	// Mark as paused
+	os.WriteFile(config.PausedFile, []byte("paused"), 0644)
+
+	// Increment part number for next resume
+	currentPart := readPartNumber()
+	writePartNumber(currentPart + 1)
+
+	// Update recording info status
+	outputDir := readPath(config.OutputDirFile)
+	if outputDir != "" {
+		if info, err := models.LoadRecordingInfo(outputDir); err == nil {
+			info.SetStatus(models.StatusPaused)
+			info.Save()
+		}
+	}
+
+	notify.Info("Recording Paused", "Recording paused. Use 'resume' to continue.")
+	return nil
+}
+
+// Resume resumes a paused recording
+func (r *Recorder) Resume() error {
+	if !r.IsPaused() {
+		return fmt.Errorf("recording is not paused")
+	}
+
+	// Load recording info to get settings
+	outputDir := readPath(config.OutputDirFile)
+	if outputDir == "" {
+		return fmt.Errorf("no recording session found")
+	}
+
+	info, err := models.LoadRecordingInfo(outputDir)
+	if err != nil {
+		return fmt.Errorf("failed to load recording info: %w", err)
+	}
+
+	// Remove paused marker
+	os.Remove(config.PausedFile)
+
+	// Build options from recording info
+	opts := Options{
+		OutputDir:     outputDir,
+		NoAudio:       !info.Settings.AudioEnabled,
+		NoWebcam:      !info.Settings.WebcamEnabled,
+		NoScreen:      !info.Settings.ScreenEnabled,
+		HWAccel:       info.Settings.HardwareAccel,
+		AudioDevice:   info.Settings.AudioDevice,
+		WebcamDevice:  info.Settings.WebcamDevice,
+		WebcamFPS:     info.Settings.WebcamFPS,
+		RecordingInfo: info,
+	}
+
+	// Update status to recording
+	info.SetStatus(models.StatusRecording)
+	info.Save()
+
+	// Start recording with the new part number
+	return r.StartWithOptions(opts)
 }

@@ -57,6 +57,8 @@ func init() {
 	rootCmd.AddCommand(toggleCmd)
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(pauseCmd)
+	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(monitorsCmd)

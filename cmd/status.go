@@ -32,12 +32,20 @@ var statusCmd = &cobra.Command{
 			duration := time.Since(status.StartTime).Round(time.Second)
 			fmt.Printf("Recording: ACTIVE\n")
 			fmt.Printf("Duration:  %s\n", duration)
+			fmt.Printf("Part:      %d\n", status.CurrentPart)
 			fmt.Printf("Monitor:   %s\n", status.Monitor)
 			fmt.Printf("Video:     %s\n", status.VideoFile)
 			fmt.Printf("Audio:     %s\n", status.AudioFile)
 			if status.WebcamFile != "" {
 				fmt.Printf("Webcam:    %s\n", status.WebcamFile)
 			}
+		} else if status.IsPaused {
+			duration := time.Since(status.StartTime).Round(time.Second)
+			fmt.Printf("Recording: PAUSED\n")
+			fmt.Printf("Duration:  %s (before pause)\n", duration)
+			fmt.Printf("Parts:     %d recorded\n", status.CurrentPart)
+			fmt.Println("\nUse 'kartoza-video-processor resume' to continue recording.")
+			fmt.Println("Use 'kartoza-video-processor stop' to finish and process.")
 		} else {
 			fmt.Println("Recording: INACTIVE")
 		}

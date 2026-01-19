@@ -88,6 +88,43 @@ var bigGO = []string{
 	"  ██████   ██████  ██ ",
 }
 
+// Big camera icon for recording screen (video camera shape)
+var bigCamera = []string{
+	"  ██████████████████████      ████  ",
+	"  █                    █    ██    █ ",
+	"  █   ████████████     █  ██      █ ",
+	"  █   █          █     █ █        █ ",
+	"  █   █    ●     █     ██         █ ",
+	"  █   █          █     █ █        █ ",
+	"  █   ████████████     █  ██      █ ",
+	"  █                    █    ██    █ ",
+	"  ██████████████████████      ████  ",
+}
+
+// Big pause icon (two vertical bars)
+var bigPause = []string{
+	"    ████████      ████████    ",
+	"    ████████      ████████    ",
+	"    ████████      ████████    ",
+	"    ████████      ████████    ",
+	"    ████████      ████████    ",
+	"    ████████      ████████    ",
+	"    ████████      ████████    ",
+	"    ████████      ████████    ",
+	"    ████████      ████████    ",
+}
+
+// REC text for blinking indicator
+var bigREC = []string{
+	" ███████   ███████   ██████  ",
+	" █     █   █         █     █ ",
+	" █     █   █         █       ",
+	" ███████   ███████   █       ",
+	" █   █     █         █       ",
+	" █    █    █         █     █ ",
+	" █     █   ███████   ██████  ",
+}
+
 // Descending frequencies for countdown beeps (Hz)
 // 5=880Hz, 4=784Hz, 3=698Hz, 2=622Hz, 1=554Hz (descending A5 to C#5)
 var beepFrequencies = map[int]int{

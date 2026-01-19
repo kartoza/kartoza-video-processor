@@ -59,6 +59,8 @@ type monitorsUpdateMsg []models.Monitor
 type blinkMsg struct{}
 type countdownTickMsg struct{}
 type startRecordingMsg struct{}
+type pauseCompleteMsg struct{ err error }
+type resumeCompleteMsg struct{ err error }
 
 // Model is the main TUI model
 type Model struct {

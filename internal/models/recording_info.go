@@ -14,6 +14,7 @@ import (
 // Recording status constants
 const (
 	StatusRecording  = "recording"
+	StatusPaused     = "paused"
 	StatusProcessing = "processing"
 	StatusCompleted  = "completed"
 	StatusFailed     = "failed"
@@ -74,22 +75,29 @@ type VideoFileMetadata struct {
 
 // FileInfo contains information about recording files
 type FileInfo struct {
-	FolderPath   string    `json:"folder_path"`
-	VideoFile    string    `json:"video_file,omitempty"`
-	AudioFile    string    `json:"audio_file,omitempty"`
-	WebcamFile   string    `json:"webcam_file,omitempty"`
-	MergedFile   string    `json:"merged_file,omitempty"`
-	VerticalFile string    `json:"vertical_file,omitempty"`
-	VideoSize    int64     `json:"video_size,omitempty"`
-	AudioSize    int64     `json:"audio_size,omitempty"`
-	WebcamSize   int64     `json:"webcam_size,omitempty"`
-	MergedSize   int64     `json:"merged_size,omitempty"`
-	VerticalSize int64     `json:"vertical_size,omitempty"`
-	TotalSize    int64     `json:"total_size"`
+	FolderPath   string `json:"folder_path"`
+	VideoFile    string `json:"video_file,omitempty"`
+	AudioFile    string `json:"audio_file,omitempty"`
+	WebcamFile   string `json:"webcam_file,omitempty"`
+	MergedFile   string `json:"merged_file,omitempty"`
+	VerticalFile string `json:"vertical_file,omitempty"`
+
+	// Part files for pause/resume support
+	VideoParts  []string `json:"video_parts,omitempty"`
+	AudioParts  []string `json:"audio_parts,omitempty"`
+	WebcamParts []string `json:"webcam_parts,omitempty"`
+	CurrentPart int      `json:"current_part"` // Current part number (0-indexed)
+
+	VideoSize    int64 `json:"video_size,omitempty"`
+	AudioSize    int64 `json:"audio_size,omitempty"`
+	WebcamSize   int64 `json:"webcam_size,omitempty"`
+	MergedSize   int64 `json:"merged_size,omitempty"`
+	VerticalSize int64 `json:"vertical_size,omitempty"`
+	TotalSize    int64 `json:"total_size"`
 
 	// Video metadata for each file
-	VideoMeta    *VideoFileMetadata `json:"video_meta,omitempty"`
-	WebcamMeta   *VideoFileMetadata `json:"webcam_meta,omitempty"`
+	VideoMeta  *VideoFileMetadata `json:"video_meta,omitempty"`
+	WebcamMeta *VideoFileMetadata `json:"webcam_meta,omitempty"`
 	MergedMeta   *VideoFileMetadata `json:"merged_meta,omitempty"`
 	VerticalMeta *VideoFileMetadata `json:"vertical_meta,omitempty"`
 }

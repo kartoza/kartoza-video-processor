@@ -29,6 +29,14 @@ const (
 	ScreenOptions
 )
 
+// RecordingButton represents a button on the recording screen
+type RecordingButton int
+
+const (
+	ButtonPause RecordingButton = iota
+	ButtonStop
+)
+
 // AppModel is the main application model that coordinates screens
 type AppModel struct {
 	screen          Screen
@@ -52,6 +60,12 @@ type AppModel struct {
 	metadata        models.RecordingMetadata
 	recordingInfo   *models.RecordingInfo
 	outputDir       string
+
+	// Recording screen state
+	isPaused         bool
+	isPausing        bool
+	isResuming       bool
+	selectedButton   RecordingButton
 
 	// Progress channel for processing updates
 	progressChan chan recorder.ProgressUpdate
@@ -275,7 +289,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.status.IsRecording {
 			m.state = stateRecording
 			m.screen = ScreenRecording
-		} else if m.state == stateRecording {
+			m.isPaused = false
+		} else if m.status.IsPaused {
+			// Recording is paused - stay on recording screen
+			m.state = stateRecording
+			m.screen = ScreenRecording
+			m.isPaused = true
+		} else if m.state == stateRecording && !m.isPaused {
+			// Only transition to ready if we weren't paused
 			m.state = stateReady
 		}
 		return m, nil
@@ -389,6 +410,33 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
+
+	case pauseCompleteMsg:
+		m.isPausing = false
+		if msg.err != nil {
+			m.err = msg.err
+			updateGlobalAppState(m.status.IsRecording, m.blinkOn, "Recording")
+		} else {
+			m.isPaused = true
+			m.status.IsRecording = false
+			m.status.IsPaused = true
+			updateGlobalAppState(false, m.blinkOn, "Paused")
+		}
+		return m, updateStatus(m.recorder)
+
+	case resumeCompleteMsg:
+		m.isResuming = false
+		if msg.err != nil {
+			m.err = msg.err
+			updateGlobalAppState(false, m.blinkOn, "Paused")
+		} else {
+			m.isPaused = false
+			m.status.IsRecording = true
+			m.status.IsPaused = false
+			m.state = stateRecording
+			updateGlobalAppState(true, m.blinkOn, "Recording")
+		}
+		return m, updateStatus(m.recorder)
 	}
 
 	return m, nil
@@ -464,35 +512,52 @@ func (m AppModel) handleRecordingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, key.NewBinding(key.WithKeys("q", "ctrl+c"))):
 		return m, tea.Quit
 
+	case key.Matches(msg, key.NewBinding(key.WithKeys("left", "h"))):
+		// Move to Pause button
+		if m.status.IsRecording || m.isPaused {
+			m.selectedButton = ButtonPause
+		}
+		return m, nil
+
+	case key.Matches(msg, key.NewBinding(key.WithKeys("right", "l"))):
+		// Move to Stop button
+		if m.status.IsRecording || m.isPaused {
+			m.selectedButton = ButtonStop
+		}
+		return m, nil
+
+	case key.Matches(msg, key.NewBinding(key.WithKeys("p"))):
+		// Direct pause/resume toggle
+		if m.status.IsRecording && !m.isPaused {
+			return m.handlePause()
+		} else if m.isPaused {
+			return m.handleResume()
+		}
+		return m, nil
+
 	case key.Matches(msg, key.NewBinding(key.WithKeys(" ", "enter"))):
-		if m.status.IsRecording {
-			// Stop recording - transition to processing state
-			m.state = stateProcessing
-			m.processing.Reset()
-
-			// Configure which steps are applicable based on recording settings
-			if m.recordingInfo != nil {
-				m.processing.ConfigureSteps(
-					m.recordingInfo.Settings.AudioEnabled,
-					m.recordingInfo.Settings.ScreenEnabled,
-					m.recordingInfo.Settings.WebcamEnabled,
-					m.recordingInfo.Settings.VerticalEnabled,
-				)
+		if m.status.IsRecording || m.isPaused {
+			if m.selectedButton == ButtonPause {
+				if m.isPaused {
+					return m.handleResume()
+				}
+				return m.handlePause()
+			} else if m.selectedButton == ButtonStop {
+				return m.handleStop()
 			}
+		}
+		return m, nil
 
-			m.processing.Start()
-			m.processingFrame = 0
-
-			return m, tea.Batch(
-				processingTickCmd(),
-				m.stopAndProcess(),
-			)
+	case key.Matches(msg, key.NewBinding(key.WithKeys("s"))):
+		// Direct stop
+		if m.status.IsRecording || m.isPaused {
+			return m.handleStop()
 		}
 		return m, nil
 
 	case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
-		// Go back to menu (only if not recording)
-		if !m.status.IsRecording {
+		// Go back to menu (only if not recording and not paused)
+		if !m.status.IsRecording && !m.isPaused {
 			m.screen = ScreenMenu
 		}
 		return m, nil
@@ -503,6 +568,68 @@ func (m AppModel) handleRecordingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// handlePause handles pausing the recording
+func (m AppModel) handlePause() (tea.Model, tea.Cmd) {
+	// Don't allow pause if already pausing/resuming
+	if m.isPausing || m.isResuming {
+		return m, nil
+	}
+
+	m.isPausing = true
+	updateGlobalAppState(false, m.blinkOn, "Pausing...")
+
+	// Run pause asynchronously
+	rec := m.recorder
+	return m, func() tea.Msg {
+		err := rec.Pause()
+		return pauseCompleteMsg{err: err}
+	}
+}
+
+// handleResume handles resuming the recording
+func (m AppModel) handleResume() (tea.Model, tea.Cmd) {
+	// Don't allow resume if already pausing/resuming
+	if m.isPausing || m.isResuming {
+		return m, nil
+	}
+
+	m.isResuming = true
+	updateGlobalAppState(false, m.blinkOn, "Resuming...")
+
+	// Run resume asynchronously
+	rec := m.recorder
+	return m, func() tea.Msg {
+		err := rec.Resume()
+		return resumeCompleteMsg{err: err}
+	}
+}
+
+// handleStop handles stopping the recording
+func (m AppModel) handleStop() (tea.Model, tea.Cmd) {
+	// Stop recording - transition to processing state
+	m.state = stateProcessing
+	m.isPaused = false
+	m.processing.Reset()
+
+	// Configure which steps are applicable based on recording settings
+	if m.recordingInfo != nil {
+		m.processing.ConfigureSteps(
+			m.recordingInfo.Settings.AudioEnabled,
+			m.recordingInfo.Settings.ScreenEnabled,
+			m.recordingInfo.Settings.WebcamEnabled,
+			m.recordingInfo.Settings.VerticalEnabled,
+		)
+	}
+
+	m.processing.Start()
+	m.processingFrame = 0
+
+	return m, tea.Batch(
+		processingTickCmd(),
+		m.stopAndProcess(),
+	)
 }
 
 // handleHistoryKeys handles keys on the history screen
@@ -749,23 +876,25 @@ func (m AppModel) renderRecordingScreen() string {
 	status := "Ready"
 	if m.status.IsRecording {
 		status = "Recording"
+	} else if m.isPaused {
+		status = "Paused"
 	}
 	updateGlobalAppState(m.status.IsRecording, m.blinkOn, status)
 
-	// Get current monitor with cursor
-	cursorMonitor, _ := monitor.GetMouseMonitor()
-
 	// Render header
 	screenTitle := "Recording"
+	if m.isPaused {
+		screenTitle = "Paused"
+	}
 	header := RenderHeader(screenTitle)
 
-	// Render main content
-	content := m.renderRecordingContent(cursorMonitor)
+	// Render main content with ASCII art
+	content := m.renderRecordingContent("")
 
 	// Render footer
 	var helpText string
-	if m.status.IsRecording {
-		helpText = "space/enter: stop recording • q: quit"
+	if m.status.IsRecording || m.isPaused {
+		helpText = "←/→: select • space/enter: activate • p: pause/resume • s: stop • q: quit"
 	} else {
 		helpText = "esc: back to menu • q: quit"
 	}
@@ -776,19 +905,115 @@ func (m AppModel) renderRecordingScreen() string {
 
 // renderRecordingContent renders the main content for the recording screen
 func (m AppModel) renderRecordingContent(cursorMonitor string) string {
-	// Monitor list
-	monitorsContent := m.renderMonitors(cursorMonitor)
+	var sections []string
 
-	// Recording info (if recording)
-	var recordingInfo string
-	if m.status.IsRecording {
-		recordingInfo = m.renderRecordingInfo()
+	// Choose and render the appropriate ASCII art icon
+	var iconLines []string
+	var iconColor lipgloss.Color
+
+	if m.isPausing {
+		// Show pause icon in gray while pausing
+		iconLines = bigPause
+		iconColor = ColorGray
+	} else if m.isResuming {
+		// Show camera icon in gray while resuming
+		iconLines = bigCamera
+		iconColor = ColorGray
+	} else if m.isPaused {
+		// Show pause icon in amber
+		iconLines = bigPause
+		iconColor = ColorOrange
+	} else if m.status.IsRecording {
+		// Show camera icon in red (solid, no blinking)
+		iconLines = bigCamera
+		iconColor = ColorRed
+	} else {
+		// Not recording, not paused - show camera in gray
+		iconLines = bigCamera
+		iconColor = ColorGray
+	}
+
+	iconStyle := lipgloss.NewStyle().
+		Foreground(iconColor).
+		Bold(true)
+
+	var iconDisplay string
+	for i, line := range iconLines {
+		iconDisplay += iconStyle.Render(line)
+		if i < len(iconLines)-1 {
+			iconDisplay += "\n"
+		}
+	}
+
+	sections = append(sections, iconDisplay)
+
+	// Show status text below icon
+	if m.isPausing {
+		// Show PAUSING text
+		pausingStyle := lipgloss.NewStyle().
+			Foreground(ColorGray).
+			Bold(true)
+		pausingText := pausingStyle.Render("⏳ PAUSING...")
+		sections = append(sections, "", pausingText)
+	} else if m.isResuming {
+		// Show RESUMING text
+		resumingStyle := lipgloss.NewStyle().
+			Foreground(ColorGray).
+			Bold(true)
+		resumingText := resumingStyle.Render("⏳ RESUMING...")
+		sections = append(sections, "", resumingText)
+	} else if m.status.IsRecording {
+		// Add REC text below camera when recording (solid, no blinking)
+		recStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true)
+		var recDisplay string
+		for i, line := range bigREC {
+			recDisplay += recStyle.Render(line)
+			if i < len(bigREC)-1 {
+				recDisplay += "\n"
+			}
+		}
+		sections = append(sections, "", recDisplay)
+	} else if m.isPaused {
+		// Show PAUSED text in amber
+		pausedStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true)
+		pausedText := pausedStyle.Render("▶ PAUSED - Press P to resume")
+		sections = append(sections, "", pausedText)
+	}
+
+	// Add duration display
+	if m.status.IsRecording || m.isPaused {
+		duration := time.Since(m.status.StartTime).Round(time.Second)
+		durationStyle := lipgloss.NewStyle().
+			Foreground(ColorWhite).
+			Bold(true)
+		durationText := durationStyle.Render(fmt.Sprintf("Duration: %s", duration))
+		if m.status.CurrentPart > 0 {
+			durationText += lipgloss.NewStyle().
+				Foreground(ColorGray).
+				Render(fmt.Sprintf("  (Part %d)", m.status.CurrentPart+1))
+		}
+		sections = append(sections, "", durationText)
+	}
+
+	// Render Pause and Stop buttons
+	sections = append(sections, "", m.renderRecordingButtons())
+
+	// Show output directory path
+	if m.outputDir != "" {
+		pathStyle := lipgloss.NewStyle().
+			Foreground(ColorGray).
+			Italic(true)
+		pathText := pathStyle.Render("Output: " + m.outputDir)
+		sections = append(sections, "", pathText)
 	}
 
 	// Help content (if shown)
-	var helpContent string
 	if m.showHelp {
-		helpContent = m.renderHelp()
+		sections = append(sections, "", m.renderHelp())
 	}
 
 	// Combine content
@@ -796,19 +1021,57 @@ func (m AppModel) renderRecordingContent(cursorMonitor string) string {
 		Width(HeaderWidth).
 		Align(lipgloss.Center)
 
-	var sections []string
-	sections = append(sections, monitorsContent)
-
-	if recordingInfo != "" {
-		sections = append(sections, "", recordingInfo)
-	}
-
-	if helpContent != "" {
-		sections = append(sections, "", helpContent)
-	}
-
 	content := lipgloss.JoinVertical(lipgloss.Center, sections...)
 	return contentStyle.Render(content)
+}
+
+// renderRecordingButtons renders the Pause and Stop buttons
+func (m AppModel) renderRecordingButtons() string {
+	// Button styles
+	normalStyle := lipgloss.NewStyle().
+		Padding(0, 3).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorGray)
+
+	selectedStyle := lipgloss.NewStyle().
+		Padding(0, 3).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorBlue).
+		Bold(true)
+
+	// Pause button
+	pauseLabel := "⏸ Pause"
+	if m.isPaused {
+		pauseLabel = "▶ Resume"
+	}
+	pauseStyle := normalStyle
+	if m.selectedButton == ButtonPause {
+		pauseStyle = selectedStyle
+		if m.isPaused {
+			pauseStyle = pauseStyle.Foreground(ColorGreen)
+		} else {
+			pauseStyle = pauseStyle.Foreground(ColorOrange)
+		}
+	} else {
+		if m.isPaused {
+			pauseStyle = pauseStyle.Foreground(ColorGreen)
+		} else {
+			pauseStyle = pauseStyle.Foreground(ColorWhite)
+		}
+	}
+	pauseBtn := pauseStyle.Render(pauseLabel)
+
+	// Stop button
+	stopStyle := normalStyle
+	if m.selectedButton == ButtonStop {
+		stopStyle = selectedStyle.Foreground(ColorRed)
+	} else {
+		stopStyle = stopStyle.Foreground(ColorWhite)
+	}
+	stopBtn := stopStyle.Render("⏹ Stop")
+
+	// Join buttons horizontally with spacing
+	return lipgloss.JoinHorizontal(lipgloss.Center, pauseBtn, "    ", stopBtn)
 }
 
 // renderMonitors renders the monitor list

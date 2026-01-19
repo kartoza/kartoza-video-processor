@@ -28,6 +28,8 @@ const (
 	WebcamPathFile = "/tmp/kartoza-webcam.path"
 	StopSignalFile = "/tmp/kartoza-video.stop"
 	OutputDirFile  = "/tmp/kartoza-output.path" // Stores current recording output directory
+	PartNumberFile = "/tmp/kartoza-part.num"    // Stores current part number for pause/resume
+	PausedFile     = "/tmp/kartoza-paused"      // Indicates recording is paused
 )
 
 // GifLoopMode controls how animated GIFs are played

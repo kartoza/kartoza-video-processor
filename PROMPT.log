@@ -618,3 +618,120 @@ it should put the status to processing after stop is called but before outputs a
 3. After stop is called, status is set to "processing" before outputs are generated
 4. After processing completes, status is set to "completed" or "failed" based on errors
 5. Added SetStatus() method and ProcessedAt timestamp
+
+---
+
+please add the ability to pause and resume recording. When we hit pause we we stop all recordings, when we resume, we start all recordings but use a _partXXX suffix in the filenames. The initial recording would be _part000 always. The video processor should then marshall all of the inputs into the different outputs. the comand line use should also be extended to support pause and resume subcommands and the status response should have a new paused status response type
+
+**Summary:** Added pause/resume recording support:
+1. Added "paused" status constant to models
+2. Added part file tracking in FileInfo (VideoParts, AudioParts, WebcamParts, CurrentPart)
+3. Added IsPaused, Pause(), and Resume() methods to Recorder
+4. File naming now uses _partXXX suffix (screen_part000.mp4, screen_part001.mp4, etc.)
+5. Added pause and resume CLI subcommands
+6. Updated status command to show paused state and part count
+7. Added PausedFile and PartNumberFile config constants for state persistence
+8. Updated RecordingStatus to include IsPaused and CurrentPart fields
+9. Added concatenateParts() function to merger for joining multiple parts
+10. Merger now handles VideoParts/AudioParts/WebcamParts arrays and concatenates before processing
+
+---
+
+after the user starts recording the recording screen should show a large ascii art blinking video camera icon made from solid blocks. under it should be a Pause button and a Stop button. When the pause button is pressed the large ascii art icon should change to || in amber. The output paths text can be shown below all these and simply show the working directory path. The style of the ascii art should be similar to the countdown timer when the recording is about to start or resume.
+
+**Summary:** Updated TUI recording screen with ASCII art and pause/resume UI:
+1. Added ASCII art icons in countdown.go:
+   - bigCamera: Video camera shape with lens and viewfinder (9 lines tall)
+   - bigPause: Two vertical bars || (9 lines tall)
+   - bigREC: Large "REC" text (7 lines tall)
+2. Recording screen now shows:
+   - Camera icon in blinking red when recording (alternates bright/dim red)
+   - Pause icon (||) in amber when paused
+   - "REC" text blinks below camera during recording
+   - "▶ PAUSED - Press P to resume" message when paused
+   - Duration display with part number indicator
+   - Pause and Stop buttons with selection highlighting
+   - Output directory path displayed below buttons
+3. Button navigation:
+   - Left/Right or H/L keys to switch between Pause and Stop buttons
+   - Space/Enter to activate selected button
+   - P key for direct pause/resume toggle
+   - S key for direct stop
+4. Button styling:
+   - Selected button has blue border, appropriate color (orange for pause, green for resume, red for stop)
+   - Unselected buttons have gray border
+5. Updated help footer with new keybindings
+
+---
+
+lets ditch the flashing on the record screen and just show the icon as it causes usability issues
+
+**Summary:** Removed blinking from recording screen:
+- Camera icon now shows solid red when recording (no alternating bright/dim)
+- REC text now shows solid red (no blinking based on blinkOn state)
+- Pause icon remains solid amber when paused
+
+---
+
+in the recording history view, add binds and logic so you can press d to delete an entry and it recursively deletes the entries folder (with confirmation)
+
+**Summary:** Added delete functionality to recording history:
+1. Press 'd' in list view to delete the selected recording
+2. Shows confirmation dialog with:
+   - Warning message with red border
+   - Recording details (folder, title, date, size)
+   - "Are you sure?" prompt
+   - Y/N buttons
+3. Press 'Y' to confirm deletion (recursively deletes folder)
+4. Press 'N' or 'Esc' to cancel
+5. After deletion:
+   - Recording removed from list
+   - Cursor adjusted if needed
+   - Global recording count updated
+6. Error handling if deletion fails
+
+---
+
+pausing take a really long time and when I tried to pause a second time the app seems to freeze up
+
+**Summary:** Fixed pause/resume freezing and slowness:
+1. Made pause and resume operations asynchronous:
+   - Added `pauseCompleteMsg` and `resumeCompleteMsg` message types
+   - `handlePause()` and `handleResume()` now return immediately with async commands
+   - UI shows "Pausing..." or "Resuming..." state while operation runs in background
+2. Added `isPausing` and `isResuming` state flags to AppModel
+3. Prevent multiple simultaneous pause/resume operations
+4. Reduced wait times in recorder:
+   - Process stop wait reduced from 5 seconds (10×500ms) to 2 seconds (10×200ms)
+   - File write wait reduced from 1 second to 300ms
+5. UI updates:
+   - Shows gray pause icon with "⏳ PAUSING..." text while pausing
+   - Shows gray camera icon with "⏳ RESUMING..." text while resuming
+   - Status bar shows "Pausing..." or "Resuming..." during operations
+6. Users can now pause and resume multiple times, with parts concatenated during final processing
+
+---
+
+i recorded 3 parts then when I said stop it says error no recording in progress - if they user presses stop when recording is in pause mode that should not cause an error
+
+**Summary:** Fixed stop from paused state:
+1. Modified `stopInternal()` in recorder to check for both active recording AND paused state
+2. If paused (no PID files but PausedFile exists), stop is still allowed
+3. Clears the PausedFile when stopping from paused state
+4. Processing continues normally with all recorded parts being concatenated
+
+---
+
+the part numbering scheme should reset to 000 whenever we start a brand new recording
+
+**Summary:** Fixed part numbering and stop from paused state:
+1. Part number now resets to 0 when starting a new recording:
+   - Checks if `RecordingInfo.Files.VideoParts/AudioParts/WebcamParts` are all empty
+   - If empty, it's a new recording - reset part number to 0
+   - If not empty, it's a resume - use the current part number
+2. Clean up state files after stopping:
+   - Remove `PartNumberFile` and `OutputDirFile` after recording completes
+3. Fixed hanging when stopping from paused state:
+   - Only attempt to stop processes if actively recording (not just paused)
+   - Skip the 2-second file write wait when stopping from paused state
+   - Prevents hanging on `r.wg.Wait()` when no goroutines are running
