@@ -5,64 +5,15 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
-	"syscall"
 
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 	"github.com/kartoza/kartoza-video-processor/internal/notify"
 )
 
-// Recorder handles audio recording via PipeWire
-type Recorder struct {
-	device     string
-	outputFile string
-	cmd        *exec.Cmd
-	pid        int
-}
-
-// NewRecorder creates a new audio recorder
-func NewRecorder(device, outputFile string) *Recorder {
-	if device == "" {
-		device = "@DEFAULT_SOURCE@"
-	}
-	return &Recorder{
-		device:     device,
-		outputFile: outputFile,
-	}
-}
-
-// Start begins audio recording
-func (r *Recorder) Start() error {
-	r.cmd = exec.Command("pw-record", "--target", r.device, r.outputFile)
-	r.cmd.Stdout = nil
-	r.cmd.Stderr = nil
-
-	if err := r.cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start audio recording: %w", err)
-	}
-
-	r.pid = r.cmd.Process.Pid
-	return nil
-}
-
-// Stop stops audio recording
-func (r *Recorder) Stop() error {
-	if r.cmd == nil || r.cmd.Process == nil {
-		return nil
-	}
-
-	// Send SIGINT for graceful shutdown
-	if err := r.cmd.Process.Signal(syscall.SIGINT); err != nil {
-		return r.cmd.Process.Kill()
-	}
-
-	r.cmd.Wait()
-	return nil
-}
-
-// PID returns the process ID
-func (r *Recorder) PID() int {
-	return r.pid
-}
+// Note: Recorder is defined in platform-specific files:
+// - audio_linux.go: uses pw-record (PipeWire)
+// - audio_darwin.go: uses ffmpeg with avfoundation
+// - audio_windows.go: uses ffmpeg with dshow
 
 // Processor handles audio post-processing
 type Processor struct {

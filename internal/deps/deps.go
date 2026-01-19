@@ -4,10 +4,21 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
-// DisplayServer represents the type of display server in use
+// Platform represents the operating system
+type Platform string
+
+const (
+	PlatformLinux   Platform = "linux"
+	PlatformDarwin  Platform = "darwin"
+	PlatformWindows Platform = "windows"
+	PlatformUnknown Platform = "unknown"
+)
+
+// DisplayServer represents the type of display server in use (Linux only)
 type DisplayServer string
 
 const (
@@ -15,6 +26,34 @@ const (
 	DisplayServerX11     DisplayServer = "x11"
 	DisplayServerUnknown DisplayServer = "unknown"
 )
+
+// DetectPlatform returns the current operating system
+func DetectPlatform() Platform {
+	switch runtime.GOOS {
+	case "linux":
+		return PlatformLinux
+	case "darwin":
+		return PlatformDarwin
+	case "windows":
+		return PlatformWindows
+	default:
+		return PlatformUnknown
+	}
+}
+
+// GetPlatformName returns a human-readable name for the platform
+func GetPlatformName() string {
+	switch DetectPlatform() {
+	case PlatformLinux:
+		return "Linux"
+	case PlatformDarwin:
+		return "macOS"
+	case PlatformWindows:
+		return "Windows"
+	default:
+		return "Unknown"
+	}
+}
 
 // Dependency represents a required external dependency
 type Dependency struct {
@@ -57,7 +96,7 @@ func GetDisplayServerName() string {
 	}
 }
 
-// BaseDeps lists dependencies required regardless of display server
+// BaseDeps lists dependencies required on all platforms
 var BaseDeps = []Dependency{
 	{
 		Name:        "ffmpeg",
@@ -69,6 +108,10 @@ var BaseDeps = []Dependency{
 		Description: "Video metadata extraction",
 		Required:    true,
 	},
+}
+
+// LinuxBaseDeps lists dependencies specific to Linux (all display servers)
+var LinuxBaseDeps = []Dependency{
 	{
 		Name:        "pw-record",
 		Description: "PipeWire audio recording",
@@ -92,37 +135,65 @@ var X11Deps = []Dependency{
 	// No additional binary needed beyond ffmpeg
 }
 
+// DarwinDeps lists dependencies specific to macOS
+// Note: macOS uses ffmpeg with avfoundation for all capture
+var DarwinDeps = []Dependency{
+	// ffmpeg with avfoundation is used for screen, webcam, and audio
+	// No additional binary needed beyond ffmpeg
+}
+
+// WindowsDeps lists dependencies specific to Windows
+// Note: Windows uses ffmpeg with gdigrab/dshow for capture
+var WindowsDeps = []Dependency{
+	// ffmpeg with gdigrab (screen) and dshow (webcam/audio) is used
+	// No additional binary needed beyond ffmpeg
+}
+
 // OptionalDeps lists optional dependencies that enhance functionality
 var OptionalDeps = []Dependency{
 	{
 		Name:        "notify-send",
-		Description: "Desktop notifications",
+		Description: "Desktop notifications (Linux)",
 		Required:    false,
 	},
 	{
 		Name:        "paplay",
-		Description: "Audio playback for countdown beeps",
+		Description: "Audio playback for countdown beeps (Linux)",
 		Required:    false,
 	},
 	{
 		Name:        "speaker-test",
-		Description: "Alternative audio playback for countdown",
+		Description: "Alternative audio playback for countdown (Linux)",
 		Required:    false,
 	},
 }
 
-// GetRequiredDeps returns the required dependencies based on current display server
+// GetRequiredDeps returns the required dependencies based on current platform and display server
 func GetRequiredDeps() []Dependency {
 	deps := make([]Dependency, len(BaseDeps))
 	copy(deps, BaseDeps)
 
-	switch DetectDisplayServer() {
-	case DisplayServerWayland:
-		deps = append(deps, WaylandDeps...)
-	case DisplayServerX11:
-		deps = append(deps, X11Deps...)
+	switch DetectPlatform() {
+	case PlatformLinux:
+		// Add Linux base deps
+		deps = append(deps, LinuxBaseDeps...)
+		// Add display server specific deps
+		switch DetectDisplayServer() {
+		case DisplayServerWayland:
+			deps = append(deps, WaylandDeps...)
+		case DisplayServerX11:
+			deps = append(deps, X11Deps...)
+		default:
+			// Unknown - require Wayland deps as default
+			deps = append(deps, WaylandDeps...)
+		}
+	case PlatformDarwin:
+		deps = append(deps, DarwinDeps...)
+	case PlatformWindows:
+		deps = append(deps, WindowsDeps...)
 	default:
-		// Unknown - require Wayland deps as default
+		// Unknown platform - assume Linux Wayland
+		deps = append(deps, LinuxBaseDeps...)
 		deps = append(deps, WaylandDeps...)
 	}
 
