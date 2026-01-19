@@ -29,10 +29,11 @@ const HeaderWidth = 60
 
 // AppState contains the global application state shown in all headers
 type AppState struct {
-	IsRecording     bool
-	TotalRecordings int
-	Status          string // e.g., "Ready", "Processing", "Recording"
-	BlinkOn         bool   // For blinking recording indicator
+	IsRecording      bool
+	TotalRecordings  int
+	Status           string // e.g., "Ready", "Processing", "Recording"
+	BlinkOn          bool   // For blinking recording indicator
+	YouTubeConnected bool   // Whether YouTube API is connected
 }
 
 // Global app state - updated by the main app model
@@ -106,8 +107,20 @@ func RenderHeader(pageTitle string) string {
 		Bold(GlobalAppState.IsRecording).
 		Render(recordingStatus)
 
-	statusLine := fmt.Sprintf("Recording: %s  |  Total Recordings: %d  |  Status: %s",
+	// YouTube connection status
+	youtubeStatus := "YT: -"
+	youtubeColor := ColorGray
+	if GlobalAppState.YouTubeConnected {
+		youtubeStatus = "YT: ✓"
+		youtubeColor = ColorGreen
+	}
+	youtubeStyled := lipgloss.NewStyle().
+		Foreground(youtubeColor).
+		Render(youtubeStatus)
+
+	statusLine := fmt.Sprintf("Rec: %s | %s | #%d | %s",
 		recordingStyled,
+		youtubeStyled,
 		GlobalAppState.TotalRecordings,
 		GlobalAppState.Status,
 	)

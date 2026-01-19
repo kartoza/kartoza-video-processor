@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-video-processor/internal/youtube"
 )
 
 const (
@@ -103,6 +104,9 @@ type Config struct {
 
 	// Recording presets (saved between sessions)
 	RecordingPresets RecordingPresets `json:"recording_presets,omitempty"`
+
+	// YouTube integration settings
+	YouTube youtube.Config `json:"youtube,omitempty"`
 }
 
 // DefaultConfig returns the default configuration
@@ -111,7 +115,18 @@ func DefaultConfig() Config {
 		OutputDir:       GetDefaultVideosDir(),
 		DefaultOptions:  models.DefaultRecordingOptions(),
 		AudioProcessing: models.DefaultAudioProcessingOptions(),
+		YouTube:         youtube.DefaultConfig(),
 	}
+}
+
+// GetYouTubeAuthStatus returns the current YouTube authentication status
+func (c *Config) GetYouTubeAuthStatus() youtube.AuthStatus {
+	return youtube.GetAuthStatus(&c.YouTube, GetConfigDir())
+}
+
+// IsYouTubeConnected returns true if YouTube is fully authenticated
+func (c *Config) IsYouTubeConnected() bool {
+	return c.GetYouTubeAuthStatus() == youtube.AuthStatusAuthenticated
 }
 
 // GetConfigDir returns the configuration directory path

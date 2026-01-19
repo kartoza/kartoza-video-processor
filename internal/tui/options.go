@@ -29,6 +29,7 @@ const (
 	OptionsFieldRemoveTopic
 	OptionsFieldDefaultPresenter
 	OptionsFieldLogoDirectory
+	OptionsFieldYouTubeSetup
 	OptionsFieldSave
 )
 
@@ -270,6 +271,8 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 			case OptionsFieldLogoDirectory:
 				m.openDirectoryBrowser()
 				return m, nil
+			case OptionsFieldYouTubeSetup:
+				return m, func() tea.Msg { return goToYouTubeSetupMsg{} }
 			case OptionsFieldSave:
 				m.save()
 				return m, nil
@@ -523,6 +526,38 @@ func (m *OptionsModel) View() string {
 	logoDirRow := lipgloss.JoinHorizontal(lipgloss.Center, logoDirLabel, logoDirValue)
 	logoDirHint := hintStyle.Render("                    logos selected per-recording")
 
+	// YouTube Section
+	youtubeSection := sectionStyle.Render("YouTube")
+	youtubeLabel := labelStyle.Render("Status: ")
+	if m.focusedField == OptionsFieldYouTubeSetup {
+		youtubeLabel = labelActiveStyle.Render("Status: ")
+	}
+
+	// Get YouTube status
+	cfg, _ := config.Load()
+	youtubeStatus := cfg.GetYouTubeAuthStatus()
+	var youtubeStatusText string
+	var youtubeStatusColor lipgloss.Color
+	switch youtubeStatus {
+	case 3: // AuthStatusAuthenticated
+		youtubeStatusText = "Connected"
+		youtubeStatusColor = ColorGreen
+		if cfg.YouTube.ChannelName != "" {
+			youtubeStatusText = "Connected: " + cfg.YouTube.ChannelName
+		}
+	case 2: // AuthStatusConfigured
+		youtubeStatusText = "Not Connected (press enter to connect)"
+		youtubeStatusColor = ColorOrange
+	default:
+		youtubeStatusText = "Not Set Up (press enter to configure)"
+		youtubeStatusColor = ColorGray
+	}
+	if m.focusedField == OptionsFieldYouTubeSetup {
+		youtubeStatusText = "▶ " + youtubeStatusText
+	}
+	youtubeStatusStyled := lipgloss.NewStyle().Foreground(youtubeStatusColor).Render(youtubeStatusText)
+	youtubeRow := lipgloss.JoinHorizontal(lipgloss.Center, youtubeLabel, youtubeStatusStyled)
+
 	// Save button
 	saveLabel := labelStyle.Render("")
 	saveBtn := inactiveButtonStyle.Render("Save")
@@ -556,6 +591,8 @@ func (m *OptionsModel) View() string {
 		logoSection,
 		logoDirRow,
 		logoDirHint,
+		youtubeSection,
+		youtubeRow,
 		"",
 		saveRow,
 		"",
@@ -753,3 +790,6 @@ func (m *OptionsModel) renderFileBrowser() string {
 
 	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
 }
+
+// goToYouTubeSetupMsg signals navigation to YouTube setup screen
+type goToYouTubeSetupMsg struct{}

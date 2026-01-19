@@ -27,6 +27,8 @@ const (
 	ScreenRecording
 	ScreenHistory
 	ScreenOptions
+	ScreenYouTubeSetup
+	ScreenYouTubeUpload
 )
 
 // RecordingButton represents a button on the recording screen
@@ -44,6 +46,8 @@ type AppModel struct {
 	recordingSetup  *RecordingSetupModel
 	options         *OptionsModel
 	history         *HistoryModel
+	youtubeSetup    *YouTubeSetupModel
+	youtubeUpload   *YouTubeUploadModel
 	recorder        *recorder.Recorder
 	status          models.RecordingStatus
 	monitors        []models.Monitor
@@ -110,6 +114,16 @@ func updateGlobalAppState(isRecording bool, blinkOn bool, status string) {
 	GlobalAppState.BlinkOn = blinkOn
 	GlobalAppState.Status = status
 	GlobalAppState.TotalRecordings = countRecordings()
+	GlobalAppState.YouTubeConnected = checkYouTubeConnected()
+}
+
+// checkYouTubeConnected checks if YouTube is connected
+func checkYouTubeConnected() bool {
+	cfg, err := config.Load()
+	if err != nil {
+		return false
+	}
+	return cfg.IsYouTubeConnected()
 }
 
 // checkExternalRecording checks if wl-screenrec processes are running externally
@@ -163,6 +177,7 @@ func NewAppModel() AppModel {
 
 	// Initialize global app state
 	GlobalAppState.TotalRecordings = countRecordings()
+	GlobalAppState.YouTubeConnected = checkYouTubeConnected()
 	if status.IsRecording {
 		GlobalAppState.IsRecording = true
 		GlobalAppState.Status = "Recording"
@@ -177,6 +192,7 @@ func NewAppModel() AppModel {
 		recordingSetup:          NewRecordingSetupModel(),
 		options:                 NewOptionsModel(),
 		history:                 NewHistoryModel(),
+		youtubeSetup:            NewYouTubeSetupModel(),
 		recorder:                rec,
 		spinner:                 s,
 		blinkOn:                 true,
@@ -219,6 +235,36 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case backToMenuMsg:
 		m.screen = ScreenMenu
 		m.recordingSetup = NewRecordingSetupModel()
+		// Refresh YouTube status when returning to menu
+		updateGlobalAppState(m.status.IsRecording, m.blinkOn, GlobalAppState.Status)
+		return m, nil
+	case goToYouTubeSetupMsg:
+		m.screen = ScreenYouTubeSetup
+		m.youtubeSetup = NewYouTubeSetupModel()
+		m.youtubeSetup.width = m.width
+		m.youtubeSetup.height = m.height
+		return m, m.youtubeSetup.Init()
+	case youtubeAuthStartedMsg, youtubeAuthCompleteMsg, youtubeDisconnectMsg:
+		// Forward YouTube auth messages to the YouTube setup model
+		if m.screen == ScreenYouTubeSetup && m.youtubeSetup != nil {
+			newSetup, cmd := m.youtubeSetup.Update(msg)
+			m.youtubeSetup = newSetup
+			// Refresh global state to update status bar
+			updateGlobalAppState(m.status.IsRecording, m.blinkOn, GlobalAppState.Status)
+			return m, cmd
+		}
+		return m, nil
+	case uploadProgressMsg, uploadCompleteMsg:
+		// Forward upload messages to the YouTube upload model
+		if m.screen == ScreenYouTubeUpload && m.youtubeUpload != nil {
+			newUpload, cmd := m.youtubeUpload.Update(msg)
+			m.youtubeUpload = newUpload
+			return m, cmd
+		}
+		return m, nil
+	case youtubeUploadSkippedMsg, youtubeUploadDoneMsg:
+		// YouTube upload done or skipped, return to menu
+		m.screen = ScreenMenu
 		return m, nil
 	}
 
@@ -360,10 +406,33 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case processingDoneMsg:
 		m.state = stateReady
-		m.screen = ScreenMenu
 		m.processing.Reset()
 		// Update global state - recording complete, refresh count
 		updateGlobalAppState(false, true, "Ready")
+
+		// Check if YouTube upload should be prompted
+		cfg, _ := config.Load()
+		if cfg.YouTube.AutoPromptUpload && cfg.IsYouTubeConnected() && m.recordingInfo != nil {
+			// Find the processed video file
+			videoPath := filepath.Join(m.outputDir, "final.mp4")
+			if _, err := os.Stat(videoPath); err == nil {
+				// Create YouTube upload model with recording metadata
+				m.youtubeUpload = NewYouTubeUploadModel(
+					videoPath,
+					m.outputDir,
+					m.metadata.Title,
+					m.metadata.Description,
+					m.metadata.Topic,
+				)
+				m.youtubeUpload.width = m.width
+				m.youtubeUpload.height = m.height
+				m.screen = ScreenYouTubeUpload
+				return m, m.youtubeUpload.Init()
+			}
+		}
+
+		// Otherwise go back to menu
+		m.screen = ScreenMenu
 		return m, updateStatus(m.recorder)
 
 	case processingErrorMsg:
@@ -475,6 +544,10 @@ func (m AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleHistoryKeys(msg)
 	case ScreenOptions:
 		return m.handleOptionsKeys(msg)
+	case ScreenYouTubeSetup:
+		return m.handleYouTubeSetupKeys(msg)
+	case ScreenYouTubeUpload:
+		return m.handleYouTubeUploadKeys(msg)
 	}
 
 	return m, nil
@@ -865,6 +938,10 @@ func (m AppModel) View() string {
 		return m.renderHistoryScreen()
 	case ScreenOptions:
 		return m.renderOptionsScreen()
+	case ScreenYouTubeSetup:
+		return m.renderYouTubeSetupScreen()
+	case ScreenYouTubeUpload:
+		return m.renderYouTubeUploadScreen()
 	}
 
 	return ""
@@ -1268,4 +1345,37 @@ func (m AppModel) renderOptionsScreen() string {
 	footer := RenderHelpFooter("tab/↓: next • shift+tab/↑: prev • enter: select • esc: back", m.width)
 
 	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+}
+
+// handleYouTubeSetupKeys handles keys on the YouTube setup screen
+func (m AppModel) handleYouTubeSetupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Update the YouTube setup model
+	newYouTubeSetup, cmd := m.youtubeSetup.Update(msg)
+	m.youtubeSetup = newYouTubeSetup
+	return m, cmd
+}
+
+// renderYouTubeSetupScreen renders the YouTube setup screen
+func (m AppModel) renderYouTubeSetupScreen() string {
+	m.youtubeSetup.width = m.width
+	m.youtubeSetup.height = m.height
+	return m.youtubeSetup.View()
+}
+
+// handleYouTubeUploadKeys handles keys on the YouTube upload screen
+func (m AppModel) handleYouTubeUploadKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Update the YouTube upload model
+	newYouTubeUpload, cmd := m.youtubeUpload.Update(msg)
+	m.youtubeUpload = newYouTubeUpload
+	return m, cmd
+}
+
+// renderYouTubeUploadScreen renders the YouTube upload screen
+func (m AppModel) renderYouTubeUploadScreen() string {
+	if m.youtubeUpload == nil {
+		return ""
+	}
+	m.youtubeUpload.width = m.width
+	m.youtubeUpload.height = m.height
+	return m.youtubeUpload.View()
 }

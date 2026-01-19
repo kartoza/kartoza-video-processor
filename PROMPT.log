@@ -735,3 +735,70 @@ the part numbering scheme should reset to 000 whenever we start a brand new reco
    - Only attempt to stop processes if actively recording (not just paused)
    - Skip the 2-second file write wait when stopping from paused state
    - Prevents hanging on `r.wg.Wait()` when no goroutines are running
+
+---
+
+## 2026-01-19
+
+**Prompt:** I want to add a new feature: after the video processing has completed, the user should be able to use the youtube api to upload the video to a playlist, taking the title and description and topics as the descriptive data and taking a thumbnail from the 60s mark or the last frame if the video is shorter. there should be helpers for the user to log in to the google api and store their api keys. Make sure there is a nice user friendly enrolment process and the status bar above indicates whether you have api credentials.
+
+**Summary:** Added complete YouTube upload integration with user-friendly setup flow:
+
+1. Created `internal/youtube` package with:
+   - `config.go`: YouTube configuration, token storage, upload options, privacy status, tags parsing
+   - `auth.go`: OAuth2 authentication with PKCE, browser-based consent, token refresh
+   - `thumbnail.go`: FFmpeg-based thumbnail extraction at 60s mark (or proportionally for shorter videos)
+   - `upload.go`: Video upload with progress tracking, playlist management, thumbnail setting
+
+2. OAuth2 Authentication Flow:
+   - PKCE (Proof Key for Code Exchange) for desktop app security
+   - Loopback redirect (127.0.0.1) for OAuth callback
+   - Automatic browser opening for Google consent
+   - Token storage with automatic refresh
+   - Token revocation support
+
+3. YouTube Setup Wizard (`youtube_setup.go`):
+   - Step-by-step enrollment: Welcome > Instructions > Credentials > Authenticating > Connected
+   - Clear instructions for creating Google Cloud OAuth credentials
+   - Input fields for Client ID and Client Secret
+   - Real-time connection status display
+   - Disconnect option for existing connections
+
+4. Status Bar Integration:
+   - Added `YouTubeConnected` field to `AppState` in `widgets.go`
+   - Shows "YT: ✓" (green) when connected, "YT: -" (gray) when not
+   - Status updates automatically on connection state changes
+
+5. Options Screen Integration:
+   - Added YouTube Setup option to Options screen
+   - Shows current connection status (Connected/Not Connected/Not Set Up)
+   - Navigate to setup wizard by selecting the option
+
+6. YouTube Upload Screen (`youtube_upload.go`):
+   - Prompt after video processing: "Upload to YouTube? (Y/N)"
+   - Editable metadata: title, description, tags
+   - Privacy selection: unlisted (default), private, public
+   - Upload progress display
+   - Success screen with video URL
+   - Error handling with retry option
+
+7. Post-Processing Integration:
+   - Added `ScreenYouTubeUpload` screen state
+   - After processing completes, if YouTube connected and `AutoPromptUpload` enabled:
+     - Automatically shows upload prompt
+     - Pre-fills metadata from recording info
+   - Skip option returns to main menu
+
+8. Configuration:
+   - YouTube settings stored in main config: `ClientID`, `ClientSecret`, `DefaultPrivacy`, `AutoPromptUpload`, `ChannelName`
+   - OAuth tokens stored separately in `youtube_token.json` with restricted permissions (0600)
+
+Dependencies added:
+- `golang.org/x/oauth2` for OAuth2 flow
+- `google.golang.org/api/youtube/v3` for YouTube Data API v3
+- `github.com/charmbracelet/bubbles/progress` for upload progress bar
+This session is being continued from a previous conversation that ran out of context.
+
+User asked: 'I set the access to internal since it is for our company staff ok / is that ok'
+
+Response: Yes, setting the OAuth consent screen to 'Internal' is perfectly fine for company/organization use. Internal mode means only users within your Google Workspace organization can authenticate, no need for Google's app verification process, and the app stays internal to your company. Build verified successful.
