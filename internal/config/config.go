@@ -53,10 +53,10 @@ var GifLoopModeLabels = map[GifLoopMode]string{
 
 // LogoSelection holds the selected logos for a recording
 type LogoSelection struct {
-	LeftLogo    string      `json:"left_logo,omitempty"`    // Top-left logo
-	RightLogo   string      `json:"right_logo,omitempty"`   // Top-right logo
-	BottomLogo  string      `json:"bottom_logo,omitempty"`  // Lower third logo
-	TitleColor  string      `json:"title_color,omitempty"`  // Color for title text overlay
+	LeftLogo    string      `json:"left_logo,omitempty"`     // Top-left logo
+	RightLogo   string      `json:"right_logo,omitempty"`    // Top-right logo
+	BottomLogo  string      `json:"bottom_logo,omitempty"`   // Lower third logo
+	TitleColor  string      `json:"title_color,omitempty"`   // Color for title text overlay
 	GifLoopMode GifLoopMode `json:"gif_loop_mode,omitempty"` // How to loop animated GIFs
 }
 
@@ -98,8 +98,8 @@ type Config struct {
 	DefaultPresenter string                        `json:"default_presenter,omitempty"`
 
 	// Logo settings
-	LogoDirectory  string        `json:"logo_directory,omitempty"`   // Directory to browse for logos
-	LastUsedLogos  LogoSelection `json:"last_used_logos,omitempty"`  // Last used logo selection
+	LogoDirectory string        `json:"logo_directory,omitempty"`  // Directory to browse for logos
+	LastUsedLogos LogoSelection `json:"last_used_logos,omitempty"` // Last used logo selection
 
 	// Recording presets (saved between sessions)
 	RecordingPresets RecordingPresets `json:"recording_presets,omitempty"`

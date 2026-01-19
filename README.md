@@ -1,6 +1,6 @@
 # Kartoza Video Processor
 
-A screen recording tool for Wayland compositors with multi-monitor support, audio processing, and webcam integration.
+A cross-platform screen recording tool with multi-monitor support, audio processing, and webcam integration. Supports Linux (Wayland/X11), Windows, and macOS.
 
 ## Features
 
@@ -9,21 +9,36 @@ A screen recording tool for Wayland compositors with multi-monitor support, audi
 - **Webcam recording** with real-time 60fps capture
 - **Audio normalization** using EBU R128 loudness standards
 - **Vertical video creation** with webcam overlay (perfect for social media)
-- **Hardware acceleration** support (optional VAAPI encoding)
+- **Hardware acceleration** support (optional VAAPI encoding on Linux)
 - **Desktop notifications** for recording status
+- **Cross-platform support** - Linux, Windows, and macOS
 
 ## Requirements
 
-- Wayland compositor (Hyprland, Sway, etc.)
-- `wl-screenrec` - Wayland screen recorder
-- `ffmpeg` - Video/audio processing
+### All Platforms
+- `ffmpeg` - Video/audio processing and merging
+- `ffprobe` - Video metadata extraction
+
+### Linux-specific
+- **Wayland**: `wl-screenrec` - Wayland screen recorder
+- **X11**: Uses ffmpeg with x11grab (no additional dependencies)
 - `pw-record` (PipeWire) - Audio capture
-- `notify-send` - Desktop notifications
+- `notify-send` - Desktop notifications (optional)
+
+### Windows-specific
+- Uses ffmpeg with `gdigrab` for screen capture
+- Uses ffmpeg with `dshow` for audio and webcam
+- No additional dependencies beyond ffmpeg
+
+### macOS-specific
+- Uses ffmpeg with `avfoundation` for screen, audio, and webcam
+- No additional dependencies beyond ffmpeg
 
 ## Installation
 
 ### From Source
 
+#### Linux
 ```bash
 # Clone the repository
 git clone https://github.com/kartoza/kartoza-video-processor.git
@@ -36,7 +51,36 @@ make build
 sudo make install
 ```
 
-### Using Nix Flakes
+#### Windows
+```bash
+# Clone the repository
+git clone https://github.com/kartoza/kartoza-video-processor.git
+cd kartoza-video-processor
+
+# Build (requires Go installed)
+go build -o kartoza-video-processor.exe
+
+# Install ffmpeg from https://ffmpeg.org/download.html
+# Add kartoza-video-processor.exe to your PATH
+```
+
+#### macOS
+```bash
+# Clone the repository
+git clone https://github.com/kartoza/kartoza-video-processor.git
+cd kartoza-video-processor
+
+# Build (requires Go installed)
+go build -o kartoza-video-processor
+
+# Install ffmpeg via Homebrew
+brew install ffmpeg
+
+# Move binary to PATH
+sudo mv kartoza-video-processor /usr/local/bin/
+```
+
+### Using Nix Flakes (Linux only)
 
 ```bash
 # Run directly
@@ -49,11 +93,14 @@ nix profile install github:kartoza/kartoza-video-processor
 ### Development
 
 ```bash
-# Enter development shell
+# Enter development shell (Linux)
 nix develop
 
-# Or use direnv
+# Or use direnv (Linux)
 direnv allow
+
+# Or use standard Go tools (all platforms)
+go run .
 ```
 
 ## Usage
@@ -147,6 +194,32 @@ Configuration is stored in `~/.config/kartoza-video-processor/config.json`:
 }
 ```
 
+**Platform-specific paths:**
+- Linux: `~/.config/kartoza-video-processor/config.json`
+- Windows: `%APPDATA%\kartoza-video-processor\config.json`
+- macOS: `~/Library/Application Support/kartoza-video-processor/config.json`
+
+## Platform-Specific Notes
+
+### Linux
+- **Wayland**: Requires `wl-screenrec` for optimal screen recording
+- **X11**: Uses ffmpeg's `x11grab` - works out of the box
+- **Audio**: Uses PipeWire's `pw-record` for audio capture
+- **Hardware acceleration**: VAAPI encoding available with `--hw-accel` flag
+
+### Windows
+- **Screen recording**: Uses ffmpeg's `gdigrab` to capture the desktop
+- **Audio**: Uses ffmpeg's DirectShow (`dshow`) for microphone input
+- **Webcam**: Uses ffmpeg's DirectShow (`dshow`) for webcam capture
+- **Note**: Ensure ffmpeg is installed and available in your PATH
+
+### macOS
+- **Screen recording**: Uses ffmpeg's AVFoundation to capture screens
+- **Audio**: Uses ffmpeg's AVFoundation for microphone input
+- **Webcam**: Uses ffmpeg's AVFoundation for webcam capture
+- **Note**: macOS may require screen recording permissions - grant access when prompted
+- **Note**: Install ffmpeg via Homebrew: `brew install ffmpeg`
+
 ## Keybindings (TUI)
 
 | Key | Action |
@@ -155,7 +228,7 @@ Configuration is stored in `~/.config/kartoza-video-processor/config.json`:
 | `q` | Quit |
 | `?` | Toggle help |
 
-## Hyprland Integration
+## Hyprland Integration (Linux)
 
 Add to your Hyprland config:
 

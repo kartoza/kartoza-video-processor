@@ -14,13 +14,29 @@ import (
 
 // ListMonitors returns all available monitors
 func ListMonitors() ([]models.Monitor, error) {
-	switch deps.DetectDisplayServer() {
-	case deps.DisplayServerWayland:
-		return listMonitorsWayland()
-	case deps.DisplayServerX11:
-		return listMonitorsX11()
+	currentOS := deps.DetectOS()
+
+	switch currentOS {
+	case deps.OSWindows:
+		return listMonitorsWindows()
+	case deps.OSDarwin:
+		return listMonitorsMacOS()
+	case deps.OSLinux:
+		switch deps.DetectDisplayServer() {
+		case deps.DisplayServerWayland:
+			return listMonitorsWayland()
+		case deps.DisplayServerX11:
+			return listMonitorsX11()
+		default:
+			// Try Wayland first, then X11
+			monitors, err := listMonitorsWayland()
+			if err == nil {
+				return monitors, nil
+			}
+			return listMonitorsX11()
+		}
 	default:
-		// Try Wayland first, then X11
+		// Unknown OS - try Linux Wayland/X11
 		monitors, err := listMonitorsWayland()
 		if err == nil {
 			return monitors, nil
@@ -90,15 +106,67 @@ func listMonitorsX11() ([]models.Monitor, error) {
 	return monitors, nil
 }
 
+// listMonitorsWindows returns monitors on Windows (using a default/generic approach)
+func listMonitorsWindows() ([]models.Monitor, error) {
+	// On Windows, we return a generic "desktop" monitor placeholder
+	// Actual screen resolution is handled by ffmpeg's gdigrab at runtime
+	// The 1920x1080 resolution here is a placeholder and doesn't affect actual recording
+	monitors := []models.Monitor{
+		{
+			Name:    "desktop",
+			Width:   1920, // Placeholder resolution
+			Height:  1080, // Placeholder resolution
+			X:       0,
+			Y:       0,
+			Focused: true,
+		},
+	}
+	return monitors, nil
+}
+
+// listMonitorsMacOS returns monitors on macOS (using a default/generic approach)
+func listMonitorsMacOS() ([]models.Monitor, error) {
+	// On macOS, we return a generic screen capture placeholder
+	// Actual screen resolution is handled by ffmpeg's avfoundation at runtime
+	// The 1920x1080 resolution here is a placeholder and doesn't affect actual recording
+	monitors := []models.Monitor{
+		{
+			Name:    "screen-1",
+			Width:   1920, // Placeholder resolution
+			Height:  1080, // Placeholder resolution
+			X:       0,
+			Y:       0,
+			Focused: true,
+		},
+	}
+	return monitors, nil
+}
+
 // GetCursorPosition returns the current cursor position
 func GetCursorPosition() (models.CursorPosition, error) {
-	switch deps.DetectDisplayServer() {
-	case deps.DisplayServerWayland:
-		return getCursorPositionWayland()
-	case deps.DisplayServerX11:
-		return getCursorPositionX11()
+	currentOS := deps.DetectOS()
+
+	switch currentOS {
+	case deps.OSWindows:
+		return getCursorPositionWindows()
+	case deps.OSDarwin:
+		return getCursorPositionMacOS()
+	case deps.OSLinux:
+		switch deps.DetectDisplayServer() {
+		case deps.DisplayServerWayland:
+			return getCursorPositionWayland()
+		case deps.DisplayServerX11:
+			return getCursorPositionX11()
+		default:
+			// Try Wayland first
+			pos, err := getCursorPositionWayland()
+			if err == nil {
+				return pos, nil
+			}
+			return getCursorPositionX11()
+		}
 	default:
-		// Try Wayland first
+		// Unknown OS - try Linux
 		pos, err := getCursorPositionWayland()
 		if err == nil {
 			return pos, nil
@@ -153,6 +221,20 @@ func getCursorPositionX11() (models.CursorPosition, error) {
 	}
 
 	return models.CursorPosition{X: x, Y: y}, nil
+}
+
+// getCursorPositionWindows gets cursor position on Windows (returns default)
+func getCursorPositionWindows() (models.CursorPosition, error) {
+	// Return center of default screen as a placeholder
+	// For precise cursor position, we'd need Windows-specific APIs
+	return models.CursorPosition{X: 960, Y: 540}, nil
+}
+
+// getCursorPositionMacOS gets cursor position on macOS (returns default)
+func getCursorPositionMacOS() (models.CursorPosition, error) {
+	// Return center of default screen as a placeholder
+	// For precise cursor position, we'd need macOS-specific APIs
+	return models.CursorPosition{X: 960, Y: 540}, nil
 }
 
 // GetMouseMonitor returns the name of the monitor containing the mouse cursor

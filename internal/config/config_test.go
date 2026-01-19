@@ -88,7 +88,7 @@ func TestSaveAndLoad(t *testing.T) {
 
 	// Create a test config
 	testCfg := &Config{
-		OutputDir: "/test/output",
+		OutputDir:       "/test/output",
 		AudioProcessing: DefaultConfig().AudioProcessing,
 	}
 	testCfg.AudioProcessing.TargetLoudness = -18.0

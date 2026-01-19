@@ -14,19 +14,19 @@ const (
 
 // RecordingSession represents an active or completed recording session
 type RecordingSession struct {
-	ID          string         `json:"id"`
-	State       RecordingState `json:"state"`
-	StartTime   time.Time      `json:"start_time"`
-	EndTime     time.Time      `json:"end_time,omitempty"`
-	Duration    time.Duration  `json:"duration,omitempty"`
-	Monitor     string         `json:"monitor"`
-	VideoFile   string         `json:"video_file"`
-	AudioFile   string         `json:"audio_file"`
-	WebcamFile  string         `json:"webcam_file,omitempty"`
-	MergedFile  string         `json:"merged_file,omitempty"`
-	VerticalFile string        `json:"vertical_file,omitempty"`
-	Options     RecordingOptions `json:"options"`
-	Error       string         `json:"error,omitempty"`
+	ID           string           `json:"id"`
+	State        RecordingState   `json:"state"`
+	StartTime    time.Time        `json:"start_time"`
+	EndTime      time.Time        `json:"end_time,omitempty"`
+	Duration     time.Duration    `json:"duration,omitempty"`
+	Monitor      string           `json:"monitor"`
+	VideoFile    string           `json:"video_file"`
+	AudioFile    string           `json:"audio_file"`
+	WebcamFile   string           `json:"webcam_file,omitempty"`
+	MergedFile   string           `json:"merged_file,omitempty"`
+	VerticalFile string           `json:"vertical_file,omitempty"`
+	Options      RecordingOptions `json:"options"`
+	Error        string           `json:"error,omitempty"`
 }
 
 // RecordingOptions contains configuration for a recording session

@@ -63,14 +63,14 @@ type OptionsModel struct {
 	logoDirectory string
 
 	// Custom file browser (for selecting logo directory)
-	showFileBrowser      bool
-	selectingDirectory   bool // true when selecting directory, not file
-	browserCurrentDir    string
-	browserEntries       []fileEntry
-	browserSelected      int
-	browserScrollTop     int
-	browserPathInput     textinput.Model
-	browserField         FileBrowserField
+	showFileBrowser    bool
+	selectingDirectory bool // true when selecting directory, not file
+	browserCurrentDir  string
+	browserEntries     []fileEntry
+	browserSelected    int
+	browserScrollTop   int
+	browserPathInput   textinput.Model
+	browserField       FileBrowserField
 
 	// State
 	message string

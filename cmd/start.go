@@ -14,15 +14,15 @@ import (
 )
 
 var (
-	monitorName   string
-	noAudio       bool
-	noWebcam      bool
-	noScreen      bool
-	hwAccel       bool
-	outputDir     string
-	webcamDevice  string
-	webcamFPS     int
-	audioDevice   string
+	monitorName  string
+	noAudio      bool
+	noWebcam     bool
+	noScreen     bool
+	hwAccel      bool
+	outputDir    string
+	webcamDevice string
+	webcamFPS    int
+	audioDevice  string
 )
 
 var startCmd = &cobra.Command{

@@ -4,7 +4,18 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
+)
+
+// OperatingSystem represents the type of OS in use
+type OperatingSystem string
+
+const (
+	OSLinux   OperatingSystem = "linux"
+	OSWindows OperatingSystem = "windows"
+	OSDarwin  OperatingSystem = "darwin"
+	OSUnknown OperatingSystem = "unknown"
 )
 
 // DisplayServer represents the type of display server in use
@@ -32,8 +43,41 @@ type CheckResult struct {
 	Error      error  // Error if check failed
 }
 
-// DetectDisplayServer determines if running on Wayland or X11
+// DetectOS returns the current operating system
+func DetectOS() OperatingSystem {
+	switch runtime.GOOS {
+	case "linux":
+		return OSLinux
+	case "windows":
+		return OSWindows
+	case "darwin":
+		return OSDarwin
+	default:
+		return OSUnknown
+	}
+}
+
+// GetOSName returns a human-readable name for the OS
+func GetOSName() string {
+	switch DetectOS() {
+	case OSLinux:
+		return "Linux"
+	case OSWindows:
+		return "Windows"
+	case OSDarwin:
+		return "macOS"
+	default:
+		return "Unknown"
+	}
+}
+
+// DetectDisplayServer determines if running on Wayland or X11 (Linux only)
 func DetectDisplayServer() DisplayServer {
+	// Only check for display server on Linux
+	if DetectOS() != OSLinux {
+		return DisplayServerUnknown
+	}
+
 	// Check for Wayland first
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
 		return DisplayServerWayland
@@ -57,7 +101,7 @@ func GetDisplayServerName() string {
 	}
 }
 
-// BaseDeps lists dependencies required regardless of display server
+// BaseDeps lists dependencies required regardless of OS/display server
 var BaseDeps = []Dependency{
 	{
 		Name:        "ffmpeg",
@@ -69,6 +113,10 @@ var BaseDeps = []Dependency{
 		Description: "Video metadata extraction",
 		Required:    true,
 	},
+}
+
+// LinuxDeps lists dependencies specific to Linux
+var LinuxDeps = []Dependency{
 	{
 		Name:        "pw-record",
 		Description: "PipeWire audio recording",
@@ -92,6 +140,20 @@ var X11Deps = []Dependency{
 	// No additional binary needed beyond ffmpeg
 }
 
+// WindowsDeps lists dependencies specific to Windows
+// Note: Windows uses ffmpeg with gdigrab and dshow, so no additional deps needed
+var WindowsDeps = []Dependency{
+	// ffmpeg with gdigrab and dshow is used for Windows screen/audio/webcam recording
+	// No additional binary needed beyond ffmpeg
+}
+
+// DarwinDeps lists dependencies specific to macOS
+// Note: macOS uses ffmpeg with avfoundation, so no additional deps needed
+var DarwinDeps = []Dependency{
+	// ffmpeg with avfoundation is used for macOS screen/audio/webcam recording
+	// No additional binary needed beyond ffmpeg
+}
+
 // OptionalDeps lists optional dependencies that enhance functionality
 var OptionalDeps = []Dependency{
 	{
@@ -111,19 +173,29 @@ var OptionalDeps = []Dependency{
 	},
 }
 
-// GetRequiredDeps returns the required dependencies based on current display server
+// GetRequiredDeps returns the required dependencies based on current OS and display server
 func GetRequiredDeps() []Dependency {
 	deps := make([]Dependency, len(BaseDeps))
 	copy(deps, BaseDeps)
 
-	switch DetectDisplayServer() {
-	case DisplayServerWayland:
-		deps = append(deps, WaylandDeps...)
-	case DisplayServerX11:
-		deps = append(deps, X11Deps...)
-	default:
-		// Unknown - require Wayland deps as default
-		deps = append(deps, WaylandDeps...)
+	// Add OS-specific dependencies
+	switch DetectOS() {
+	case OSLinux:
+		deps = append(deps, LinuxDeps...)
+		// Add display server specific deps for Linux
+		switch DetectDisplayServer() {
+		case DisplayServerWayland:
+			deps = append(deps, WaylandDeps...)
+		case DisplayServerX11:
+			deps = append(deps, X11Deps...)
+		default:
+			// Unknown - require Wayland deps as default
+			deps = append(deps, WaylandDeps...)
+		}
+	case OSWindows:
+		deps = append(deps, WindowsDeps...)
+	case OSDarwin:
+		deps = append(deps, DarwinDeps...)
 	}
 
 	return deps

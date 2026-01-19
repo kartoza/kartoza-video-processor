@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strconv"
 	"syscall"
+
+	"github.com/kartoza/kartoza-video-processor/internal/deps"
 )
 
 // Webcam represents a webcam recording session
@@ -70,6 +72,23 @@ func DetectDevice() (string, error) {
 
 // Start begins webcam recording
 func (w *Webcam) Start() error {
+	currentOS := deps.DetectOS()
+
+	switch currentOS {
+	case deps.OSWindows:
+		return w.startWindows()
+	case deps.OSDarwin:
+		return w.startMacOS()
+	case deps.OSLinux:
+		return w.startLinux()
+	default:
+		// Unknown OS - try Linux as fallback
+		return w.startLinux()
+	}
+}
+
+// startLinux begins webcam recording on Linux using v4l2
+func (w *Webcam) startLinux() error {
 	device := w.device
 	if device == "" {
 		var err error
@@ -99,6 +118,85 @@ func (w *Webcam) Start() error {
 		"-g", strconv.Itoa(w.fps * 2), // Keyframe every 2 seconds
 		"-threads", "0",
 		"-x264opts", "no-scenecut",
+		w.outputFile,
+	}
+
+	w.cmd = exec.Command("ffmpeg", args...)
+	w.cmd.Stdout = nil
+	w.cmd.Stderr = nil
+
+	if err := w.cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start webcam recording: %w", err)
+	}
+
+	w.pid = w.cmd.Process.Pid
+	return nil
+}
+
+// startWindows begins webcam recording on Windows using ffmpeg with dshow
+func (w *Webcam) startWindows() error {
+	// Use ffmpeg with dshow to record webcam on Windows
+	// Uses empty device name to let ffmpeg auto-detect default webcam
+	videoDevice := w.device
+	if w.device == "" {
+		// Let ffmpeg use default video device
+		videoDevice = ""
+	}
+
+	args := []string{
+		"-f", "dshow",
+		"-video_size", w.resolution,
+		"-framerate", strconv.Itoa(w.fps),
+	}
+	if videoDevice != "" {
+		args = append(args, "-i", "video="+videoDevice)
+	} else {
+		// Empty video= lets ffmpeg pick the default device
+		args = append(args, "-i", "video=")
+	}
+	args = append(args,
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-tune", "zerolatency",
+		"-crf", "18",
+		"-pix_fmt", "yuv420p",
+		"-y", // Overwrite output
+		w.outputFile,
+	)
+
+	w.cmd = exec.Command("ffmpeg", args...)
+	w.cmd.Stdout = nil
+	w.cmd.Stderr = nil
+
+	if err := w.cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start webcam recording: %w", err)
+	}
+
+	w.pid = w.cmd.Process.Pid
+	return nil
+}
+
+// startMacOS begins webcam recording on macOS using ffmpeg with avfoundation
+func (w *Webcam) startMacOS() error {
+	// Use ffmpeg with avfoundation to record webcam on macOS
+	// ffmpeg -f avfoundation -framerate 60 -video_size 1920x1080 -i "0:none" output.mp4
+	// "0:none" means video device 0 (default webcam), no audio
+	videoInput := "0:none"
+	if w.device != "" {
+		videoInput = w.device + ":none"
+	}
+
+	args := []string{
+		"-f", "avfoundation",
+		"-framerate", strconv.Itoa(w.fps),
+		"-video_size", w.resolution,
+		"-i", videoInput,
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-tune", "zerolatency",
+		"-crf", "18",
+		"-pix_fmt", "yuv420p",
+		"-y", // Overwrite output
 		w.outputFile,
 	}
 
