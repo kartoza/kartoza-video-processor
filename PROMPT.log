@@ -843,3 +843,20 @@ Prompt: can you add notes on the youtube enrolment process how to choose which b
 Date: seg 19 jan 2026 20:57:34 WET
 Prompt: there is still a bug with stop start stop render.....the output snippets are made correctly but it never gets past the 'stopping' text and on to the rest of the processing steps. Also in the history view it should be possible to reprocess the folder allowing e.g. to swap logos. it should warn that you cannot replace the youtube video without first removing the old one.
 ---
+This session is being continued from a previous conversation that ran out of context. The conversation is summarized below:
+Analysis:
+[...summary of previous conversation about fixing pause/resume/stop bug...]
+
+User's reproduction steps:
+1. Start recording
+2. Pause
+3. Resume recording (I note here that the elapsed timer stops incrementing)
+4. Stop recording
+5. On the processing recording screen it just stays on the step 'stopping recording' perpetually
+
+Continue investigating and fixing this bug.
+the issue persists - it still gets stuck on the stopping step. I can confirm all the recording is actually stopped at this point, but it never advances to the next step
+still the same problem - its easy to replocate. If I start, pause, start, pause, stop it works fine. If I start, pause, start, stop it gets stuck on the first step
+its fixed!
+The youtube uploader is still not showing progress incrementing it just jumps from 0 to 100%
+lets tag up a new release right here

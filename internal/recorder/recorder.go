@@ -290,6 +290,7 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 	readyCount := 0
 	timeout := time.After(5 * time.Second)
 
+waitReady:
 	for readyCount < numRecorders {
 		select {
 		case name := <-ready:
@@ -301,7 +302,7 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 			numRecorders-- // Reduce expected count
 		case <-timeout:
 			// Proceed with what we have
-			break
+			break waitReady
 		}
 	}
 
@@ -581,8 +582,10 @@ func (r *Recorder) stopInternal(waitForProcessing bool) error {
 	// Only stop processes if we're actively recording (not just paused)
 	if isRecording {
 		// Signal all recorders to stop simultaneously (only if we started them in this process)
+		shouldWaitForGoroutines := r.stopSignal != nil
 		if r.stopSignal != nil {
 			close(r.stopSignal)
+			r.stopSignal = nil
 		}
 
 		// Stop all processes simultaneously using goroutines
@@ -622,7 +625,7 @@ func (r *Recorder) stopInternal(waitForProcessing bool) error {
 		stopWg.Wait()
 
 		// Wait for recorder goroutines to finish (only if we started them)
-		if r.stopSignal != nil {
+		if shouldWaitForGoroutines {
 			r.wg.Wait()
 		}
 
@@ -1026,6 +1029,12 @@ func (r *Recorder) Pause() error {
 		return fmt.Errorf("recording is already paused")
 	}
 
+	// Signal recorder goroutines to stop (audio/webcam only wait on stopSignal)
+	if r.stopSignal != nil {
+		close(r.stopSignal)
+		r.stopSignal = nil
+	}
+
 	// Stop all recording processes
 	var stopWg sync.WaitGroup
 
@@ -1057,6 +1066,9 @@ func (r *Recorder) Pause() error {
 	}
 
 	stopWg.Wait()
+
+	// Wait for recorder goroutines to finish
+	r.wg.Wait()
 
 	// Wait briefly for files to be written
 	time.Sleep(300 * time.Millisecond)

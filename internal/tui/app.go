@@ -340,6 +340,11 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleCountdownTick()
 
 	case statusUpdateMsg:
+		// Don't update status during processing - it can cause race conditions
+		// where the state gets reset from stateProcessing back to stateRecording
+		if m.state == stateProcessing {
+			return m, nil
+		}
 		m.status = models.RecordingStatus(msg)
 		if m.status.IsRecording {
 			m.state = stateRecording

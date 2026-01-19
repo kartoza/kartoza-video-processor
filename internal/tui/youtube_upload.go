@@ -72,10 +72,11 @@ type YouTubeUploadModel struct {
 	selectedPrivacy int
 
 	// Upload progress
-	progress     progress.Model
-	uploadPct    float64
-	isUploading  bool
-	uploadResult *youtube.UploadResult
+	progress         progress.Model
+	uploadPct        float64
+	isUploading      bool
+	uploadResult     *youtube.UploadResult
+	uploadProgressCh chan uploadUpdate
 
 	// Status
 	errorMessage  string
@@ -190,7 +191,8 @@ func (m *YouTubeUploadModel) Update(msg tea.Msg) (*YouTubeUploadModel, tea.Cmd) 
 
 	case uploadProgressMsg:
 		m.uploadPct = msg.percent
-		return m, nil
+		// Continue waiting for more progress updates
+		return m, waitForUploadProgress(m.uploadProgressCh)
 
 	case uploadCompleteMsg:
 		m.isUploading = false
@@ -468,6 +470,14 @@ func (m *YouTubeUploadModel) loadPlaylists() tea.Cmd {
 	}
 }
 
+// uploadUpdate carries progress or completion info from the upload goroutine
+type uploadUpdate struct {
+	percent  float64
+	done     bool
+	err      error
+	result   *youtube.UploadResult
+}
+
 // startUpload begins the YouTube upload
 func (m *YouTubeUploadModel) startUpload() tea.Cmd {
 	m.step = YouTubeUploadStepUploading
@@ -475,67 +485,95 @@ func (m *YouTubeUploadModel) startUpload() tea.Cmd {
 	m.uploadPct = 0
 	m.errorMessage = ""
 
-	return func() tea.Msg {
+	// Create progress channel that will be used to send updates
+	m.uploadProgressCh = make(chan uploadUpdate, 100)
+
+	// Capture values needed by the goroutine
+	progressCh := m.uploadProgressCh
+	cfg := m.cfg
+	videoPath := m.videoPath
+	title := m.titleInput.Value()
+	description := m.descriptionInput.Value()
+	topic := m.topic
+	tags := youtube.ParseTags(m.tagsInput.Value())
+	privacy := m.privacyOptions[m.selectedPrivacy]
+	var playlistID string
+	if m.selectedPlaylist >= 0 && m.selectedPlaylist < len(m.playlists) {
+		playlistID = m.playlists[m.selectedPlaylist].ID
+	}
+
+	// Start the upload in a goroutine
+	go func() {
 		ctx := context.Background()
 
 		// Create auth
-		auth := youtube.NewAuth(m.cfg.YouTube.ClientID, m.cfg.YouTube.ClientSecret, config.GetConfigDir())
+		auth := youtube.NewAuth(cfg.YouTube.ClientID, cfg.YouTube.ClientSecret, config.GetConfigDir())
 
 		// Create uploader
 		uploader, err := youtube.NewUploader(ctx, auth)
 		if err != nil {
-			return uploadCompleteMsg{err: err}
+			progressCh <- uploadUpdate{done: true, err: err}
+			close(progressCh)
+			return
 		}
-
-		// Parse tags
-		tags := youtube.ParseTags(m.tagsInput.Value())
 
 		// Build upload options
 		opts := youtube.BuildUploadOptions(
-			m.videoPath,
-			m.titleInput.Value(),
-			m.descriptionInput.Value(),
-			m.topic,
+			videoPath,
+			title,
+			description,
+			topic,
 			tags,
-			m.privacyOptions[m.selectedPrivacy],
+			privacy,
 		)
 
 		// Add playlist if selected
-		if m.selectedPlaylist >= 0 && m.selectedPlaylist < len(m.playlists) {
-			opts.PlaylistID = m.playlists[m.selectedPlaylist].ID
+		if playlistID != "" {
+			opts.PlaylistID = playlistID
 		}
 
 		// First extract thumbnail if it doesn't exist
-		thumbnailPath := youtube.GetThumbnailPath(m.videoPath)
-		if err := youtube.ExtractThumbnailForYouTube(m.videoPath, thumbnailPath); err == nil {
+		thumbnailPath := youtube.GetThumbnailPath(videoPath)
+		if err := youtube.ExtractThumbnailForYouTube(videoPath, thumbnailPath); err == nil {
 			opts.ThumbnailPath = thumbnailPath
 		}
-
-		// Create a progress channel
-		progressChan := make(chan float64, 100)
-		go func() {
-			for pct := range progressChan {
-				// Send progress to the TUI via program.Send
-				// Since we can't access the program directly, we'll use a different approach
-				_ = pct
-			}
-		}()
 
 		// Upload with progress callback
 		result, err := uploader.Upload(ctx, opts, func(read, total int64) {
 			if total > 0 {
 				pct := float64(read) / float64(total)
-				// We can't directly send messages here, so we'll poll in a goroutine
-				progressChan <- pct
+				select {
+				case progressCh <- uploadUpdate{percent: pct}:
+				default:
+					// Channel full, skip this update
+				}
 			}
 		})
-		close(progressChan)
 
-		if err != nil {
-			return uploadCompleteMsg{err: err}
+		// Send completion
+		progressCh <- uploadUpdate{done: true, err: err, result: result}
+		close(progressCh)
+	}()
+
+	// Return command to wait for first progress update
+	return waitForUploadProgress(m.uploadProgressCh)
+}
+
+// waitForUploadProgress waits for the next upload progress update
+func waitForUploadProgress(ch chan uploadUpdate) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		update, ok := <-ch
+		if !ok {
+			// Channel closed unexpectedly
+			return uploadCompleteMsg{err: nil}
 		}
-
-		return uploadCompleteMsg{result: result}
+		if update.done {
+			return uploadCompleteMsg{err: update.err, result: update.result}
+		}
+		return uploadProgressMsg{percent: update.percent}
 	}
 }
 
