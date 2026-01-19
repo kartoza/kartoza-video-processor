@@ -84,6 +84,16 @@ func (r *Recorder) IsRecording() bool {
 		checkPID(config.WebcamPIDFile)
 }
 
+// SetRecordingInfo sets the recording info for reprocessing
+func (r *Recorder) SetRecordingInfo(info *models.RecordingInfo) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.recordingInfo = info
+	if info != nil {
+		r.createVertical = info.Settings.VerticalEnabled
+	}
+}
+
 // GetStatus returns the current recording status
 func (r *Recorder) GetStatus() models.RecordingStatus {
 	r.mu.Lock()
@@ -655,15 +665,14 @@ func (r *Recorder) stopInternal(waitForProcessing bool) error {
 
 	r.mu.Unlock()
 
-	// Process recordings - either wait or run in background
+	// Process recordings synchronously only if requested (CLI mode)
+	// For TUI mode (waitForProcessing=false), the TUI will call ProcessWithProgress() itself
 	if waitForProcessing {
 		// Run synchronously for CLI
 		fmt.Println("Processing recordings...")
 		r.processRecordingsWithOutput()
-	} else {
-		// Run in background for TUI (TUI has its own progress display)
-		go r.processRecordings()
 	}
+	// Note: For TUI, don't start processing here - the TUI handles it via ProcessWithProgress()
 
 	return nil
 }

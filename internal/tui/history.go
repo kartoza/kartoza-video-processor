@@ -29,6 +29,7 @@ const (
 	HistoryYouTubePrivacyMode
 	HistoryYouTubeDeleteConfirmMode
 	HistoryYouTubeUploadMode
+	HistoryReprocessConfirmMode
 )
 
 // HistoryModel displays recording history with navigation
@@ -159,6 +160,8 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 			return h.updateYouTubePrivacyMode(msg)
 		case HistoryYouTubeDeleteConfirmMode:
 			return h.updateYouTubeDeleteConfirmMode(msg)
+		case HistoryReprocessConfirmMode:
+			return h.updateReprocessConfirmMode(msg)
 		}
 
 	case recordingsLoadedMsg:
@@ -426,6 +429,14 @@ func (h *HistoryModel) updateDetailMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd)
 			h.youtubeActionError = ""
 			h.youtubeActionSuccess = ""
 		}
+
+	case "r":
+		// Reprocess recording (regenerate output with potentially different settings/logos)
+		if h.selectedRecording != nil {
+			h.mode = HistoryReprocessConfirmMode
+			h.youtubeActionError = ""
+			h.youtubeActionSuccess = ""
+		}
 	}
 
 	return h, nil
@@ -567,6 +578,30 @@ func (h *HistoryModel) updateYouTubeDeleteConfirmMode(msg tea.KeyMsg) (*HistoryM
 	return h, nil
 }
 
+// updateReprocessConfirmMode handles input in reprocess confirmation mode
+func (h *HistoryModel) updateReprocessConfirmMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return h, tea.Quit
+
+	case "esc", "n", "N":
+		h.mode = HistoryDetailMode
+		h.youtubeActionError = ""
+
+	case "y", "Y":
+		if h.selectedRecording != nil {
+			// Send message to parent to start reprocessing
+			return h, func() tea.Msg {
+				return startReprocessMsg{
+					recording: h.selectedRecording,
+				}
+			}
+		}
+	}
+
+	return h, nil
+}
+
 // changeYouTubePrivacy changes the privacy setting of a YouTube video
 func (h *HistoryModel) changeYouTubePrivacy(newPrivacy string) tea.Cmd {
 	rec := h.selectedRecording
@@ -697,6 +732,8 @@ func (h *HistoryModel) View() string {
 		return h.renderYouTubePrivacyView()
 	case HistoryYouTubeDeleteConfirmMode:
 		return h.renderYouTubeDeleteConfirmView()
+	case HistoryReprocessConfirmMode:
+		return h.renderReprocessConfirmView()
 	default:
 		return h.renderListView()
 	}
@@ -1092,9 +1129,9 @@ func (h *HistoryModel) renderDetailView() string {
 
 	var helpText string
 	if rec.Metadata.IsPublishedToYouTube() {
-		helpText = "e: Edit • p: Change Privacy • x: Delete from YouTube • Esc: Back"
+		helpText = "e: Edit • r: Reprocess • p: Change Privacy • x: Delete from YouTube • Esc: Back"
 	} else {
-		helpText = "e: Edit • u: Upload to YouTube • Esc: Back"
+		helpText = "e: Edit • r: Reprocess • u: Upload to YouTube • Esc: Back"
 	}
 
 	mainSection := lipgloss.JoinVertical(
@@ -1998,4 +2035,85 @@ type youtubeVideoDeletedMsg struct {
 type startYouTubeUploadMsg struct {
 	recording *models.RecordingInfo
 	videoPath string
+}
+
+type startReprocessMsg struct {
+	recording *models.RecordingInfo
+}
+
+// renderReprocessConfirmView renders the reprocess confirmation dialog
+func (h *HistoryModel) renderReprocessConfirmView() string {
+	header := RenderHeader("Reprocess Recording")
+
+	if h.selectedRecording == nil {
+		return "No recording selected"
+	}
+
+	warningStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	errorStyle := lipgloss.NewStyle().
+		Foreground(ColorRed).
+		Bold(true)
+
+	textStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite)
+
+	grayStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorOrange).
+		Padding(1, 3).
+		Width(65)
+
+	var rows []string
+	rows = append(rows, warningStyle.Render("Reprocess this recording?"))
+	rows = append(rows, "")
+	rows = append(rows, textStyle.Render("This will regenerate the processed video files using"))
+	rows = append(rows, textStyle.Render("current settings (logos, audio processing, etc.)."))
+	rows = append(rows, "")
+
+	// Show what will happen
+	rows = append(rows, grayStyle.Render("What will be regenerated:"))
+	rows = append(rows, textStyle.Render("  • Merged video/audio"))
+	if h.selectedRecording.Settings.VerticalEnabled {
+		rows = append(rows, textStyle.Render("  • Vertical video"))
+	}
+	rows = append(rows, "")
+
+	// Show YouTube warning if video is published
+	if h.selectedRecording.Metadata.IsPublishedToYouTube() {
+		rows = append(rows, errorStyle.Render("WARNING: This video is published on YouTube!"))
+		rows = append(rows, "")
+		rows = append(rows, textStyle.Render("The YouTube video will NOT be updated automatically."))
+		rows = append(rows, textStyle.Render("To update YouTube, you must:"))
+		rows = append(rows, textStyle.Render("  1. Delete the video from YouTube first (X)"))
+		rows = append(rows, textStyle.Render("  2. Reprocess the recording"))
+		rows = append(rows, textStyle.Render("  3. Upload the new version (U)"))
+		rows = append(rows, "")
+	}
+
+	rows = append(rows, grayStyle.Render("Press Y to confirm, N or Esc to cancel"))
+
+	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	helpText := helpStyle.Render("Y: Confirm reprocess • N/Esc: Cancel")
+
+	fullContent := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		content,
+		"",
+		helpText,
+	)
+
+	return lipgloss.Place(h.width, h.height, lipgloss.Center, lipgloss.Center, fullContent)
 }

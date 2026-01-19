@@ -839,3 +839,7 @@ Prompt: in the settings for youtube add a checker option that will verify creden
 Date: seg 19 jan 2026 20:29:36 WET
 Prompt: can you add notes on the youtube enrolment process how to choose which brand account to connect the api key to? Also in settings for youtube can you add a tool which lets you list and add to your playlists
 ---
+---
+Date: seg 19 jan 2026 20:57:34 WET
+Prompt: there is still a bug with stop start stop render.....the output snippets are made correctly but it never gets past the 'stopping' text and on to the rest of the processing steps. Also in the history view it should be possible to reprocess the folder allowing e.g. to swap logos. it should warn that you cannot replace the youtube video without first removing the old one.
+---
