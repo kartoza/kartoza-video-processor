@@ -244,7 +244,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.youtubeSetup.width = m.width
 		m.youtubeSetup.height = m.height
 		return m, m.youtubeSetup.Init()
-	case youtubeAuthStartedMsg, youtubeAuthCompleteMsg, youtubeDisconnectMsg:
+	case youtubeAuthStartedMsg, youtubeAuthCompleteMsg, youtubeDisconnectMsg, youtubeVerifyCompleteMsg, youtubePlaylistsLoadedMsg, youtubePlaylistCreatedMsg:
 		// Forward YouTube auth messages to the YouTube setup model
 		if m.screen == ScreenYouTubeSetup && m.youtubeSetup != nil {
 			newSetup, cmd := m.youtubeSetup.Update(msg)
@@ -254,7 +254,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
-	case uploadProgressMsg, uploadCompleteMsg:
+	case uploadProgressMsg, uploadCompleteMsg, playlistsLoadedMsg:
 		// Forward upload messages to the YouTube upload model
 		if m.screen == ScreenYouTubeUpload && m.youtubeUpload != nil {
 			newUpload, cmd := m.youtubeUpload.Update(msg)
@@ -263,7 +263,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case youtubeUploadSkippedMsg, youtubeUploadDoneMsg:
-		// YouTube upload done or skipped, return to menu
+		// YouTube upload done or skipped
+		// If we have a youtubeUpload with recordingInfo, return to history and refresh
+		if m.youtubeUpload != nil && m.youtubeUpload.recordingInfo != nil {
+			m.screen = ScreenHistory
+			m.history = NewHistoryModel()
+			m.history.width = m.width
+			m.history.height = m.height
+			return m, m.history.Init()
+		}
+		// Otherwise return to menu
 		m.screen = ScreenMenu
 		return m, nil
 	}
@@ -413,17 +422,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Check if YouTube upload should be prompted
 		cfg, _ := config.Load()
 		if cfg.YouTube.AutoPromptUpload && cfg.IsYouTubeConnected() && m.recordingInfo != nil {
-			// Find the processed video file
-			videoPath := filepath.Join(m.outputDir, "final.mp4")
+			// Find the processed video file - check for merged file first
+			videoPath := m.recordingInfo.Files.MergedFile
+			if videoPath == "" {
+				videoPath = filepath.Join(m.outputDir, "final.mp4")
+			}
 			if _, err := os.Stat(videoPath); err == nil {
-				// Create YouTube upload model with recording metadata
-				m.youtubeUpload = NewYouTubeUploadModel(
-					videoPath,
-					m.outputDir,
-					m.metadata.Title,
-					m.metadata.Description,
-					m.metadata.Topic,
-				)
+				// Create YouTube upload model with recording info for metadata storage
+				m.youtubeUpload = NewYouTubeUploadModelWithRecording(videoPath, m.recordingInfo)
 				m.youtubeUpload.width = m.width
 				m.youtubeUpload.height = m.height
 				m.screen = ScreenYouTubeUpload
@@ -473,6 +479,23 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case recordingSavedMsg:
 		// Forward to history model
+		if m.screen == ScreenHistory && m.history != nil {
+			newHistory, cmd := m.history.Update(msg)
+			m.history = newHistory
+			return m, cmd
+		}
+		return m, nil
+
+	case startYouTubeUploadMsg:
+		// YouTube upload requested from history view
+		m.youtubeUpload = NewYouTubeUploadModelWithRecording(msg.videoPath, msg.recording)
+		m.youtubeUpload.width = m.width
+		m.youtubeUpload.height = m.height
+		m.screen = ScreenYouTubeUpload
+		return m, m.youtubeUpload.Init()
+
+	case youtubePrivacyChangedMsg, youtubeVideoDeletedMsg:
+		// Forward YouTube action messages to history model
 		if m.screen == ScreenHistory && m.history != nil {
 			newHistory, cmd := m.history.Update(msg)
 			m.history = newHistory

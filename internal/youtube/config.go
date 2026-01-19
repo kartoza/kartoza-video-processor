@@ -18,12 +18,14 @@ const (
 
 // Config holds YouTube integration settings
 type Config struct {
-	ClientID          string        `json:"client_id,omitempty"`
-	ClientSecret      string        `json:"client_secret,omitempty"`
-	DefaultPlaylistID string        `json:"default_playlist_id,omitempty"`
-	DefaultPrivacy    PrivacyStatus `json:"default_privacy,omitempty"`
-	AutoPromptUpload  bool          `json:"auto_prompt_upload,omitempty"`
-	ChannelName       string        `json:"channel_name,omitempty"` // Cached channel name
+	ClientID           string        `json:"client_id,omitempty"`
+	ClientSecret       string        `json:"client_secret,omitempty"`
+	DefaultPlaylistID  string        `json:"default_playlist_id,omitempty"`
+	DefaultPlaylistName string       `json:"default_playlist_name,omitempty"` // For display
+	DefaultPrivacy     PrivacyStatus `json:"default_privacy,omitempty"`
+	AutoPromptUpload   bool          `json:"auto_prompt_upload,omitempty"`
+	ChannelName        string        `json:"channel_name,omitempty"` // Cached channel name
+	ChannelID          string        `json:"channel_id,omitempty"`   // Cached channel ID
 }
 
 // Token represents stored OAuth2 tokens

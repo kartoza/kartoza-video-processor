@@ -802,3 +802,40 @@ This session is being continued from a previous conversation that ran out of con
 User asked: 'I set the access to internal since it is for our company staff ok / is that ok'
 
 Response: Yes, setting the OAuth consent screen to 'Internal' is perfectly fine for company/organization use. Internal mode means only users within your Google Workspace organization can authenticate, no need for Google's app verification process, and the app stays internal to your company. Build verified successful.
+User requested: Add YouTube upload functionality with the following features:
+- Upload to YouTube button after recording is completed processing
+- Upload button also available in history item detail view  
+- Prompt for playlist (defaulting to last used) and privacy (public/private)
+- Apply title, description and topics from metadata to uploaded video
+- Update metadata after upload with playlist, privacy, video URL, upload date
+- Generate thumbnail at 60s (or last frame for shorter videos)
+- In history detail view: show if video is on YouTube and published details
+- If published: option to change privacy or delete (with confirmation)
+- If not published: allow user to publish from history detail view
+
+Implementation completed:
+- Added YouTubeMetadata struct to RecordingMetadata with video_id, video_url, playlist_id, playlist_name, privacy, uploaded_at, thumbnail_url, channel_id, channel_name
+- Enhanced upload dialog with playlist selection (fetches from YouTube API, defaults to last used)
+- Added UpdateVideoPrivacy and DeleteVideo functions to youtube/upload.go
+- Added privacy change and delete from YouTube features in history detail view
+- History detail view now shows YouTube section with URL, privacy, playlist, upload date
+- Help text updates based on whether video is published or not
+- Upload from history redirects back to history after completion
+- Build successful
+
+
+User reported: Cannot edit description field and playlist fetching never completes
+
+Fixed two issues:
+1. Description editing: Restructured handleKeyMsg to forward regular key presses to focused text inputs (title, description, tags) in the default case
+2. Playlist loading: Added playlistsLoadedMsg to the list of messages forwarded to the YouTube upload model in app.go
+
+Build successful.
+---
+Date: seg 19 jan 2026 20:17:55 WET
+Prompt: in the settings for youtube add a checker option that will verify credentials work and show details about the channel and available playlists - I do I need to provide the channel myself?
+---
+---
+Date: seg 19 jan 2026 20:29:36 WET
+Prompt: can you add notes on the youtube enrolment process how to choose which brand account to connect the api key to? Also in settings for youtube can you add a tool which lets you list and add to your playlists
+---

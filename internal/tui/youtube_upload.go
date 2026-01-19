@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-video-processor/internal/config"
+	"github.com/kartoza/kartoza-video-processor/internal/models"
 	"github.com/kartoza/kartoza-video-processor/internal/youtube"
 )
 
@@ -33,6 +34,7 @@ const (
 	YouTubeUploadFieldTitle YouTubeUploadField = iota
 	YouTubeUploadFieldDescription
 	YouTubeUploadFieldTags
+	YouTubeUploadFieldPlaylist
 	YouTubeUploadFieldPrivacy
 	YouTubeUploadFieldUpload
 	YouTubeUploadFieldCancel
@@ -47,19 +49,26 @@ type YouTubeUploadModel struct {
 	focusedField YouTubeUploadField
 
 	// Video info
-	videoPath   string
-	outputDir   string
-	title       string
-	description string
-	topic       string
+	videoPath     string
+	outputDir     string
+	title         string
+	description   string
+	topic         string
+	recordingInfo *models.RecordingInfo
 
 	// Editable fields
 	titleInput       textinput.Model
 	descriptionInput textinput.Model
 	tagsInput        textinput.Model
 
+	// Playlist selection
+	playlists        []youtube.Playlist
+	selectedPlaylist int // -1 means no playlist, 0+ is index into playlists
+	loadingPlaylists bool
+	playlistError    string
+
 	// Privacy selection
-	privacyOptions []youtube.PrivacyStatus
+	privacyOptions  []youtube.PrivacyStatus
 	selectedPrivacy int
 
 	// Upload progress
@@ -69,7 +78,7 @@ type YouTubeUploadModel struct {
 	uploadResult *youtube.UploadResult
 
 	// Status
-	errorMessage string
+	errorMessage  string
 	statusMessage string
 
 	// Config
@@ -103,6 +112,14 @@ func NewYouTubeUploadModel(videoPath, outputDir, title, description, topic strin
 
 	prog := progress.New(progress.WithDefaultGradient())
 
+	// Determine default privacy from config
+	defaultPrivacyIdx := 0 // Default to unlisted
+	if cfg.YouTube.DefaultPrivacy == youtube.PrivacyPrivate {
+		defaultPrivacyIdx = 1
+	} else if cfg.YouTube.DefaultPrivacy == youtube.PrivacyPublic {
+		defaultPrivacyIdx = 2
+	}
+
 	return &YouTubeUploadModel{
 		step:             YouTubeUploadStepPrompt,
 		focusedField:     YouTubeUploadFieldTitle,
@@ -115,10 +132,24 @@ func NewYouTubeUploadModel(videoPath, outputDir, title, description, topic strin
 		descriptionInput: descInput,
 		tagsInput:        tagsInput,
 		privacyOptions:   []youtube.PrivacyStatus{youtube.PrivacyUnlisted, youtube.PrivacyPrivate, youtube.PrivacyPublic},
-		selectedPrivacy:  0, // Unlisted by default
+		selectedPrivacy:  defaultPrivacyIdx,
+		selectedPlaylist: -1, // No playlist by default
 		progress:         prog,
 		cfg:              cfg,
 	}
+}
+
+// NewYouTubeUploadModelWithRecording creates a new YouTube upload model with recording info
+func NewYouTubeUploadModelWithRecording(videoPath string, recordingInfo *models.RecordingInfo) *YouTubeUploadModel {
+	m := NewYouTubeUploadModel(
+		videoPath,
+		recordingInfo.Files.FolderPath,
+		recordingInfo.Metadata.Title,
+		recordingInfo.Metadata.Description,
+		recordingInfo.Metadata.Topic,
+	)
+	m.recordingInfo = recordingInfo
+	return m
 }
 
 // Init initializes the upload model
@@ -139,6 +170,24 @@ func (m *YouTubeUploadModel) Update(msg tea.Msg) (*YouTubeUploadModel, tea.Cmd) 
 	case tea.KeyMsg:
 		return m.handleKeyMsg(msg)
 
+	case playlistsLoadedMsg:
+		m.loadingPlaylists = false
+		if msg.err != nil {
+			m.playlistError = msg.err.Error()
+		} else {
+			m.playlists = msg.playlists
+			// Select default playlist if configured
+			if m.cfg.YouTube.DefaultPlaylistID != "" {
+				for i, pl := range m.playlists {
+					if pl.ID == m.cfg.YouTube.DefaultPlaylistID {
+						m.selectedPlaylist = i
+						break
+					}
+				}
+			}
+		}
+		return m, nil
+
 	case uploadProgressMsg:
 		m.uploadPct = msg.percent
 		return m, nil
@@ -151,6 +200,18 @@ func (m *YouTubeUploadModel) Update(msg tea.Msg) (*YouTubeUploadModel, tea.Cmd) 
 		} else {
 			m.step = YouTubeUploadStepComplete
 			m.uploadResult = msg.result
+
+			// Save YouTube metadata to recording
+			if m.recordingInfo != nil && msg.result != nil {
+				m.saveYouTubeMetadata(msg.result)
+			}
+
+			// Update config with last used playlist
+			if m.selectedPlaylist >= 0 && m.selectedPlaylist < len(m.playlists) {
+				m.cfg.YouTube.DefaultPlaylistID = m.playlists[m.selectedPlaylist].ID
+				m.cfg.YouTube.DefaultPlaylistName = m.playlists[m.selectedPlaylist].Title
+				config.Save(m.cfg)
+			}
 		}
 		// Refresh YouTube status
 		updateGlobalAppState(GlobalAppState.IsRecording, GlobalAppState.BlinkOn, GlobalAppState.Status)
@@ -170,8 +231,40 @@ func (m *YouTubeUploadModel) Update(msg tea.Msg) (*YouTubeUploadModel, tea.Cmd) 
 	return m, cmd
 }
 
+// saveYouTubeMetadata saves YouTube upload details to the recording metadata
+func (m *YouTubeUploadModel) saveYouTubeMetadata(result *youtube.UploadResult) {
+	if m.recordingInfo == nil {
+		return
+	}
+
+	ytMeta := &models.YouTubeMetadata{
+		VideoID:    result.VideoID,
+		VideoURL:   result.VideoURL,
+		Privacy:    string(m.privacyOptions[m.selectedPrivacy]),
+		UploadedAt: time.Now().Format(time.RFC3339),
+	}
+
+	// Add playlist info if selected
+	if m.selectedPlaylist >= 0 && m.selectedPlaylist < len(m.playlists) {
+		ytMeta.PlaylistID = m.playlists[m.selectedPlaylist].ID
+		ytMeta.PlaylistName = m.playlists[m.selectedPlaylist].Title
+	}
+
+	// Add channel info if available
+	if m.cfg.YouTube.ChannelName != "" {
+		ytMeta.ChannelName = m.cfg.YouTube.ChannelName
+	}
+	if m.cfg.YouTube.ChannelID != "" {
+		ytMeta.ChannelID = m.cfg.YouTube.ChannelID
+	}
+
+	m.recordingInfo.Metadata.YouTube = ytMeta
+	m.recordingInfo.Save()
+}
+
 // handleKeyMsg handles keyboard input
 func (m *YouTubeUploadModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeUploadModel, tea.Cmd) {
+	// Handle global keys first
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -188,9 +281,13 @@ func (m *YouTubeUploadModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeUploadModel, 
 		// Go back to prompt
 		m.step = YouTubeUploadStepPrompt
 		return m, nil
+	}
 
-	case "y", "Y":
-		if m.step == YouTubeUploadStepPrompt {
+	// Handle step-specific keys
+	switch m.step {
+	case YouTubeUploadStepPrompt:
+		switch msg.String() {
+		case "y", "Y", "enter":
 			// Check if YouTube is connected
 			if !m.cfg.IsYouTubeConnected() {
 				m.errorMessage = "YouTube not connected. Go to Options > YouTube to set up."
@@ -198,45 +295,77 @@ func (m *YouTubeUploadModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeUploadModel, 
 			}
 			m.step = YouTubeUploadStepMetadata
 			m.titleInput.Focus()
-			return m, textinput.Blink
-		}
+			m.loadingPlaylists = true
+			return m, tea.Batch(textinput.Blink, m.loadPlaylists())
 
-	case "n", "N":
-		if m.step == YouTubeUploadStepPrompt {
+		case "n", "N":
 			m.step = YouTubeUploadStepSkipped
 			return m, func() tea.Msg { return youtubeUploadSkippedMsg{} }
 		}
 
-	case "tab", "down":
-		if m.step == YouTubeUploadStepMetadata {
+	case YouTubeUploadStepMetadata:
+		switch msg.String() {
+		case "tab", "down":
 			m.nextField()
 			return m, textinput.Blink
-		}
 
-	case "shift+tab", "up":
-		if m.step == YouTubeUploadStepMetadata {
+		case "shift+tab", "up":
 			m.prevField()
 			return m, textinput.Blink
-		}
 
-	case "left", "right":
-		if m.step == YouTubeUploadStepMetadata && m.focusedField == YouTubeUploadFieldPrivacy {
-			if msg.String() == "left" {
-				m.selectedPrivacy--
-				if m.selectedPrivacy < 0 {
-					m.selectedPrivacy = len(m.privacyOptions) - 1
+		case "left", "right":
+			if m.focusedField == YouTubeUploadFieldPrivacy {
+				if msg.String() == "left" {
+					m.selectedPrivacy--
+					if m.selectedPrivacy < 0 {
+						m.selectedPrivacy = len(m.privacyOptions) - 1
+					}
+				} else {
+					m.selectedPrivacy++
+					if m.selectedPrivacy >= len(m.privacyOptions) {
+						m.selectedPrivacy = 0
+					}
 				}
-			} else {
-				m.selectedPrivacy++
-				if m.selectedPrivacy >= len(m.privacyOptions) {
-					m.selectedPrivacy = 0
-				}
+				return m, nil
 			}
-			return m, nil
+			if m.focusedField == YouTubeUploadFieldPlaylist {
+				// Navigate through playlists: -1 (none), 0, 1, 2, ...
+				totalOptions := len(m.playlists) + 1 // +1 for "None"
+				if msg.String() == "left" {
+					m.selectedPlaylist--
+					if m.selectedPlaylist < -1 {
+						m.selectedPlaylist = len(m.playlists) - 1
+					}
+				} else {
+					m.selectedPlaylist++
+					if m.selectedPlaylist >= totalOptions-1 {
+						m.selectedPlaylist = -1
+					}
+				}
+				return m, nil
+			}
+
+		case "enter":
+			return m.handleEnter()
+
+		default:
+			// Forward all other keys to the focused text input
+			var cmd tea.Cmd
+			switch m.focusedField {
+			case YouTubeUploadFieldTitle:
+				m.titleInput, cmd = m.titleInput.Update(msg)
+			case YouTubeUploadFieldDescription:
+				m.descriptionInput, cmd = m.descriptionInput.Update(msg)
+			case YouTubeUploadFieldTags:
+				m.tagsInput, cmd = m.tagsInput.Update(msg)
+			}
+			return m, cmd
 		}
 
-	case "enter":
-		return m.handleEnter()
+	case YouTubeUploadStepComplete, YouTubeUploadStepError:
+		if msg.String() == "enter" {
+			return m, func() tea.Msg { return youtubeUploadDoneMsg{} }
+		}
 	}
 
 	return m, nil
@@ -253,7 +382,8 @@ func (m *YouTubeUploadModel) handleEnter() (*YouTubeUploadModel, tea.Cmd) {
 		}
 		m.step = YouTubeUploadStepMetadata
 		m.titleInput.Focus()
-		return m, textinput.Blink
+		m.loadingPlaylists = true
+		return m, tea.Batch(textinput.Blink, m.loadPlaylists())
 
 	case YouTubeUploadStepMetadata:
 		switch m.focusedField {
@@ -318,6 +448,26 @@ func (m *YouTubeUploadModel) focusCurrent() {
 	}
 }
 
+// loadPlaylists fetches playlists from YouTube
+func (m *YouTubeUploadModel) loadPlaylists() tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		auth := youtube.NewAuth(m.cfg.YouTube.ClientID, m.cfg.YouTube.ClientSecret, config.GetConfigDir())
+
+		uploader, err := youtube.NewUploader(ctx, auth)
+		if err != nil {
+			return playlistsLoadedMsg{err: err}
+		}
+
+		playlists, err := uploader.ListPlaylists(ctx)
+		if err != nil {
+			return playlistsLoadedMsg{err: err}
+		}
+
+		return playlistsLoadedMsg{playlists: playlists}
+	}
+}
+
 // startUpload begins the YouTube upload
 func (m *YouTubeUploadModel) startUpload() tea.Cmd {
 	m.step = YouTubeUploadStepUploading
@@ -349,6 +499,11 @@ func (m *YouTubeUploadModel) startUpload() tea.Cmd {
 			tags,
 			m.privacyOptions[m.selectedPrivacy],
 		)
+
+		// Add playlist if selected
+		if m.selectedPlaylist >= 0 && m.selectedPlaylist < len(m.playlists) {
+			opts.PlaylistID = m.playlists[m.selectedPlaylist].ID
+		}
 
 		// First extract thumbnail if it doesn't exist
 		thumbnailPath := youtube.GetThumbnailPath(m.videoPath)
@@ -488,6 +643,39 @@ func (m *YouTubeUploadModel) renderMetadata() string {
 	}
 	tagsRow := lipgloss.JoinHorizontal(lipgloss.Center, tagsLabel, m.tagsInput.View())
 
+	// Playlist row
+	playlistLabel := labelStyle.Render("Playlist: ")
+	if m.focusedField == YouTubeUploadFieldPlaylist {
+		playlistLabel = labelActiveStyle.Render("Playlist: ")
+	}
+	var playlistValue string
+	if m.loadingPlaylists {
+		playlistValue = lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("Loading playlists...")
+	} else if m.playlistError != "" {
+		playlistValue = lipgloss.NewStyle().Foreground(ColorRed).Render("Error: " + m.playlistError)
+	} else {
+		// Build playlist selection
+		var playlistName string
+		if m.selectedPlaylist < 0 {
+			playlistName = "None"
+		} else if m.selectedPlaylist < len(m.playlists) {
+			playlistName = m.playlists[m.selectedPlaylist].Title
+		}
+
+		style := lipgloss.NewStyle().Foreground(ColorGray)
+		if m.focusedField == YouTubeUploadFieldPlaylist {
+			style = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000000"))
+		} else if m.selectedPlaylist >= 0 {
+			style = lipgloss.NewStyle().Foreground(ColorWhite).Bold(true)
+		}
+		playlistValue = style.Render(" " + playlistName + " ")
+
+		if m.focusedField == YouTubeUploadFieldPlaylist && len(m.playlists) > 0 {
+			playlistValue += lipgloss.NewStyle().Foreground(ColorGray).Render(" (←/→ to change)")
+		}
+	}
+	playlistRow := lipgloss.JoinHorizontal(lipgloss.Center, playlistLabel, playlistValue)
+
 	// Privacy row
 	privacyLabel := labelStyle.Render("Privacy: ")
 	if m.focusedField == YouTubeUploadFieldPrivacy {
@@ -530,6 +718,7 @@ func (m *YouTubeUploadModel) renderMetadata() string {
 		titleRow,
 		descRow,
 		tagsRow,
+		playlistRow,
 		privacyRow,
 		"",
 		buttonRow,
@@ -578,12 +767,21 @@ func (m *YouTubeUploadModel) renderComplete() string {
 		url = m.uploadResult.VideoURL
 	}
 
+	var playlistInfo string
+	if m.selectedPlaylist >= 0 && m.selectedPlaylist < len(m.playlists) {
+		playlistInfo = lipgloss.NewStyle().
+			Foreground(ColorGray).
+			Render("Added to playlist: " + m.playlists[m.selectedPlaylist].Title)
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Center,
 		titleStyle.Render("Upload Complete!"),
 		"",
 		textStyle.Render("Your video has been uploaded to YouTube."),
 		"",
 		linkStyle.Render(url),
+		"",
+		playlistInfo,
 		"",
 		lipgloss.NewStyle().Foreground(ColorGray).Render("Press Enter to continue"),
 	)
@@ -617,7 +815,7 @@ func (m *YouTubeUploadModel) getHelpText() string {
 	case YouTubeUploadStepPrompt:
 		return "y: upload • n: skip • esc: skip"
 	case YouTubeUploadStepMetadata:
-		return "tab: next field • enter: select • ←/→: change privacy • esc: back"
+		return "tab: next field • enter: select • ←/→: change playlist/privacy • esc: back"
 	case YouTubeUploadStepUploading:
 		return "uploading..."
 	case YouTubeUploadStepComplete:
@@ -630,6 +828,11 @@ func (m *YouTubeUploadModel) getHelpText() string {
 }
 
 // Messages for YouTube upload
+
+type playlistsLoadedMsg struct {
+	playlists []youtube.Playlist
+	err       error
+}
 
 type uploadProgressMsg struct {
 	percent float64

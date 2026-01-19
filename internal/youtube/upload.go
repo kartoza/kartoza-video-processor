@@ -372,3 +372,78 @@ func GetVideoMetadata(videoPath string) (duration string, resolution string, err
 
 	return duration, resolution, nil
 }
+
+// UpdateVideoPrivacy updates the privacy status of a YouTube video
+func (u *Uploader) UpdateVideoPrivacy(ctx context.Context, videoID string, privacy PrivacyStatus) error {
+	// First, get the current video to preserve other metadata
+	call := u.service.Videos.List([]string{"status"})
+	call = call.Id(videoID)
+	call = call.Context(ctx)
+
+	response, err := call.Do()
+	if err != nil {
+		return fmt.Errorf("failed to get video: %w", err)
+	}
+
+	if len(response.Items) == 0 {
+		return fmt.Errorf("video not found: %s", videoID)
+	}
+
+	video := response.Items[0]
+	video.Status.PrivacyStatus = string(privacy)
+
+	// Update the video
+	updateCall := u.service.Videos.Update([]string{"status"}, video)
+	updateCall = updateCall.Context(ctx)
+
+	_, err = updateCall.Do()
+	if err != nil {
+		return fmt.Errorf("failed to update video privacy: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteVideo deletes a video from YouTube
+func (u *Uploader) DeleteVideo(ctx context.Context, videoID string) error {
+	call := u.service.Videos.Delete(videoID)
+	call = call.Context(ctx)
+
+	err := call.Do()
+	if err != nil {
+		return fmt.Errorf("failed to delete video: %w", err)
+	}
+
+	return nil
+}
+
+// GetVideoInfo retrieves information about a YouTube video
+func (u *Uploader) GetVideoInfo(ctx context.Context, videoID string) (*youtube.Video, error) {
+	call := u.service.Videos.List([]string{"snippet", "status", "contentDetails"})
+	call = call.Id(videoID)
+	call = call.Context(ctx)
+
+	response, err := call.Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get video info: %w", err)
+	}
+
+	if len(response.Items) == 0 {
+		return nil, fmt.Errorf("video not found: %s", videoID)
+	}
+
+	return response.Items[0], nil
+}
+
+// RemoveFromPlaylist removes a video from a playlist
+func (u *Uploader) RemoveFromPlaylist(ctx context.Context, playlistItemID string) error {
+	call := u.service.PlaylistItems.Delete(playlistItemID)
+	call = call.Context(ctx)
+
+	err := call.Do()
+	if err != nil {
+		return fmt.Errorf("failed to remove from playlist: %w", err)
+	}
+
+	return nil
+}

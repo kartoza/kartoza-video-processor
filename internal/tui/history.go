@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -13,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-video-processor/internal/config"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-video-processor/internal/youtube"
 )
 
 // HistoryViewMode represents the current mode of the history view
@@ -23,6 +26,9 @@ const (
 	HistoryDetailMode
 	HistoryEditMode
 	HistoryDeleteConfirmMode
+	HistoryYouTubePrivacyMode
+	HistoryYouTubeDeleteConfirmMode
+	HistoryYouTubeUploadMode
 )
 
 // HistoryModel displays recording history with navigation
@@ -60,6 +66,13 @@ type HistoryModel struct {
 	// Delete confirmation state
 	deleteConfirmRecording *models.RecordingInfo
 	deleteError            string
+
+	// YouTube action state
+	youtubePrivacyOptions  []string
+	youtubeSelectedPrivacy int
+	youtubeActionError     string
+	youtubeActionSuccess   string
+	youtubeActionLoading   bool
 }
 
 // NewHistoryModel creates a new history model
@@ -90,10 +103,11 @@ func NewHistoryModel() *HistoryModel {
 	}
 
 	h := &HistoryModel{
-		cursor:  0,
-		loading: true,
-		mode:    HistoryListMode,
-		topics:  topics,
+		cursor:                0,
+		loading:               true,
+		mode:                  HistoryListMode,
+		topics:                topics,
+		youtubePrivacyOptions: []string{"unlisted", "private", "public"},
 	}
 
 	h.editFields.title = titleInput
@@ -141,6 +155,10 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 			return h.updateEditMode(msg)
 		case HistoryDeleteConfirmMode:
 			return h.updateDeleteConfirmMode(msg)
+		case HistoryYouTubePrivacyMode:
+			return h.updateYouTubePrivacyMode(msg)
+		case HistoryYouTubeDeleteConfirmMode:
+			return h.updateYouTubeDeleteConfirmMode(msg)
 		}
 
 	case recordingsLoadedMsg:
@@ -164,6 +182,52 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 				}
 			}
 		}
+
+	case youtubePrivacyChangedMsg:
+		h.youtubeActionLoading = false
+		if msg.err != nil {
+			h.youtubeActionError = msg.err.Error()
+		} else {
+			h.youtubeActionSuccess = "Privacy updated to " + msg.newPrivacy
+			// Update local metadata
+			if h.selectedRecording != nil && h.selectedRecording.Metadata.YouTube != nil {
+				h.selectedRecording.Metadata.YouTube.Privacy = msg.newPrivacy
+				h.selectedRecording.Save()
+				// Update in list
+				for i := range h.recordings {
+					if h.recordings[i].Files.FolderPath == h.selectedRecording.Files.FolderPath {
+						h.recordings[i] = *h.selectedRecording
+						break
+					}
+				}
+			}
+			h.mode = HistoryDetailMode
+		}
+
+	case youtubeVideoDeletedMsg:
+		h.youtubeActionLoading = false
+		if msg.err != nil {
+			h.youtubeActionError = msg.err.Error()
+		} else {
+			h.youtubeActionSuccess = "Video deleted from YouTube"
+			// Clear YouTube metadata
+			if h.selectedRecording != nil {
+				h.selectedRecording.Metadata.YouTube = nil
+				h.selectedRecording.Save()
+				// Update in list
+				for i := range h.recordings {
+					if h.recordings[i].Files.FolderPath == h.selectedRecording.Files.FolderPath {
+						h.recordings[i] = *h.selectedRecording
+						break
+					}
+				}
+			}
+			h.mode = HistoryDetailMode
+		}
+
+	case startYouTubeUploadMsg:
+		// This is handled by the parent app model
+		return h, func() tea.Msg { return msg }
 	}
 
 	return h, nil
@@ -299,6 +363,8 @@ func (h *HistoryModel) updateDetailMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd)
 		h.selectedRecording = nil
 		h.editError = ""
 		h.editSuccess = ""
+		h.youtubeActionError = ""
+		h.youtubeActionSuccess = ""
 
 	case "e":
 		// Enter edit mode
@@ -308,6 +374,57 @@ func (h *HistoryModel) updateDetailMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd)
 			h.editFocusField = 0
 			h.editFields.title.Focus()
 			return h, textinput.Blink
+		}
+
+	case "u":
+		// Upload to YouTube (only if not already uploaded)
+		if h.selectedRecording != nil && !h.selectedRecording.Metadata.IsPublishedToYouTube() {
+			// Check if YouTube is connected
+			cfg, _ := config.Load()
+			if !cfg.IsYouTubeConnected() {
+				h.youtubeActionError = "YouTube not connected. Go to Options > YouTube to set up."
+				return h, nil
+			}
+			// Find video file to upload
+			videoPath := h.selectedRecording.Files.MergedFile
+			if videoPath == "" {
+				videoPath = h.selectedRecording.Files.VideoFile
+			}
+			if videoPath == "" {
+				h.youtubeActionError = "No video file found to upload"
+				return h, nil
+			}
+			// Send message to parent to start upload
+			return h, func() tea.Msg {
+				return startYouTubeUploadMsg{
+					recording: h.selectedRecording,
+					videoPath: videoPath,
+				}
+			}
+		}
+
+	case "p":
+		// Change privacy (only if already uploaded)
+		if h.selectedRecording != nil && h.selectedRecording.Metadata.IsPublishedToYouTube() {
+			h.mode = HistoryYouTubePrivacyMode
+			h.youtubeActionError = ""
+			h.youtubeActionSuccess = ""
+			// Set current privacy as selected
+			currentPrivacy := h.selectedRecording.Metadata.YouTube.Privacy
+			for i, p := range h.youtubePrivacyOptions {
+				if p == currentPrivacy {
+					h.youtubeSelectedPrivacy = i
+					break
+				}
+			}
+		}
+
+	case "x":
+		// Delete from YouTube (only if already uploaded)
+		if h.selectedRecording != nil && h.selectedRecording.Metadata.IsPublishedToYouTube() {
+			h.mode = HistoryYouTubeDeleteConfirmMode
+			h.youtubeActionError = ""
+			h.youtubeActionSuccess = ""
 		}
 	}
 
@@ -394,6 +511,112 @@ func (h *HistoryModel) updateEditMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
 	return h, cmd
 }
 
+// updateYouTubePrivacyMode handles input in YouTube privacy change mode
+func (h *HistoryModel) updateYouTubePrivacyMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return h, tea.Quit
+
+	case "esc", "q":
+		h.mode = HistoryDetailMode
+		h.youtubeActionError = ""
+
+	case "left", "h":
+		h.youtubeSelectedPrivacy--
+		if h.youtubeSelectedPrivacy < 0 {
+			h.youtubeSelectedPrivacy = len(h.youtubePrivacyOptions) - 1
+		}
+
+	case "right", "l":
+		h.youtubeSelectedPrivacy++
+		if h.youtubeSelectedPrivacy >= len(h.youtubePrivacyOptions) {
+			h.youtubeSelectedPrivacy = 0
+		}
+
+	case "enter":
+		if h.selectedRecording != nil && h.selectedRecording.Metadata.YouTube != nil {
+			newPrivacy := h.youtubePrivacyOptions[h.youtubeSelectedPrivacy]
+			if newPrivacy != h.selectedRecording.Metadata.YouTube.Privacy {
+				h.youtubeActionLoading = true
+				return h, h.changeYouTubePrivacy(newPrivacy)
+			}
+			h.mode = HistoryDetailMode
+		}
+	}
+
+	return h, nil
+}
+
+// updateYouTubeDeleteConfirmMode handles input in YouTube delete confirmation mode
+func (h *HistoryModel) updateYouTubeDeleteConfirmMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return h, tea.Quit
+
+	case "esc", "n", "N":
+		h.mode = HistoryDetailMode
+		h.youtubeActionError = ""
+
+	case "y", "Y":
+		if h.selectedRecording != nil && h.selectedRecording.Metadata.YouTube != nil {
+			h.youtubeActionLoading = true
+			return h, h.deleteFromYouTube()
+		}
+	}
+
+	return h, nil
+}
+
+// changeYouTubePrivacy changes the privacy setting of a YouTube video
+func (h *HistoryModel) changeYouTubePrivacy(newPrivacy string) tea.Cmd {
+	rec := h.selectedRecording
+	return func() tea.Msg {
+		ctx := context.Background()
+		cfg, err := config.Load()
+		if err != nil {
+			return youtubePrivacyChangedMsg{err: err}
+		}
+
+		auth := youtube.NewAuth(cfg.YouTube.ClientID, cfg.YouTube.ClientSecret, config.GetConfigDir())
+		uploader, err := youtube.NewUploader(ctx, auth)
+		if err != nil {
+			return youtubePrivacyChangedMsg{err: err}
+		}
+
+		err = uploader.UpdateVideoPrivacy(ctx, rec.Metadata.YouTube.VideoID, youtube.PrivacyStatus(newPrivacy))
+		if err != nil {
+			return youtubePrivacyChangedMsg{err: err}
+		}
+
+		return youtubePrivacyChangedMsg{newPrivacy: newPrivacy}
+	}
+}
+
+// deleteFromYouTube deletes the video from YouTube
+func (h *HistoryModel) deleteFromYouTube() tea.Cmd {
+	rec := h.selectedRecording
+	return func() tea.Msg {
+		ctx := context.Background()
+		cfg, err := config.Load()
+		if err != nil {
+			return youtubeVideoDeletedMsg{err: err}
+		}
+
+		auth := youtube.NewAuth(cfg.YouTube.ClientID, cfg.YouTube.ClientSecret, config.GetConfigDir())
+		uploader, err := youtube.NewUploader(ctx, auth)
+		if err != nil {
+			return youtubeVideoDeletedMsg{err: err}
+		}
+
+		err = uploader.DeleteVideo(ctx, rec.Metadata.YouTube.VideoID)
+		if err != nil {
+			return youtubeVideoDeletedMsg{err: err}
+		}
+
+		return youtubeVideoDeletedMsg{}
+	}
+}
+
 // initEditFields populates edit fields from selected recording
 func (h *HistoryModel) initEditFields() {
 	if h.selectedRecording == nil {
@@ -470,6 +693,10 @@ func (h *HistoryModel) View() string {
 		return h.renderEditView()
 	case HistoryDeleteConfirmMode:
 		return h.renderDeleteConfirmView()
+	case HistoryYouTubePrivacyMode:
+		return h.renderYouTubePrivacyView()
+	case HistoryYouTubeDeleteConfirmMode:
+		return h.renderYouTubeDeleteConfirmView()
 	default:
 		return h.renderListView()
 	}
@@ -761,25 +988,114 @@ func (h *HistoryModel) renderDetailView() string {
 		MarginLeft(2)
 	rows = append(rows, descStyle.Render(desc))
 
-	// Success message
-	if h.editSuccess != "" {
+	// YouTube section
+	rows = append(rows, "")
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+	rows = append(rows, "")
+
+	ytLabelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Width(14).
+		Align(lipgloss.Right)
+
+	if rec.Metadata.IsPublishedToYouTube() {
+		// Show YouTube status
+		ytStatusBadge := lipgloss.NewStyle().
+			Background(ColorRed).
+			Foreground(ColorWhite).
+			Padding(0, 1).
+			Bold(true).
+			Render("▶ YouTube")
+		ytStatusRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(ytStatusBadge)
+		rows = append(rows, ytStatusRow)
+		rows = append(rows, "")
+
+		yt := rec.Metadata.YouTube
+
+		// Video URL
+		linkStyle := lipgloss.NewStyle().
+			Foreground(ColorBlue).
+			Underline(true)
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			ytLabelStyle.Render("URL:"),
+			"  ",
+			linkStyle.Render(yt.VideoURL),
+		))
+
+		// Privacy
+		privacyStyle := lipgloss.NewStyle().Foreground(ColorOrange).Bold(true)
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			ytLabelStyle.Render("Privacy:"),
+			"  ",
+			privacyStyle.Render(yt.Privacy),
+		))
+
+		// Playlist
+		if yt.PlaylistName != "" {
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+				ytLabelStyle.Render("Playlist:"),
+				"  ",
+				valueStyle.Render(yt.PlaylistName),
+			))
+		}
+
+		// Upload date
+		if yt.UploadedAt != "" {
+			uploadTime, _ := time.Parse(time.RFC3339, yt.UploadedAt)
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+				ytLabelStyle.Render("Uploaded:"),
+				"  ",
+				valueStyle.Render(uploadTime.Format("Jan 2, 2006 15:04")),
+			))
+		}
+	} else {
+		// Not on YouTube
+		ytStatusStyle := lipgloss.NewStyle().
+			Foreground(ColorGray).
+			Italic(true).
+			Align(lipgloss.Center).
+			Width(62)
+		rows = append(rows, ytStatusStyle.Render("Not published to YouTube"))
+	}
+
+	// Success/Error messages
+	if h.editSuccess != "" || h.youtubeActionSuccess != "" {
 		successStyle := lipgloss.NewStyle().
 			Foreground(ColorGreen).
 			Bold(true).
 			Align(lipgloss.Center).
 			Width(62)
 		rows = append(rows, "")
-		rows = append(rows, successStyle.Render(h.editSuccess))
+		msg := h.editSuccess
+		if h.youtubeActionSuccess != "" {
+			msg = h.youtubeActionSuccess
+		}
+		rows = append(rows, successStyle.Render(msg))
+	}
+
+	if h.youtubeActionError != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true).
+			Align(lipgloss.Center).
+			Width(62)
+		rows = append(rows, "")
+		rows = append(rows, errorStyle.Render(h.youtubeActionError))
 	}
 
 	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 
-	// Help text
+	// Help text - changes based on YouTube status
 	helpStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := "e: Edit • Esc: Back to list"
+	var helpText string
+	if rec.Metadata.IsPublishedToYouTube() {
+		helpText = "e: Edit • p: Change Privacy • x: Delete from YouTube • Esc: Back"
+	} else {
+		helpText = "e: Edit • u: Upload to YouTube • Esc: Back"
+	}
 
 	mainSection := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -1394,6 +1710,268 @@ func truncateStr(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+// renderYouTubePrivacyView renders the YouTube privacy change view
+func (h *HistoryModel) renderYouTubePrivacyView() string {
+	if h.selectedRecording == nil || h.selectedRecording.Metadata.YouTube == nil {
+		return "No recording selected"
+	}
+
+	rec := h.selectedRecording
+	header := RenderHeader("Change YouTube Privacy")
+
+	// Styles
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorOrange).
+		Padding(1, 3).
+		Width(60)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	// Build rows
+	var rows []string
+
+	// Title
+	titleBadge := lipgloss.NewStyle().
+		Background(ColorBlue).
+		Foreground(ColorWhite).
+		Padding(0, 1).
+		Bold(true).
+		Render(rec.Metadata.Title)
+	titleRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(52).Render(titleBadge)
+	rows = append(rows, titleRow)
+	rows = append(rows, "")
+
+	// Current privacy
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		labelStyle.Render("Current Privacy: "),
+		valueStyle.Render(rec.Metadata.YouTube.Privacy),
+	))
+	rows = append(rows, "")
+
+	// Privacy options
+	rows = append(rows, labelStyle.Render("Select new privacy:"))
+	rows = append(rows, "")
+
+	var privacyOptions []string
+	for i, opt := range h.youtubePrivacyOptions {
+		style := lipgloss.NewStyle().
+			Padding(0, 2).
+			Margin(0, 1)
+
+		if i == h.youtubeSelectedPrivacy {
+			style = style.
+				Background(ColorOrange).
+				Foreground(lipgloss.Color("#000000")).
+				Bold(true)
+		} else {
+			style = style.
+				Foreground(ColorGray)
+		}
+		privacyOptions = append(privacyOptions, style.Render(opt))
+	}
+	optionsRow := lipgloss.NewStyle().Width(52).Align(lipgloss.Center).Render(
+		lipgloss.JoinHorizontal(lipgloss.Center, privacyOptions...),
+	)
+	rows = append(rows, optionsRow)
+
+	// Error message
+	if h.youtubeActionError != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true).
+			Align(lipgloss.Center).
+			Width(52)
+		rows = append(rows, "")
+		rows = append(rows, errorStyle.Render(h.youtubeActionError))
+	}
+
+	// Loading
+	if h.youtubeActionLoading {
+		loadingStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true).
+			Align(lipgloss.Center).
+			Width(52)
+		rows = append(rows, "")
+		rows = append(rows, loadingStyle.Render("Updating privacy..."))
+	}
+
+	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+
+	// Help text
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	mainSection := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		content,
+	)
+
+	centeredMain := lipgloss.Place(
+		h.width,
+		h.height-2,
+		lipgloss.Center,
+		lipgloss.Top,
+		mainSection,
+	)
+
+	helpFooter := lipgloss.NewStyle().
+		Width(h.width).
+		Align(lipgloss.Center)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		centeredMain,
+		helpFooter.Render(helpStyle.Render("←/→: Select • Enter: Confirm • Esc: Cancel")),
+	)
+}
+
+// renderYouTubeDeleteConfirmView renders the YouTube delete confirmation view
+func (h *HistoryModel) renderYouTubeDeleteConfirmView() string {
+	if h.selectedRecording == nil || h.selectedRecording.Metadata.YouTube == nil {
+		return "No recording selected"
+	}
+
+	rec := h.selectedRecording
+	header := RenderHeader("Delete from YouTube")
+
+	// Styles
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorRed).
+		Padding(1, 3).
+		Width(60)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	// Build rows
+	var rows []string
+
+	// Warning icon
+	warningBadge := lipgloss.NewStyle().
+		Foreground(ColorRed).
+		Bold(true).
+		Render("⚠ DELETE VIDEO FROM YOUTUBE")
+	warningRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(52).Render(warningBadge)
+	rows = append(rows, warningRow)
+	rows = append(rows, "")
+
+	// Title
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		labelStyle.Render("Title: "),
+		valueStyle.Render(rec.Metadata.Title),
+	))
+
+	// URL
+	linkStyle := lipgloss.NewStyle().Foreground(ColorBlue).Underline(true)
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		labelStyle.Render("URL: "),
+		linkStyle.Render(rec.Metadata.YouTube.VideoURL),
+	))
+	rows = append(rows, "")
+
+	// Warning message
+	warningStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true).
+		Align(lipgloss.Center).
+		Width(52)
+	rows = append(rows, warningStyle.Render("This action cannot be undone!"))
+	rows = append(rows, warningStyle.Render("The video will be permanently deleted from YouTube."))
+	rows = append(rows, "")
+
+	// Error message
+	if h.youtubeActionError != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true).
+			Align(lipgloss.Center).
+			Width(52)
+		rows = append(rows, errorStyle.Render(h.youtubeActionError))
+		rows = append(rows, "")
+	}
+
+	// Loading
+	if h.youtubeActionLoading {
+		loadingStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true).
+			Align(lipgloss.Center).
+			Width(52)
+		rows = append(rows, loadingStyle.Render("Deleting from YouTube..."))
+		rows = append(rows, "")
+	}
+
+	// Buttons
+	yesStyle := lipgloss.NewStyle().
+		Foreground(ColorRed).
+		Bold(true).
+		Padding(0, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorRed)
+
+	noStyle := lipgloss.NewStyle().
+		Foreground(ColorGreen).
+		Bold(true).
+		Padding(0, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorGreen)
+
+	buttons := lipgloss.JoinHorizontal(lipgloss.Center,
+		yesStyle.Render("Y - Yes, Delete"),
+		"    ",
+		noStyle.Render("N - No, Cancel"),
+	)
+	buttonRow := lipgloss.NewStyle().Width(52).Align(lipgloss.Center).Render(buttons)
+	rows = append(rows, buttonRow)
+
+	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+
+	// Help text
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	mainSection := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		content,
+	)
+
+	centeredMain := lipgloss.Place(
+		h.width,
+		h.height-2,
+		lipgloss.Center,
+		lipgloss.Top,
+		mainSection,
+	)
+
+	helpFooter := lipgloss.NewStyle().
+		Width(h.width).
+		Align(lipgloss.Center)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		centeredMain,
+		helpFooter.Render(helpStyle.Render("Y: Confirm Delete • N/Esc: Cancel")),
+	)
+}
+
 // Message types
 type recordingsLoadedMsg struct {
 	recordings []models.RecordingInfo
@@ -1406,3 +1984,18 @@ type recordingSavedMsg struct {
 
 // backToMenuMsg signals returning to the main menu
 type backToMenuMsg struct{}
+
+// YouTube action messages
+type youtubePrivacyChangedMsg struct {
+	newPrivacy string
+	err        error
+}
+
+type youtubeVideoDeletedMsg struct {
+	err error
+}
+
+type startYouTubeUploadMsg struct {
+	recording *models.RecordingInfo
+	videoPath string
+}

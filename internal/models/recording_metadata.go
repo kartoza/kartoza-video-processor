@@ -14,6 +14,27 @@ type RecordingMetadata struct {
 	Topic       string `json:"topic"`
 	Presenter   string `json:"presenter"`
 	FolderName  string `json:"folder_name,omitempty"`
+
+	// YouTube upload information
+	YouTube *YouTubeMetadata `json:"youtube,omitempty"`
+}
+
+// YouTubeMetadata holds information about a video uploaded to YouTube
+type YouTubeMetadata struct {
+	VideoID      string `json:"video_id"`
+	VideoURL     string `json:"video_url"`
+	PlaylistID   string `json:"playlist_id,omitempty"`
+	PlaylistName string `json:"playlist_name,omitempty"`
+	Privacy      string `json:"privacy"` // public, unlisted, private
+	UploadedAt   string `json:"uploaded_at"`
+	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	ChannelID    string `json:"channel_id,omitempty"`
+	ChannelName  string `json:"channel_name,omitempty"`
+}
+
+// IsPublishedToYouTube returns true if the recording has been uploaded to YouTube
+func (m *RecordingMetadata) IsPublishedToYouTube() bool {
+	return m.YouTube != nil && m.YouTube.VideoID != ""
 }
 
 // GenerateFolderName creates a folder name from the counter and title

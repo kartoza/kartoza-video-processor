@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -21,6 +22,10 @@ const (
 	YouTubeStepCredentials
 	YouTubeStepAuthenticating
 	YouTubeStepConnected
+	YouTubeStepVerifying
+	YouTubeStepVerified
+	YouTubeStepPlaylists
+	YouTubeStepCreatePlaylist
 	YouTubeStepError
 )
 
@@ -41,6 +46,24 @@ type YouTubeSetupModel struct {
 	isAuthenticating bool
 	authURL          string // URL for manual browser opening
 
+	// Verification data
+	isVerifying  bool
+	verifyError  string
+	channelID    string
+	channelDesc  string
+	playlists    []youtube.Playlist
+	playlistPage int // For scrolling through playlists
+
+	// Playlist management
+	isLoadingPlaylists   bool
+	playlistsError       string
+	selectedPlaylistIdx  int
+	newPlaylistTitle     textinput.Model
+	newPlaylistDesc      textinput.Model
+	newPlaylistPrivacy   youtube.PrivacyStatus
+	createPlaylistFocus  int  // 0=title, 1=desc, 2=privacy
+	isCreatingPlaylist   bool
+
 	// Config
 	cfg *config.Config
 }
@@ -58,6 +81,17 @@ func NewYouTubeSetupModel() *YouTubeSetupModel {
 	clientSecretInput.Width = 50
 	clientSecretInput.EchoMode = textinput.EchoPassword
 
+	// Playlist creation inputs
+	playlistTitleInput := textinput.New()
+	playlistTitleInput.Placeholder = "My Playlist"
+	playlistTitleInput.CharLimit = 150
+	playlistTitleInput.Width = 50
+
+	playlistDescInput := textinput.New()
+	playlistDescInput.Placeholder = "Description (optional)"
+	playlistDescInput.CharLimit = 500
+	playlistDescInput.Width = 50
+
 	// Load existing config
 	cfg, _ := config.Load()
 
@@ -70,10 +104,13 @@ func NewYouTubeSetupModel() *YouTubeSetupModel {
 	}
 
 	m := &YouTubeSetupModel{
-		clientID:     clientIDInput,
-		clientSecret: clientSecretInput,
-		cfg:          cfg,
-		authStatus:   cfg.GetYouTubeAuthStatus(),
+		clientID:           clientIDInput,
+		clientSecret:       clientSecretInput,
+		newPlaylistTitle:   playlistTitleInput,
+		newPlaylistDesc:    playlistDescInput,
+		newPlaylistPrivacy: youtube.PrivacyPrivate,
+		cfg:                cfg,
+		authStatus:         cfg.GetYouTubeAuthStatus(),
 	}
 
 	// Start at appropriate step based on current status
@@ -135,6 +172,52 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 		config.Save(m.cfg)
 		m.step = YouTubeStepCredentials
 		return m, nil
+
+	case youtubeVerifyCompleteMsg:
+		m.isVerifying = false
+		if msg.err != nil {
+			m.verifyError = msg.err.Error()
+			m.step = YouTubeStepVerified
+		} else {
+			m.channelName = msg.channelName
+			m.channelID = msg.channelID
+			m.playlists = msg.playlists
+			m.verifyError = ""
+			m.step = YouTubeStepVerified
+			// Save channel info to config
+			m.cfg.YouTube.ChannelName = msg.channelName
+			m.cfg.YouTube.ChannelID = msg.channelID
+			config.Save(m.cfg)
+		}
+		return m, nil
+
+	case youtubePlaylistsLoadedMsg:
+		m.isLoadingPlaylists = false
+		if msg.err != nil {
+			m.playlistsError = msg.err.Error()
+		} else {
+			m.playlists = msg.playlists
+			m.playlistsError = ""
+		}
+		return m, nil
+
+	case youtubePlaylistCreatedMsg:
+		m.isCreatingPlaylist = false
+		if msg.err != nil {
+			m.playlistsError = msg.err.Error()
+		} else {
+			// Add the new playlist to our list
+			if msg.playlist != nil {
+				m.playlists = append([]youtube.Playlist{*msg.playlist}, m.playlists...)
+			}
+			m.playlistsError = ""
+			// Clear the form and go back to playlists list
+			m.newPlaylistTitle.SetValue("")
+			m.newPlaylistDesc.SetValue("")
+			m.newPlaylistPrivacy = youtube.PrivacyPrivate
+			m.step = YouTubeStepPlaylists
+		}
+		return m, nil
 	}
 
 	// Update text inputs
@@ -143,6 +226,12 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 			m.clientID, cmd = m.clientID.Update(msg)
 		} else {
 			m.clientSecret, cmd = m.clientSecret.Update(msg)
+		}
+	} else if m.step == YouTubeStepCreatePlaylist {
+		if m.createPlaylistFocus == 0 {
+			m.newPlaylistTitle, cmd = m.newPlaylistTitle.Update(msg)
+		} else if m.createPlaylistFocus == 1 {
+			m.newPlaylistDesc, cmd = m.newPlaylistDesc.Update(msg)
 		}
 	}
 
@@ -216,6 +305,139 @@ func (m *YouTubeSetupModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeSetupModel, te
 			return m, func() tea.Msg { return backToMenuMsg{} }
 		case "d":
 			return m, m.disconnect()
+		case "v", "t":
+			// Verify/Test credentials
+			m.step = YouTubeStepVerifying
+			m.isVerifying = true
+			return m, m.verifyCredentials()
+		case "p":
+			// Manage playlists
+			m.step = YouTubeStepPlaylists
+			m.isLoadingPlaylists = true
+			m.playlistPage = 0
+			return m, m.loadPlaylists()
+		}
+
+	case YouTubeStepVerifying:
+		// No actions during verification
+		return m, nil
+
+	case YouTubeStepVerified:
+		switch msg.String() {
+		case "enter", "b":
+			m.step = YouTubeStepConnected
+			return m, nil
+		case "up", "k":
+			if m.playlistPage > 0 {
+				m.playlistPage--
+			}
+		case "down", "j":
+			maxPages := (len(m.playlists) - 1) / 5
+			if m.playlistPage < maxPages {
+				m.playlistPage++
+			}
+		}
+
+	case YouTubeStepPlaylists:
+		if m.isLoadingPlaylists {
+			return m, nil
+		}
+		switch msg.String() {
+		case "enter", "b", "esc":
+			m.step = YouTubeStepConnected
+			return m, nil
+		case "n", "c":
+			// Create new playlist
+			m.step = YouTubeStepCreatePlaylist
+			m.createPlaylistFocus = 0
+			m.newPlaylistTitle.Focus()
+			m.newPlaylistDesc.Blur()
+			return m, textinput.Blink
+		case "r":
+			// Refresh playlists
+			m.isLoadingPlaylists = true
+			return m, m.loadPlaylists()
+		case "up", "k":
+			if m.playlistPage > 0 {
+				m.playlistPage--
+			}
+		case "down", "j":
+			maxPages := (len(m.playlists) - 1) / 10
+			if m.playlistPage < maxPages {
+				m.playlistPage++
+			}
+		}
+
+	case YouTubeStepCreatePlaylist:
+		if m.isCreatingPlaylist {
+			return m, nil
+		}
+		switch msg.String() {
+		case "esc":
+			m.step = YouTubeStepPlaylists
+			return m, nil
+		case "tab", "shift+tab":
+			// Cycle through: title -> desc -> privacy -> title
+			m.createPlaylistFocus = (m.createPlaylistFocus + 1) % 3
+			switch m.createPlaylistFocus {
+			case 0:
+				m.newPlaylistTitle.Focus()
+				m.newPlaylistDesc.Blur()
+			case 1:
+				m.newPlaylistTitle.Blur()
+				m.newPlaylistDesc.Focus()
+			case 2:
+				m.newPlaylistTitle.Blur()
+				m.newPlaylistDesc.Blur()
+			}
+			return m, textinput.Blink
+		case "left", "right":
+			// Toggle privacy when on privacy field
+			if m.createPlaylistFocus == 2 {
+				switch m.newPlaylistPrivacy {
+				case youtube.PrivacyPublic:
+					m.newPlaylistPrivacy = youtube.PrivacyUnlisted
+				case youtube.PrivacyUnlisted:
+					m.newPlaylistPrivacy = youtube.PrivacyPrivate
+				case youtube.PrivacyPrivate:
+					m.newPlaylistPrivacy = youtube.PrivacyPublic
+				}
+			}
+		case "enter":
+			if m.createPlaylistFocus == 2 {
+				// Create the playlist
+				title := strings.TrimSpace(m.newPlaylistTitle.Value())
+				if title == "" {
+					m.playlistsError = "Title is required"
+					return m, nil
+				}
+				m.isCreatingPlaylist = true
+				m.playlistsError = ""
+				return m, m.createPlaylist()
+			}
+			// Move to next field
+			m.createPlaylistFocus = (m.createPlaylistFocus + 1) % 3
+			switch m.createPlaylistFocus {
+			case 0:
+				m.newPlaylistTitle.Focus()
+				m.newPlaylistDesc.Blur()
+			case 1:
+				m.newPlaylistTitle.Blur()
+				m.newPlaylistDesc.Focus()
+			case 2:
+				m.newPlaylistTitle.Blur()
+				m.newPlaylistDesc.Blur()
+			}
+			return m, textinput.Blink
+		default:
+			// Forward to focused text input
+			var cmd tea.Cmd
+			if m.createPlaylistFocus == 0 {
+				m.newPlaylistTitle, cmd = m.newPlaylistTitle.Update(msg)
+			} else if m.createPlaylistFocus == 1 {
+				m.newPlaylistDesc, cmd = m.newPlaylistDesc.Update(msg)
+			}
+			return m, cmd
 		}
 
 	case YouTubeStepError:
@@ -369,6 +591,111 @@ func (m *YouTubeSetupModel) disconnect() tea.Cmd {
 	}
 }
 
+// verifyCredentials tests the credentials and fetches channel/playlist info
+func (m *YouTubeSetupModel) verifyCredentials() tea.Cmd {
+	clientID := m.cfg.YouTube.ClientID
+	clientSecret := m.cfg.YouTube.ClientSecret
+	configDir := config.GetConfigDir()
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		auth := youtube.NewAuth(clientID, clientSecret, configDir)
+
+		// Test the connection
+		if err := auth.TestConnection(ctx); err != nil {
+			return youtubeVerifyCompleteMsg{err: err}
+		}
+
+		// Get channel info
+		channelName, err := auth.GetChannelName(ctx)
+		if err != nil {
+			return youtubeVerifyCompleteMsg{err: err}
+		}
+
+		// Get channel ID
+		channelID, err := auth.GetChannelID(ctx)
+		if err != nil {
+			channelID = ""
+		}
+
+		// Get playlists
+		uploader, err := youtube.NewUploader(ctx, auth)
+		if err != nil {
+			return youtubeVerifyCompleteMsg{
+				channelName: channelName,
+				channelID:   channelID,
+				err:         nil,
+			}
+		}
+
+		playlists, err := uploader.ListPlaylists(ctx)
+		if err != nil {
+			playlists = nil
+		}
+
+		return youtubeVerifyCompleteMsg{
+			channelName: channelName,
+			channelID:   channelID,
+			playlists:   playlists,
+		}
+	}
+}
+
+// loadPlaylists fetches playlists from YouTube
+func (m *YouTubeSetupModel) loadPlaylists() tea.Cmd {
+	clientID := m.cfg.YouTube.ClientID
+	clientSecret := m.cfg.YouTube.ClientSecret
+	configDir := config.GetConfigDir()
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		auth := youtube.NewAuth(clientID, clientSecret, configDir)
+		uploader, err := youtube.NewUploader(ctx, auth)
+		if err != nil {
+			return youtubePlaylistsLoadedMsg{err: err}
+		}
+
+		playlists, err := uploader.ListPlaylists(ctx)
+		if err != nil {
+			return youtubePlaylistsLoadedMsg{err: err}
+		}
+
+		return youtubePlaylistsLoadedMsg{playlists: playlists}
+	}
+}
+
+// createPlaylist creates a new playlist on YouTube
+func (m *YouTubeSetupModel) createPlaylist() tea.Cmd {
+	clientID := m.cfg.YouTube.ClientID
+	clientSecret := m.cfg.YouTube.ClientSecret
+	configDir := config.GetConfigDir()
+	title := strings.TrimSpace(m.newPlaylistTitle.Value())
+	desc := strings.TrimSpace(m.newPlaylistDesc.Value())
+	privacy := m.newPlaylistPrivacy
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		auth := youtube.NewAuth(clientID, clientSecret, configDir)
+		uploader, err := youtube.NewUploader(ctx, auth)
+		if err != nil {
+			return youtubePlaylistCreatedMsg{err: err}
+		}
+
+		playlist, err := uploader.CreatePlaylist(ctx, title, desc, privacy)
+		if err != nil {
+			return youtubePlaylistCreatedMsg{err: err}
+		}
+
+		return youtubePlaylistCreatedMsg{playlist: playlist}
+	}
+}
+
 // View renders the YouTube setup screen
 func (m *YouTubeSetupModel) View() string {
 	if m.width == 0 {
@@ -388,6 +715,14 @@ func (m *YouTubeSetupModel) View() string {
 		content = m.renderAuthenticating()
 	case YouTubeStepConnected:
 		content = m.renderConnected()
+	case YouTubeStepVerifying:
+		content = m.renderVerifying()
+	case YouTubeStepVerified:
+		content = m.renderVerified()
+	case YouTubeStepPlaylists:
+		content = m.renderPlaylists()
+	case YouTubeStepCreatePlaylist:
+		content = m.renderCreatePlaylist()
 	case YouTubeStepError:
 		content = m.renderError()
 	}
@@ -489,6 +824,7 @@ func (m *YouTubeSetupModel) renderInstructions() string {
 		"",
 		stepStyle.Render("Step 2: Create or select a project"),
 		textStyle.Render("  Create a new project or use an existing one"),
+		textStyle.Render("  TIP: Name it after your YouTube channel for clarity"),
 		"",
 		stepStyle.Render("Step 3: Enable YouTube Data API v3"),
 		textStyle.Render("  Go to APIs & Services → Library"),
@@ -501,14 +837,25 @@ func (m *YouTubeSetupModel) renderInstructions() string {
 		"",
 		stepStyle.Render("Step 5: Configure OAuth consent screen"),
 		textStyle.Render("  Go to OAuth consent screen"),
-		textStyle.Render("  Set user type to \"External\""),
+		textStyle.Render("  Set user type to \"External\" (or \"Internal\" for Workspace)"),
 		textStyle.Render("  Add your email as a test user"),
 		"",
 		stepStyle.Render("Step 6: Copy your credentials"),
 		textStyle.Render("  Copy the Client ID and Client Secret"),
 	)
 
-	content := instructionStyle.Render(instructions)
+	brandNote := lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		stepStyle.Render("Brand Accounts:"),
+		textStyle.Render("  If you have multiple YouTube channels (personal + brand accounts):"),
+		textStyle.Render("  • During OAuth login, Google will ask which account to use"),
+		textStyle.Render("  • Select your brand account from the account chooser"),
+		textStyle.Render("  • The API project doesn't need to match - it just provides access"),
+		textStyle.Render("  • You can manage brand accounts at: ")+linkStyle.Render("youtube.com/account"),
+	)
+
+	fullInstructions := lipgloss.JoinVertical(lipgloss.Left, instructions, brandNote)
+	content := instructionStyle.Render(fullInstructions)
 
 	noteStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
@@ -719,28 +1066,32 @@ func (m *YouTubeSetupModel) renderConnected() string {
 
 	button := buttonStyle.Render("Done")
 
-	disconnectStyle := lipgloss.NewStyle().
+	optionStyle := lipgloss.NewStyle().
 		Foreground(ColorGray)
 
-	disconnectText := disconnectStyle.Render("Press D to disconnect account")
+	optionsText := lipgloss.JoinVertical(lipgloss.Center,
+		optionStyle.Render("Press P to manage playlists"),
+		optionStyle.Render("Press V to verify credentials"),
+		optionStyle.Render("Press D to disconnect account"),
+	)
 
 	helpStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Enter: Return to menu • D: Disconnect • Esc: Back")
+	helpText := helpStyle.Render("Enter: Menu • P: Playlists • V: Verify • D: Disconnect • Esc: Back")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,
 		header,
 		"",
-		check + " " + title,
+		check+" "+title,
 		"",
 		content,
 		"",
 		button,
 		"",
-		disconnectText,
+		optionsText,
 		"",
 		helpText,
 	)
@@ -815,3 +1166,431 @@ type youtubeAuthCompleteMsg struct {
 	channelName string
 }
 type youtubeDisconnectMsg struct{}
+type youtubeVerifyCompleteMsg struct {
+	err         error
+	channelName string
+	channelID   string
+	playlists   []youtube.Playlist
+}
+type youtubePlaylistsLoadedMsg struct {
+	err       error
+	playlists []youtube.Playlist
+}
+type youtubePlaylistCreatedMsg struct {
+	err      error
+	playlist *youtube.Playlist
+}
+
+// renderVerifying renders the verification in progress screen
+func (m *YouTubeSetupModel) renderVerifying() string {
+	header := RenderHeader("YouTube - Verifying Credentials")
+
+	spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+	frame := spinnerFrames[int(time.Now().UnixMilli()/200)%len(spinnerFrames)]
+
+	spinnerStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	messageStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	subMessageStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	spinner := spinnerStyle.Render(frame)
+	message := messageStyle.Render("Verifying credentials...")
+	subMessage := subMessageStyle.Render("Testing connection and fetching channel information...")
+
+	content := lipgloss.JoinVertical(
+		lipgloss.Center,
+		spinner+" "+message,
+		"",
+		subMessage,
+	)
+
+	helpText := "Please wait..."
+	footer := RenderHelpFooter(helpText, m.width)
+
+	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+}
+
+// renderVerified renders the verification results screen
+func (m *YouTubeSetupModel) renderVerified() string {
+	header := RenderHeader("YouTube - Verification Results")
+
+	// Check if there was an error
+	if m.verifyError != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true)
+
+		containerStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorRed).
+			Padding(1, 3).
+			Width(60)
+
+		errorContent := lipgloss.JoinVertical(lipgloss.Left,
+			errorStyle.Render("✗ Verification Failed"),
+			"",
+			m.verifyError,
+		)
+
+		content := containerStyle.Render(errorContent)
+
+		helpStyle := lipgloss.NewStyle().
+			Foreground(ColorGray).
+			Italic(true)
+
+		helpText := helpStyle.Render("Enter/B: Back to settings • Esc: Menu")
+
+		fullContent := lipgloss.JoinVertical(
+			lipgloss.Center,
+			header,
+			"",
+			content,
+			"",
+			helpText,
+		)
+
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fullContent)
+	}
+
+	// Success - show channel info and playlists
+	checkStyle := lipgloss.NewStyle().
+		Foreground(ColorGreen).
+		Bold(true)
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ColorGreen).
+		Bold(true)
+
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorGreen).
+		Padding(1, 3).
+		Width(60)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	// Channel info section
+	channelInfo := lipgloss.JoinVertical(lipgloss.Left,
+		checkStyle.Render("✓")+" "+titleStyle.Render("Credentials Verified!"),
+		"",
+		labelStyle.Render("Channel Name: ")+valueStyle.Render(m.channelName),
+		labelStyle.Render("Channel ID:   ")+valueStyle.Render(m.channelID),
+	)
+
+	// Playlists section
+	var playlistsContent string
+	if len(m.playlists) == 0 {
+		playlistsContent = lipgloss.JoinVertical(lipgloss.Left,
+			"",
+			sectionStyle.Render("Playlists:"),
+			labelStyle.Render("  No playlists found"),
+		)
+	} else {
+		var playlistRows []string
+		playlistRows = append(playlistRows, "")
+		playlistRows = append(playlistRows, sectionStyle.Render("Playlists:")+" "+labelStyle.Render(fmt.Sprintf("(%d total)", len(m.playlists))))
+
+		// Show playlists with pagination (5 per page)
+		startIdx := m.playlistPage * 5
+		endIdx := startIdx + 5
+		if endIdx > len(m.playlists) {
+			endIdx = len(m.playlists)
+		}
+
+		for i := startIdx; i < endIdx; i++ {
+			playlist := m.playlists[i]
+			itemCount := ""
+			if playlist.ItemCount > 0 {
+				itemCount = fmt.Sprintf(" (%d videos)", playlist.ItemCount)
+			}
+			playlistRows = append(playlistRows, labelStyle.Render("  • ")+valueStyle.Render(playlist.Title)+labelStyle.Render(itemCount))
+		}
+
+		// Show pagination info if needed
+		if len(m.playlists) > 5 {
+			totalPages := (len(m.playlists) + 4) / 5
+			pageInfo := labelStyle.Render(fmt.Sprintf("  Page %d of %d", m.playlistPage+1, totalPages))
+			playlistRows = append(playlistRows, "")
+			playlistRows = append(playlistRows, pageInfo)
+		}
+
+		playlistsContent = lipgloss.JoinVertical(lipgloss.Left, playlistRows...)
+	}
+
+	fullInfo := lipgloss.JoinVertical(lipgloss.Left, channelInfo, playlistsContent)
+	content := containerStyle.Render(fullInfo)
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	var helpText string
+	if len(m.playlists) > 5 {
+		helpText = helpStyle.Render("↑/↓: Scroll playlists • Enter/B: Back • Esc: Menu")
+	} else {
+		helpText = helpStyle.Render("Enter/B: Back to settings • Esc: Menu")
+	}
+
+	fullContent := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		content,
+		"",
+		helpText,
+	)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fullContent)
+}
+
+// renderPlaylists renders the playlist management screen
+func (m *YouTubeSetupModel) renderPlaylists() string {
+	header := RenderHeader("YouTube - Manage Playlists")
+
+	// Show loading spinner if still loading
+	if m.isLoadingPlaylists {
+		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+		frame := spinnerFrames[int(time.Now().UnixMilli()/200)%len(spinnerFrames)]
+
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true)
+
+		messageStyle := lipgloss.NewStyle().
+			Foreground(ColorWhite).
+			Bold(true)
+
+		content := lipgloss.JoinVertical(
+			lipgloss.Center,
+			spinnerStyle.Render(frame)+" "+messageStyle.Render("Loading playlists..."),
+		)
+
+		helpText := "Please wait..."
+		footer := RenderHelpFooter(helpText, m.width)
+		return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+	}
+
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorOrange).
+		Padding(1, 2).
+		Width(60)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	// Error display
+	if m.playlistsError != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true)
+
+		errorContent := lipgloss.JoinVertical(lipgloss.Left,
+			errorStyle.Render("Error: "+m.playlistsError),
+		)
+		content := containerStyle.Render(errorContent)
+
+		helpStyle := lipgloss.NewStyle().
+			Foreground(ColorGray).
+			Italic(true)
+
+		helpText := helpStyle.Render("R: Retry • N: New playlist • Enter/B: Back • Esc: Menu")
+
+		fullContent := lipgloss.JoinVertical(
+			lipgloss.Center,
+			header,
+			"",
+			content,
+			"",
+			helpText,
+		)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fullContent)
+	}
+
+	// Build playlists list
+	var rows []string
+	rows = append(rows, sectionStyle.Render("Your Playlists")+" "+labelStyle.Render(fmt.Sprintf("(%d total)", len(m.playlists))))
+	rows = append(rows, "")
+
+	if len(m.playlists) == 0 {
+		rows = append(rows, labelStyle.Render("No playlists found"))
+		rows = append(rows, "")
+		rows = append(rows, labelStyle.Render("Press N to create your first playlist"))
+	} else {
+		// Show playlists with pagination (10 per page)
+		startIdx := m.playlistPage * 10
+		endIdx := startIdx + 10
+		if endIdx > len(m.playlists) {
+			endIdx = len(m.playlists)
+		}
+
+		for i := startIdx; i < endIdx; i++ {
+			playlist := m.playlists[i]
+			itemCount := ""
+			if playlist.ItemCount > 0 {
+				itemCount = fmt.Sprintf(" (%d videos)", playlist.ItemCount)
+			}
+			rows = append(rows, labelStyle.Render("  • ")+valueStyle.Render(playlist.Title)+labelStyle.Render(itemCount))
+		}
+
+		// Show pagination info if needed
+		if len(m.playlists) > 10 {
+			totalPages := (len(m.playlists) + 9) / 10
+			rows = append(rows, "")
+			rows = append(rows, labelStyle.Render(fmt.Sprintf("  Page %d of %d (↑/↓ to navigate)", m.playlistPage+1, totalPages)))
+		}
+	}
+
+	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	helpText := helpStyle.Render("N: New playlist • R: Refresh • Enter/B: Back • Esc: Menu")
+
+	fullContent := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		content,
+		"",
+		helpText,
+	)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fullContent)
+}
+
+// renderCreatePlaylist renders the create playlist form
+func (m *YouTubeSetupModel) renderCreatePlaylist() string {
+	header := RenderHeader("YouTube - Create Playlist")
+
+	// Show creating spinner if in progress
+	if m.isCreatingPlaylist {
+		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+		frame := spinnerFrames[int(time.Now().UnixMilli()/200)%len(spinnerFrames)]
+
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true)
+
+		messageStyle := lipgloss.NewStyle().
+			Foreground(ColorWhite).
+			Bold(true)
+
+		content := lipgloss.JoinVertical(
+			lipgloss.Center,
+			spinnerStyle.Render(frame)+" "+messageStyle.Render("Creating playlist..."),
+		)
+
+		helpText := "Please wait..."
+		footer := RenderHelpFooter(helpText, m.width)
+		return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+	}
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	focusedLabelStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	var rows []string
+
+	rows = append(rows, titleStyle.Render("Create a new playlist:"))
+	rows = append(rows, "")
+
+	// Title field
+	if m.createPlaylistFocus == 0 {
+		rows = append(rows, focusedLabelStyle.Render("▶ Title:"))
+	} else {
+		rows = append(rows, labelStyle.Render("  Title:"))
+	}
+	rows = append(rows, "  "+m.newPlaylistTitle.View())
+	rows = append(rows, "")
+
+	// Description field
+	if m.createPlaylistFocus == 1 {
+		rows = append(rows, focusedLabelStyle.Render("▶ Description:"))
+	} else {
+		rows = append(rows, labelStyle.Render("  Description:"))
+	}
+	rows = append(rows, "  "+m.newPlaylistDesc.View())
+	rows = append(rows, "")
+
+	// Privacy field
+	privacyLabel := "  Privacy: "
+	if m.createPlaylistFocus == 2 {
+		privacyLabel = focusedLabelStyle.Render("▶ Privacy: ")
+	} else {
+		privacyLabel = labelStyle.Render("  Privacy: ")
+	}
+
+	var privacyOptions []string
+	privacies := []youtube.PrivacyStatus{youtube.PrivacyPublic, youtube.PrivacyUnlisted, youtube.PrivacyPrivate}
+	labels := []string{"Public", "Unlisted", "Private"}
+	for i, p := range privacies {
+		if p == m.newPlaylistPrivacy {
+			privacyOptions = append(privacyOptions, valueStyle.Render("["+labels[i]+"]"))
+		} else {
+			privacyOptions = append(privacyOptions, labelStyle.Render(" "+labels[i]+" "))
+		}
+	}
+	rows = append(rows, privacyLabel+strings.Join(privacyOptions, " "))
+
+	if m.createPlaylistFocus == 2 {
+		rows = append(rows, labelStyle.Render("  (Use ← → to change, Enter to create)"))
+	}
+
+	// Error message
+	if m.playlistsError != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true)
+		rows = append(rows, "")
+		rows = append(rows, errorStyle.Render("Error: "+m.playlistsError))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	helpText := helpStyle.Render("Tab: Next field • ←/→: Change privacy • Enter: Create • Esc: Cancel")
+
+	footer := RenderHelpFooter(helpText, m.width)
+
+	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+}

@@ -89,6 +89,31 @@ func (a *Auth) GetChannelName(ctx context.Context) (string, error) {
 	return response.Items[0].Snippet.Title, nil
 }
 
+// GetChannelID returns the authenticated channel ID
+func (a *Auth) GetChannelID(ctx context.Context) (string, error) {
+	client, err := a.GetClient(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	service, err := youtube.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		return "", err
+	}
+
+	call := service.Channels.List([]string{"id"}).Mine(true)
+	response, err := call.Do()
+	if err != nil {
+		return "", err
+	}
+
+	if len(response.Items) == 0 {
+		return "", fmt.Errorf("no channel found")
+	}
+
+	return response.Items[0].Id, nil
+}
+
 // AuthenticateWithCallback starts the OAuth2 flow and calls the callback with the auth URL
 // This allows the UI to display the URL while authentication proceeds
 func (a *Auth) AuthenticateWithCallback(ctx context.Context, onURL func(string)) error {
