@@ -63,18 +63,18 @@ type RecordingSetupModel struct {
 	addLogos      bool
 
 	// Logo selection
-	logoDirectory     string   // Directory containing logos
-	availableLogos    []string // List of logo files in the directory
-	leftLogo          string   // Selected left logo path
-	rightLogo         string   // Selected right logo path
-	bottomLogo          string            // Selected bottom logo path
-	selectedLeftIdx     int               // Index in availableLogos for left
-	selectedRightIdx    int               // Index in availableLogos for right
-	selectedBottomIdx   int               // Index in availableLogos for bottom
-	titleColor          string            // Selected title text color
-	selectedColorIdx    int               // Index in TitleColors
-	gifLoopMode         config.GifLoopMode // How to loop animated GIFs
-	selectedGifLoopIdx  int               // Index in GifLoopModes
+	logoDirectory      string             // Directory containing logos
+	availableLogos     []string           // List of logo files in the directory
+	leftLogo           string             // Selected left logo path
+	rightLogo          string             // Selected right logo path
+	bottomLogo         string             // Selected bottom logo path
+	selectedLeftIdx    int                // Index in availableLogos for left
+	selectedRightIdx   int                // Index in availableLogos for right
+	selectedBottomIdx  int                // Index in availableLogos for bottom
+	titleColor         string             // Selected title text color
+	selectedColorIdx   int                // Index in TitleColors
+	gifLoopMode        config.GifLoopMode // How to loop animated GIFs
+	selectedGifLoopIdx int                // Index in GifLoopModes
 
 	// Screen selection
 	monitors        []models.Monitor

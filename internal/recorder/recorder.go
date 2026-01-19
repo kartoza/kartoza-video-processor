@@ -343,7 +343,7 @@ waitStarted:
 // startVideoRecorder starts the video recorder and waits for the start signal
 func (r *Recorder) startVideoRecorder(hwAccel bool, ready, started chan<- string, errors chan<- error) {
 	currentOS := deps.DetectOS()
-	
+
 	switch currentOS {
 	case deps.OSWindows:
 		r.startVideoRecorderWindows(ready, started, errors)
@@ -834,7 +834,7 @@ func (r *Recorder) IsRecordingLocked() bool {
 
 // ProgressUpdate represents a progress update from the processing pipeline
 type ProgressUpdate struct {
-	Step      int     // Step index (0-based, add 1 for TUI which has "stopping recorders" as step 0)
+	Step      int // Step index (0-based, add 1 for TUI which has "stopping recorders" as step 0)
 	Completed bool
 	Skipped   bool
 	Error     error

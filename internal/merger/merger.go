@@ -831,7 +831,7 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 		"-crf", "18",
 		"-r", "30",
 		"-pix_fmt", "yuv420p",
-		"-an", // No audio
+		"-an",                                   // No audio
 		"-t", fmt.Sprintf("%.3f", durationSecs), // Match screen recording duration
 		outputFile,
 	)

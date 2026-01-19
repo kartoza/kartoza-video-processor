@@ -34,7 +34,7 @@ func NewRecorder(device, outputFile string) *Recorder {
 // Start begins audio recording
 func (r *Recorder) Start() error {
 	currentOS := deps.DetectOS()
-	
+
 	switch currentOS {
 	case deps.OSWindows:
 		return r.startWindows()
@@ -65,19 +65,23 @@ func (r *Recorder) startLinux() error {
 // startWindows begins audio recording on Windows using ffmpeg with dshow
 func (r *Recorder) startWindows() error {
 	// Use ffmpeg with dshow to record audio on Windows
-	// ffmpeg -f dshow -i audio="Microphone" output.wav
-	audioDevice := "audio=" + r.device
+	// Uses empty device name to let ffmpeg auto-detect default microphone
+	audioDevice := r.device
 	if r.device == "@DEFAULT_SOURCE@" || r.device == "" {
-		// Use default audio device
-		audioDevice = "audio=@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\\wave_{00000000-0000-0000-0000-000000000000}"
+		// Let ffmpeg use default audio input device
+		audioDevice = ""
 	}
-	
-	r.cmd = exec.Command("ffmpeg",
-		"-f", "dshow",
-		"-i", audioDevice,
-		"-y", // Overwrite output
-		r.outputFile,
-	)
+
+	args := []string{"-f", "dshow"}
+	if audioDevice != "" {
+		args = append(args, "-i", "audio="+audioDevice)
+	} else {
+		// Empty audio= lets ffmpeg pick the default device
+		args = append(args, "-i", "audio=")
+	}
+	args = append(args, "-y", r.outputFile)
+
+	r.cmd = exec.Command("ffmpeg", args...)
 	r.cmd.Stdout = nil
 	r.cmd.Stderr = nil
 
@@ -99,7 +103,7 @@ func (r *Recorder) startMacOS() error {
 		// Try to use specified device
 		audioInput = ":" + r.device
 	}
-	
+
 	r.cmd = exec.Command("ffmpeg",
 		"-f", "avfoundation",
 		"-i", audioInput,
@@ -274,4 +278,3 @@ func extractLoudnormValues(output string) models.LoudnormStats {
 
 	return stats
 }
-

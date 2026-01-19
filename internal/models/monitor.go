@@ -2,15 +2,15 @@ package models
 
 // Monitor represents a display/monitor attached to the system
 type Monitor struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Width       int    `json:"width"`
-	Height      int    `json:"height"`
-	X           int    `json:"x"`
-	Y           int    `json:"y"`
-	Focused     bool   `json:"focused"`
-	Scale       float64 `json:"scale"`
-	Transform   int    `json:"transform"`
+	Name            string  `json:"name"`
+	Description     string  `json:"description,omitempty"`
+	Width           int     `json:"width"`
+	Height          int     `json:"height"`
+	X               int     `json:"x"`
+	Y               int     `json:"y"`
+	Focused         bool    `json:"focused"`
+	Scale           float64 `json:"scale"`
+	Transform       int     `json:"transform"`
 	ActiveWorkspace struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`

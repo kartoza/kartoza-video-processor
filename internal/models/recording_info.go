@@ -96,8 +96,8 @@ type FileInfo struct {
 	TotalSize    int64 `json:"total_size"`
 
 	// Video metadata for each file
-	VideoMeta  *VideoFileMetadata `json:"video_meta,omitempty"`
-	WebcamMeta *VideoFileMetadata `json:"webcam_meta,omitempty"`
+	VideoMeta    *VideoFileMetadata `json:"video_meta,omitempty"`
+	WebcamMeta   *VideoFileMetadata `json:"webcam_meta,omitempty"`
 	MergedMeta   *VideoFileMetadata `json:"merged_meta,omitempty"`
 	VerticalMeta *VideoFileMetadata `json:"vertical_meta,omitempty"`
 }
@@ -105,9 +105,9 @@ type FileInfo struct {
 // RecordingSettings contains the settings used for recording
 type RecordingSettings struct {
 	// Recording sources
-	ScreenEnabled  bool `json:"screen_enabled"`
-	AudioEnabled   bool `json:"audio_enabled"`
-	WebcamEnabled  bool `json:"webcam_enabled"`
+	ScreenEnabled bool `json:"screen_enabled"`
+	AudioEnabled  bool `json:"audio_enabled"`
+	WebcamEnabled bool `json:"webcam_enabled"`
 
 	// Output options
 	VerticalEnabled bool `json:"vertical_enabled"` // Whether vertical video will be created

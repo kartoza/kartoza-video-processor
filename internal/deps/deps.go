@@ -77,7 +77,7 @@ func DetectDisplayServer() DisplayServer {
 	if DetectOS() != OSLinux {
 		return DisplayServerUnknown
 	}
-	
+
 	// Check for Wayland first
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
 		return DisplayServerWayland

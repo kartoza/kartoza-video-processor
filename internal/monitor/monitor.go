@@ -15,7 +15,7 @@ import (
 // ListMonitors returns all available monitors
 func ListMonitors() ([]models.Monitor, error) {
 	currentOS := deps.DetectOS()
-	
+
 	switch currentOS {
 	case deps.OSWindows:
 		return listMonitorsWindows()
@@ -108,14 +108,14 @@ func listMonitorsX11() ([]models.Monitor, error) {
 
 // listMonitorsWindows returns monitors on Windows (using a default/generic approach)
 func listMonitorsWindows() ([]models.Monitor, error) {
-	// On Windows, we'll return a generic "desktop" monitor
-	// For more advanced multi-monitor support, we'd need to use Windows-specific APIs
-	// For now, we'll use ffmpeg's "desktop" capture which captures all monitors
+	// On Windows, we return a generic "desktop" monitor placeholder
+	// Actual screen resolution is handled by ffmpeg's gdigrab at runtime
+	// The 1920x1080 resolution here is a placeholder and doesn't affect actual recording
 	monitors := []models.Monitor{
 		{
 			Name:    "desktop",
-			Width:   1920,
-			Height:  1080,
+			Width:   1920, // Placeholder resolution
+			Height:  1080, // Placeholder resolution
 			X:       0,
 			Y:       0,
 			Focused: true,
@@ -126,13 +126,14 @@ func listMonitorsWindows() ([]models.Monitor, error) {
 
 // listMonitorsMacOS returns monitors on macOS (using a default/generic approach)
 func listMonitorsMacOS() ([]models.Monitor, error) {
-	// On macOS, we'll return a generic screen capture
-	// Screen index 1 is typically the main display in AVFoundation
+	// On macOS, we return a generic screen capture placeholder
+	// Actual screen resolution is handled by ffmpeg's avfoundation at runtime
+	// The 1920x1080 resolution here is a placeholder and doesn't affect actual recording
 	monitors := []models.Monitor{
 		{
 			Name:    "screen-1",
-			Width:   1920,
-			Height:  1080,
+			Width:   1920, // Placeholder resolution
+			Height:  1080, // Placeholder resolution
 			X:       0,
 			Y:       0,
 			Focused: true,
@@ -144,7 +145,7 @@ func listMonitorsMacOS() ([]models.Monitor, error) {
 // GetCursorPosition returns the current cursor position
 func GetCursorPosition() (models.CursorPosition, error) {
 	currentOS := deps.DetectOS()
-	
+
 	switch currentOS {
 	case deps.OSWindows:
 		return getCursorPositionWindows()

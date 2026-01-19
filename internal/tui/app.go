@@ -62,10 +62,10 @@ type AppModel struct {
 	outputDir       string
 
 	// Recording screen state
-	isPaused         bool
-	isPausing        bool
-	isResuming       bool
-	selectedButton   RecordingButton
+	isPaused       bool
+	isPausing      bool
+	isResuming     bool
+	selectedButton RecordingButton
 
 	// Progress channel for processing updates
 	progressChan chan recorder.ProgressUpdate

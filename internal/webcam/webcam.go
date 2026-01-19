@@ -73,7 +73,7 @@ func DetectDevice() (string, error) {
 // Start begins webcam recording
 func (w *Webcam) Start() error {
 	currentOS := deps.DetectOS()
-	
+
 	switch currentOS {
 	case deps.OSWindows:
 		return w.startWindows()
@@ -136,18 +136,25 @@ func (w *Webcam) startLinux() error {
 // startWindows begins webcam recording on Windows using ffmpeg with dshow
 func (w *Webcam) startWindows() error {
 	// Use ffmpeg with dshow to record webcam on Windows
-	// ffmpeg -f dshow -video_size 1920x1080 -framerate 60 -i video="Integrated Webcam" output.mp4
-	videoDevice := "video=" + w.device
+	// Uses empty device name to let ffmpeg auto-detect default webcam
+	videoDevice := w.device
 	if w.device == "" {
-		// Use default video device - will auto-detect
-		videoDevice = "video=@device_pnp_\\\\?\\usb"
+		// Let ffmpeg use default video device
+		videoDevice = ""
 	}
-	
+
 	args := []string{
 		"-f", "dshow",
 		"-video_size", w.resolution,
 		"-framerate", strconv.Itoa(w.fps),
-		"-i", videoDevice,
+	}
+	if videoDevice != "" {
+		args = append(args, "-i", "video="+videoDevice)
+	} else {
+		// Empty video= lets ffmpeg pick the default device
+		args = append(args, "-i", "video=")
+	}
+	args = append(args,
 		"-c:v", "libx264",
 		"-preset", "ultrafast",
 		"-tune", "zerolatency",
@@ -155,7 +162,7 @@ func (w *Webcam) startWindows() error {
 		"-pix_fmt", "yuv420p",
 		"-y", // Overwrite output
 		w.outputFile,
-	}
+	)
 
 	w.cmd = exec.Command("ffmpeg", args...)
 	w.cmd.Stdout = nil
@@ -178,7 +185,7 @@ func (w *Webcam) startMacOS() error {
 	if w.device != "" {
 		videoInput = w.device + ":none"
 	}
-	
+
 	args := []string{
 		"-f", "avfoundation",
 		"-framerate", strconv.Itoa(w.fps),
