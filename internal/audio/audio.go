@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"syscall"
 
+	"github.com/kartoza/kartoza-video-processor/internal/deps"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 	"github.com/kartoza/kartoza-video-processor/internal/notify"
 )
@@ -32,7 +33,79 @@ func NewRecorder(device, outputFile string) *Recorder {
 
 // Start begins audio recording
 func (r *Recorder) Start() error {
+	currentOS := deps.DetectOS()
+	
+	switch currentOS {
+	case deps.OSWindows:
+		return r.startWindows()
+	case deps.OSDarwin:
+		return r.startMacOS()
+	case deps.OSLinux:
+		return r.startLinux()
+	default:
+		// Unknown OS - try Linux as fallback
+		return r.startLinux()
+	}
+}
+
+// startLinux begins audio recording on Linux using PipeWire
+func (r *Recorder) startLinux() error {
 	r.cmd = exec.Command("pw-record", "--target", r.device, r.outputFile)
+	r.cmd.Stdout = nil
+	r.cmd.Stderr = nil
+
+	if err := r.cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start audio recording: %w", err)
+	}
+
+	r.pid = r.cmd.Process.Pid
+	return nil
+}
+
+// startWindows begins audio recording on Windows using ffmpeg with dshow
+func (r *Recorder) startWindows() error {
+	// Use ffmpeg with dshow to record audio on Windows
+	// ffmpeg -f dshow -i audio="Microphone" output.wav
+	audioDevice := "audio=" + r.device
+	if r.device == "@DEFAULT_SOURCE@" || r.device == "" {
+		// Use default audio device
+		audioDevice = "audio=@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\\wave_{00000000-0000-0000-0000-000000000000}"
+	}
+	
+	r.cmd = exec.Command("ffmpeg",
+		"-f", "dshow",
+		"-i", audioDevice,
+		"-y", // Overwrite output
+		r.outputFile,
+	)
+	r.cmd.Stdout = nil
+	r.cmd.Stderr = nil
+
+	if err := r.cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start audio recording: %w", err)
+	}
+
+	r.pid = r.cmd.Process.Pid
+	return nil
+}
+
+// startMacOS begins audio recording on macOS using ffmpeg with avfoundation
+func (r *Recorder) startMacOS() error {
+	// Use ffmpeg with avfoundation to record audio on macOS
+	// ffmpeg -f avfoundation -i ":0" output.wav
+	// ":0" means no video, audio device 0 (default microphone)
+	audioInput := ":0"
+	if r.device != "@DEFAULT_SOURCE@" && r.device != "" {
+		// Try to use specified device
+		audioInput = ":" + r.device
+	}
+	
+	r.cmd = exec.Command("ffmpeg",
+		"-f", "avfoundation",
+		"-i", audioInput,
+		"-y", // Overwrite output
+		r.outputFile,
+	)
 	r.cmd.Stdout = nil
 	r.cmd.Stderr = nil
 

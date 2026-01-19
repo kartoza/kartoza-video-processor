@@ -342,13 +342,24 @@ waitStarted:
 
 // startVideoRecorder starts the video recorder and waits for the start signal
 func (r *Recorder) startVideoRecorder(hwAccel bool, ready, started chan<- string, errors chan<- error) {
-	displayServer := deps.DetectDisplayServer()
-
-	switch displayServer {
-	case deps.DisplayServerX11:
-		r.startVideoRecorderX11(ready, started, errors)
+	currentOS := deps.DetectOS()
+	
+	switch currentOS {
+	case deps.OSWindows:
+		r.startVideoRecorderWindows(ready, started, errors)
+	case deps.OSDarwin:
+		r.startVideoRecorderMacOS(ready, started, errors)
+	case deps.OSLinux:
+		displayServer := deps.DetectDisplayServer()
+		switch displayServer {
+		case deps.DisplayServerX11:
+			r.startVideoRecorderX11(ready, started, errors)
+		default:
+			// Wayland or unknown - use wl-screenrec
+			r.startVideoRecorderWayland(hwAccel, ready, started, errors)
+		}
 	default:
-		// Wayland or unknown - use wl-screenrec
+		// Unknown OS - try Linux Wayland as fallback
 		r.startVideoRecorderWayland(hwAccel, ready, started, errors)
 	}
 }
@@ -446,6 +457,115 @@ func (r *Recorder) startVideoRecorderX11(ready, started chan<- string, errors ch
 
 	if err := r.video.cmd.Start(); err != nil {
 		r.video.err = fmt.Errorf("failed to start ffmpeg x11grab: %w", err)
+		errors <- r.video.err
+		return
+	}
+
+	r.video.pid = r.video.cmd.Process.Pid
+	r.video.started = true
+
+	// Signal that we've started
+	started <- "video"
+
+	// Wait for stop signal or process exit
+	done := make(chan error, 1)
+	go func() {
+		done <- r.video.cmd.Wait()
+	}()
+
+	select {
+	case <-r.stopSignal:
+		// Stop requested
+	case err := <-done:
+		if err != nil {
+			r.video.err = err
+		}
+	}
+}
+
+// startVideoRecorderWindows starts video recording using ffmpeg with gdigrab (Windows)
+func (r *Recorder) startVideoRecorderWindows(ready, started chan<- string, errors chan<- error) {
+	// Build ffmpeg gdigrab command for Windows
+	// ffmpeg -f gdigrab -framerate 60 -i desktop -c:v libx264 -preset ultrafast -pix_fmt yuv420p output.mp4
+	args := []string{
+		"-f", "gdigrab",
+		"-framerate", "60",
+		"-i", "desktop",
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-pix_fmt", "yuv420p",
+		"-y", // Overwrite output
+		r.video.file,
+	}
+
+	r.video.cmd = exec.Command("ffmpeg", args...)
+	r.video.cmd.Stdout = nil
+	r.video.cmd.Stderr = nil
+
+	// Signal we're ready
+	ready <- "video"
+
+	// Wait for synchronized start signal
+	<-r.startBarrier
+
+	if err := r.video.cmd.Start(); err != nil {
+		r.video.err = fmt.Errorf("failed to start ffmpeg gdigrab: %w", err)
+		errors <- r.video.err
+		return
+	}
+
+	r.video.pid = r.video.cmd.Process.Pid
+	r.video.started = true
+
+	// Signal that we've started
+	started <- "video"
+
+	// Wait for stop signal or process exit
+	done := make(chan error, 1)
+	go func() {
+		done <- r.video.cmd.Wait()
+	}()
+
+	select {
+	case <-r.stopSignal:
+		// Stop requested
+	case err := <-done:
+		if err != nil {
+			r.video.err = err
+		}
+	}
+}
+
+// startVideoRecorderMacOS starts video recording using ffmpeg with avfoundation (macOS)
+func (r *Recorder) startVideoRecorderMacOS(ready, started chan<- string, errors chan<- error) {
+	// Build ffmpeg avfoundation command for macOS
+	// ffmpeg -f avfoundation -framerate 60 -i "1:none" -c:v libx264 -preset ultrafast -pix_fmt yuv420p output.mp4
+	// Note: Screen capture index may need to be detected (1 is usually the main screen)
+	args := []string{
+		"-f", "avfoundation",
+		"-framerate", "60",
+		"-capture_cursor", "1",
+		"-capture_mouse_clicks", "1",
+		"-i", "1:none", // Screen 1 (main display), no audio for screen recording
+		"-c:v", "libx264",
+		"-preset", "ultrafast",
+		"-pix_fmt", "yuv420p",
+		"-y", // Overwrite output
+		r.video.file,
+	}
+
+	r.video.cmd = exec.Command("ffmpeg", args...)
+	r.video.cmd.Stdout = nil
+	r.video.cmd.Stderr = nil
+
+	// Signal we're ready
+	ready <- "video"
+
+	// Wait for synchronized start signal
+	<-r.startBarrier
+
+	if err := r.video.cmd.Start(); err != nil {
+		r.video.err = fmt.Errorf("failed to start ffmpeg avfoundation: %w", err)
 		errors <- r.video.err
 		return
 	}
