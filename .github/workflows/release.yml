@@ -77,8 +77,10 @@ jobs:
           # Generate checksums
           sha256sum *.tar.gz > checksums.txt
 
-          # Clean up raw binaries
-          rm -f kartoza-video-processor-linux-* kartoza-video-processor-darwin-* kartoza-video-processor-windows-*
+          # Clean up raw binaries (not the tarballs!)
+          rm -f kartoza-video-processor-linux-amd64 kartoza-video-processor-linux-arm64
+          rm -f kartoza-video-processor-darwin-amd64 kartoza-video-processor-darwin-arm64
+          rm -f kartoza-video-processor-windows-amd64.exe
 
       - name: Upload release assets
         if: github.event_name == 'release'
