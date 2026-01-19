@@ -586,3 +586,35 @@ I just tried to disable screen recording and enable all other inputs but it seem
 in the case that an output e.g. vertical video will not be created, the recording.json should have all of these options documented. Also the progress screen for processing the outputs should show the steps that are not relevant as gray text and should indicate those steps are being skipped
 something is wrong with the vertical video output. I think the length is truncated because of hte banner logo - you need to tell it the output length should match the video of the desktop
 lets tag a version and check that our github automation is working for package building for all the different formats. Make sure that deb and rpm packages pull in dependency packages as needed.
+we need to come up with a strategy that we can start and stop recording using the start and stop subcommands. Currently if I use start, there is no way to stop
+we should assume that calling start will have no title and description or other options set so just use the next sequence number and a timestamp for the folder name
+the start subcommand should have all inputs enabled: screen, webcam, audio
+
+---
+
+(Session continued from context limit)
+
+This session is being continued from a previous conversation that ran out of context.
+
+---
+
+when I run stop as a subcommand, it does not generate the output products like the vertical video etc
+
+**Summary:** Fixed CLI stop command to properly process recordings:
+1. Added `StopAndProcess(process bool)` method that can wait for processing to complete
+2. Refactored `Stop()` to use internal `stopInternal()` method
+3. Added `processRecordingsWithOutput()` for CLI console output during processing
+4. Stop command now waits for processing by default, with `--no-process` flag to skip
+5. Fixed output directory file cleanup timing (now cleaned after processing, not before)
+6. Set `createVertical` flag from recording info settings when using CLI stop
+
+---
+
+it should put the status to processing after stop is called but before outputs are all complete
+
+**Summary:** Added status tracking to recording.json:
+1. Added status field to RecordingInfo with constants: "recording", "processing", "completed", "failed"
+2. NewRecordingInfo sets initial status to "recording"
+3. After stop is called, status is set to "processing" before outputs are generated
+4. After processing completes, status is set to "completed" or "failed" based on errors
+5. Added SetStatus() method and ProcessedAt timestamp

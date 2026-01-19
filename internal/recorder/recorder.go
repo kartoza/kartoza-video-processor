@@ -196,6 +196,9 @@ func (r *Recorder) StartWithOptions(opts Options) error {
 		r.recordingInfo.Save()
 	}
 
+	// Save output directory for CLI stop command to find
+	os.WriteFile(config.OutputDirFile, []byte(outputDir), 0644)
+
 	// Create synchronization primitives
 	r.startBarrier = make(chan struct{})
 	r.stopSignal = make(chan struct{})
@@ -512,16 +515,31 @@ func (r *Recorder) startWebcamRecorder(opts Options, ready, started chan<- strin
 	<-r.stopSignal
 }
 
-// Stop stops the current recording
+// Stop stops the current recording (processing runs in background for TUI use)
 func (r *Recorder) Stop() error {
+	return r.stopInternal(false)
+}
+
+// StopAndProcess stops the recording and optionally waits for processing to complete
+// If process is true, waits for all post-processing to finish before returning
+// If process is false, only stops recording without post-processing
+func (r *Recorder) StopAndProcess(process bool) error {
+	if err := r.stopInternal(process); err != nil {
+		return err
+	}
+	return nil
+}
+
+// stopInternal is the internal stop implementation
+func (r *Recorder) stopInternal(waitForProcessing bool) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	if !r.IsRecordingLocked() {
+		r.mu.Unlock()
 		return fmt.Errorf("no recording in progress")
 	}
 
-	// Signal all recorders to stop simultaneously
+	// Signal all recorders to stop simultaneously (only if we started them in this process)
 	if r.stopSignal != nil {
 		close(r.stopSignal)
 	}
@@ -562,30 +580,93 @@ func (r *Recorder) Stop() error {
 	// Wait for all stop operations to complete
 	stopWg.Wait()
 
-	// Wait for recorder goroutines to finish
-	r.wg.Wait()
+	// Wait for recorder goroutines to finish (only if we started them)
+	if r.stopSignal != nil {
+		r.wg.Wait()
+	}
 
 	notify.RecordingStopped()
 
 	// Wait for files to be fully written
 	time.Sleep(2 * time.Second)
 
-	// Update recording info with end time and file sizes
+	// Load output directory from file if not already set (CLI stop case)
+	outputDir := readPath(config.OutputDirFile)
+
+	// Update recording info with end time, file sizes, and status
 	if r.recordingInfo != nil {
 		r.recordingInfo.SetEndTime(time.Now())
+		r.recordingInfo.SetStatus(models.StatusProcessing)
 		r.recordingInfo.UpdateFileSizes()
 		r.recordingInfo.Save()
+	} else if outputDir != "" {
+		// Try to load recording info from output directory (CLI stop case)
+		if info, err := models.LoadRecordingInfo(outputDir); err == nil {
+			r.recordingInfo = info
+			r.recordingInfo.SetEndTime(time.Now())
+			r.recordingInfo.SetStatus(models.StatusProcessing)
+			r.recordingInfo.UpdateFileSizes()
+			r.recordingInfo.Save()
+			// Set createVertical from recording info settings
+			r.createVertical = info.Settings.VerticalEnabled
+		}
 	}
-
-	// Merge recordings in background
-	go r.processRecordings()
 
 	// Clear instances
 	r.video = nil
 	r.audio = nil
 	r.webcam = nil
 
+	r.mu.Unlock()
+
+	// Process recordings - either wait or run in background
+	if waitForProcessing {
+		// Run synchronously for CLI
+		fmt.Println("Processing recordings...")
+		r.processRecordingsWithOutput()
+	} else {
+		// Run in background for TUI (TUI has its own progress display)
+		go r.processRecordings()
+	}
+
 	return nil
+}
+
+// processRecordingsWithOutput processes recordings with console output for CLI use
+func (r *Recorder) processRecordingsWithOutput() {
+	progressChan := make(chan ProgressUpdate, 10)
+
+	// Process updates in a goroutine
+	done := make(chan struct{})
+	go func() {
+		stepNames := []string{
+			"Stopping recorders",
+			"Analyzing audio",
+			"Normalizing audio",
+			"Merging video and audio",
+			"Creating vertical video",
+		}
+		for update := range progressChan {
+			if update.Step >= 0 && update.Step < len(stepNames) {
+				if update.Skipped {
+					fmt.Printf("  [SKIP] %s\n", stepNames[update.Step])
+				} else if update.Completed {
+					fmt.Printf("  [DONE] %s\n", stepNames[update.Step])
+				} else if update.Percent >= 0 {
+					// Progress update - could show a progress bar
+					fmt.Printf("  [....] %s: %.0f%%\r", stepNames[update.Step], update.Percent)
+				} else if update.Error != nil {
+					fmt.Printf("  [FAIL] %s: %v\n", stepNames[update.Step], update.Error)
+				} else {
+					fmt.Printf("  [....] %s\n", stepNames[update.Step])
+				}
+			}
+		}
+		close(done)
+	}()
+
+	r.ProcessWithProgress(progressChan)
+	<-done
 }
 
 // IsRecordingLocked checks recording status without locking (internal use)
@@ -607,6 +688,16 @@ type ProgressUpdate struct {
 // ProcessWithProgress processes recordings and sends progress updates to the channel
 func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 	defer close(progressChan)
+
+	// Try to load recording info from output directory if not already loaded
+	if r.recordingInfo == nil {
+		outputDir := readPath(config.OutputDirFile)
+		if outputDir != "" {
+			if info, err := models.LoadRecordingInfo(outputDir); err == nil {
+				r.recordingInfo = info
+			}
+		}
+	}
 
 	// Get file paths from recording info or fallback to path files
 	var videoFile, audioFile, webcamFile string
@@ -656,12 +747,23 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		CreateVertical: r.createVertical && webcamFile != "",
 	}
 
-	// Add logo options from the recording's logo selection
-	mergeOpts.ProductLogo1 = r.logoSelection.LeftLogo
-	mergeOpts.ProductLogo2 = r.logoSelection.RightLogo
-	mergeOpts.CompanyLogo = r.logoSelection.BottomLogo
-	mergeOpts.TitleColor = r.logoSelection.TitleColor
-	mergeOpts.GifLoopMode = r.logoSelection.GifLoopMode
+	// Add logo options from the recording's logo selection (in-memory)
+	// or from recording info settings (CLI stop case)
+	if r.logoSelection.LeftLogo != "" || r.logoSelection.RightLogo != "" || r.logoSelection.BottomLogo != "" {
+		mergeOpts.ProductLogo1 = r.logoSelection.LeftLogo
+		mergeOpts.ProductLogo2 = r.logoSelection.RightLogo
+		mergeOpts.CompanyLogo = r.logoSelection.BottomLogo
+		mergeOpts.TitleColor = r.logoSelection.TitleColor
+		mergeOpts.GifLoopMode = r.logoSelection.GifLoopMode
+	} else if r.recordingInfo != nil {
+		// Load from recording info settings (CLI stop case)
+		mergeOpts.ProductLogo1 = r.recordingInfo.Settings.LeftLogo
+		mergeOpts.ProductLogo2 = r.recordingInfo.Settings.RightLogo
+		mergeOpts.CompanyLogo = r.recordingInfo.Settings.BottomLogo
+		mergeOpts.TitleColor = r.recordingInfo.Settings.TitleColor
+		mergeOpts.GifLoopMode = config.GifLoopMode(r.recordingInfo.Settings.GifLoopMode)
+		mergeOpts.CreateVertical = r.recordingInfo.Settings.VerticalEnabled && webcamFile != ""
+	}
 	// Check if any logos are configured
 	mergeOpts.AddLogos = mergeOpts.ProductLogo1 != "" || mergeOpts.ProductLogo2 != "" || mergeOpts.CompanyLogo != ""
 
@@ -673,8 +775,10 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 
 	mergeResult, err := m.Merge(mergeOpts)
 
+	hasErrors := false
 	if err != nil {
 		notify.Error("Recording Error", "Failed to merge recordings")
+		hasErrors = true
 		if r.recordingInfo != nil {
 			r.recordingInfo.Processing.Errors = append(r.recordingInfo.Processing.Errors, err.Error())
 		}
@@ -690,6 +794,7 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		}
 		r.recordingInfo.Processing.NormalizeApplied = mergeResult.NormalizeApplied
 		r.recordingInfo.Processing.VerticalCreated = mergeResult.VerticalFile != ""
+		r.recordingInfo.Processing.ProcessedAt = time.Now()
 		r.recordingInfo.UpdateFileSizes()
 
 		// Update video metadata (resolution, fps, aspect ratio)
@@ -708,6 +813,13 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 			}, nil
 		})
 
+		// Set final status based on whether there were errors
+		if hasErrors {
+			r.recordingInfo.SetStatus(models.StatusFailed)
+		} else {
+			r.recordingInfo.SetStatus(models.StatusCompleted)
+		}
+
 		r.recordingInfo.Save()
 	}
 
@@ -716,6 +828,7 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 	os.Remove(config.AudioPathFile)
 	os.Remove(config.WebcamPathFile)
 	os.Remove(config.StatusFile)
+	os.Remove(config.OutputDirFile)
 }
 
 // processRecordings merges the recorded files (legacy method without progress)

@@ -11,8 +11,19 @@ import (
 	"time"
 )
 
+// Recording status constants
+const (
+	StatusRecording  = "recording"
+	StatusProcessing = "processing"
+	StatusCompleted  = "completed"
+	StatusFailed     = "failed"
+)
+
 // RecordingInfo contains all information about a recording
 type RecordingInfo struct {
+	// Current status of the recording
+	Status string `json:"status"`
+
 	// User-provided metadata
 	Metadata RecordingMetadata `json:"metadata"`
 
@@ -34,7 +45,7 @@ type RecordingInfo struct {
 	Processing ProcessingInfo `json:"processing"`
 
 	// Version info
-	AppVersion string `json:"app_version"`
+	AppVersion string    `json:"app_version"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
@@ -125,6 +136,7 @@ func NewRecordingInfo(metadata RecordingMetadata, monitor, resolution string) *R
 	hostname, _ := os.Hostname()
 
 	return &RecordingInfo{
+		Status:    StatusRecording,
 		Metadata:  metadata,
 		StartTime: time.Now(),
 		Environment: EnvironmentInfo{
@@ -140,6 +152,12 @@ func NewRecordingInfo(metadata RecordingMetadata, monitor, resolution string) *R
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
+}
+
+// SetStatus updates the recording status
+func (r *RecordingInfo) SetStatus(status string) {
+	r.Status = status
+	r.UpdatedAt = time.Now()
 }
 
 // SetEndTime sets the recording end time and calculates duration
