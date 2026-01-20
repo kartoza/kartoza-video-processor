@@ -1,0 +1,256 @@
+# History
+
+The History screen displays all your past recordings in a searchable, sortable table. From here you can browse, manage, and upload your recording library.
+
+## Screen Preview
+
+<div class="terminal-mockup">
+<div class="terminal-header">
+<div class="terminal-buttons">
+<div class="terminal-button red"></div>
+<div class="terminal-button yellow"></div>
+<div class="terminal-button green"></div>
+</div>
+<div class="terminal-title">Recording History</div>
+</div>
+<div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━ Recording History ━━━━━━━━━━━━━━━</span>
+
+<span class="t-white">Topic                    Date         Duration    Size    </span>
+<span class="t-gray">────────────────────────────────────────────────────────────</span>
+<span class="t-selected"><span class="t-orange">→</span> <span class="t-white">QGIS sketcher</span>          <span class="t-cyan">2024-01-15</span>   <span class="t-white">12:34</span>       <span class="t-green">245 MB</span></span>
+  <span class="t-blue">GIS development</span>        <span class="t-cyan">2024-01-14</span>   <span class="t-white">08:22</span>       <span class="t-green">156 MB</span>
+  <span class="t-blue">Open source</span>            <span class="t-cyan">2024-01-13</span>   <span class="t-white">15:47</span>       <span class="t-green">312 MB</span>
+  <span class="t-blue">QGIS sketcher</span>          <span class="t-cyan">2024-01-12</span>   <span class="t-white">05:18</span>       <span class="t-green">98 MB</span>
+  <span class="t-blue">General tutorials</span>      <span class="t-cyan">2024-01-10</span>   <span class="t-white">20:05</span>       <span class="t-green">425 MB</span>
+
+<span class="t-gray">────────────────────────────────────────────────────────────</span>
+<span class="t-gray">Showing 1-5 of 42 recordings</span>
+
+<span class="t-gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="t-gray">↑/k: up • ↓/j: down • enter: view • o: open folder • u: upload • d: delete • q: back</span>
+</div>
+</div>
+
+## Table Columns
+
+### Topic
+
+<span class="t-blue">**Topic**</span>
+
+The category/topic assigned during recording setup. Recordings are organized into folders by topic.
+
+---
+
+### Date
+
+<span class="t-cyan">**Date**</span>
+
+The date the recording was created, formatted as `YYYY-MM-DD`.
+
+---
+
+### Duration
+
+<span class="t-white">**Duration**</span>
+
+The length of the recording in `MM:SS` or `HH:MM:SS` format.
+
+---
+
+### Size
+
+<span class="t-green">**Size**</span>
+
+The file size of the final processed video. Displayed in human-readable format (KB, MB, GB).
+
+---
+
+### Folder
+
+<span class="t-gray">**Folder**</span>
+
+The path to the recording's output folder. Shown when selected.
+
+## Actions
+
+### View Details
+
+Press ++enter++ to view detailed information about the selected recording.
+
+<div class="terminal-mockup">
+<div class="terminal-header">
+<div class="terminal-buttons">
+<div class="terminal-button red"></div>
+<div class="terminal-button yellow"></div>
+<div class="terminal-button green"></div>
+</div>
+<div class="terminal-title">Recording Details</div>
+</div>
+<div class="terminal-content"><span class="t-header">━━━━━━━━━━━━ Recording Details ━━━━━━━━━━━━</span>
+
+<span class="t-orange">Title:</span>       <span class="t-white">Introduction to sketcher sketches</span>
+<span class="t-blue">Topic:</span>       <span class="t-white">QGIS sketcher sketches</span>
+<span class="t-blue">Episode:</span>     <span class="t-white">#42</span>
+<span class="t-blue">Date:</span>        <span class="t-cyan">2024-01-15 14:32:05</span>
+<span class="t-blue">Duration:</span>    <span class="t-white">12 minutes 34 seconds</span>
+<span class="t-blue">Size:</span>        <span class="t-green">245 MB</span>
+
+<span class="t-header">Description</span>
+<span class="t-gray">Learn how to use the sketcher tool in QGIS for</span>
+<span class="t-gray">creating quick sketches and annotations...</span>
+
+<span class="t-header">Files</span>
+<span class="t-gray">• final.mp4 (245 MB)</span>
+<span class="t-gray">• final_vertical.mp4 (180 MB)</span>
+<span class="t-gray">• metadata.json</span>
+
+  <span class="t-blue">[ Back ]</span>    <span class="t-green">[ Upload ]</span>    <span class="t-cyan">[ Open Folder ]</span>
+</div>
+</div>
+
+---
+
+### Open Folder
+
+Press ++o++ to open the recording's folder in your system file manager.
+
+**Behavior:**
+
+- Opens folder containing `final.mp4` and related files
+- Uses system default file manager (xdg-open on Linux)
+- Allows manual file management
+
+---
+
+### Upload to YouTube
+
+Press ++u++ to upload the selected recording to YouTube.
+
+**Requirements:**
+
+- YouTube must be configured in [Options](options.md)
+- OAuth authentication must be complete
+- `final.mp4` must exist
+
+Navigates to [YouTube Upload](youtube-upload.md) screen.
+
+---
+
+### Delete Recording
+
+Press ++d++ to delete the selected recording.
+
+**Confirmation Dialog:**
+
+<div class="terminal-mockup">
+<div class="terminal-header">
+<div class="terminal-buttons">
+<div class="terminal-button red"></div>
+<div class="terminal-button yellow"></div>
+<div class="terminal-button green"></div>
+</div>
+<div class="terminal-title">Confirm Delete</div>
+</div>
+<div class="terminal-content"><span class="t-red">⚠ Delete Recording?</span>
+
+<span class="t-white">This will permanently delete:</span>
+<span class="t-gray">• Introduction to sketcher sketches</span>
+<span class="t-gray">• All associated files (245 MB)</span>
+
+<span class="t-red">This action cannot be undone!</span>
+
+  <span class="t-red">[ Delete ]</span>    <span class="t-blue">[ Cancel ]</span>
+</div>
+</div>
+
+!!! warning "Permanent Action"
+    Deletion removes all files in the recording folder. This cannot be undone.
+
+## Navigation
+
+### Scrolling
+
+| Key | Action |
+|-----|--------|
+| ++up++ / ++k++ | Move selection up |
+| ++down++ / ++j++ | Move selection down |
+| ++page-up++ | Scroll up one page |
+| ++page-down++ | Scroll down one page |
+| ++home++ | Go to first recording |
+| ++end++ | Go to last recording |
+
+### Actions
+
+| Key | Action |
+|-----|--------|
+| ++enter++ | View recording details |
+| ++o++ | Open folder in file manager |
+| ++u++ | Upload to YouTube |
+| ++d++ | Delete recording |
+| ++q++ / ++esc++ | Return to main menu |
+
+## Empty State
+
+When no recordings exist:
+
+<div class="terminal-mockup">
+<div class="terminal-header">
+<div class="terminal-buttons">
+<div class="terminal-button red"></div>
+<div class="terminal-button yellow"></div>
+<div class="terminal-button green"></div>
+</div>
+<div class="terminal-title">Recording History</div>
+</div>
+<div class="terminal-content" style="text-align: center; padding: 60px 20px;"><span class="t-gray">No recordings yet.</span>
+
+<span class="t-gray">Create your first recording from the main menu!</span>
+
+  <span class="t-blue">[ Return to Menu ]</span>
+</div>
+</div>
+
+## File Organization
+
+Recordings are stored in:
+
+```
+~/Videos/Screencasts/
+├── QGIS sketcher sketches/
+│   ├── Introduction to sketcher/
+│   │   ├── final.mp4
+│   │   ├── final_vertical.mp4
+│   │   └── metadata.json
+│   └── Advanced sketching/
+│       ├── final.mp4
+│       └── metadata.json
+├── GIS development tutorials/
+│   └── ...
+└── General tutorials/
+    └── ...
+```
+
+## Keyboard Shortcuts Summary
+
+| Key | Action |
+|-----|--------|
+| ++up++ / ++k++ | Move up |
+| ++down++ / ++j++ | Move down |
+| ++enter++ | View details |
+| ++o++ | Open folder |
+| ++u++ | Upload to YouTube |
+| ++d++ | Delete recording |
+| ++q++ / ++esc++ | Back to menu |
+
+## Workflow Position
+
+This screen is accessed from:
+
+- **[Main Menu](main-menu.md)** → Select "Recording History"
+- **[Processing](processing.md)** → "Return to Menu" then "Recording History"
+
+## Related Pages
+
+- **[Main Menu](main-menu.md)** - Return to main navigation
+- **[YouTube Upload](youtube-upload.md)** - Upload recordings
+- **[Processing](processing.md)** - How recordings are created

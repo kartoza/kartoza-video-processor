@@ -61,3 +61,6 @@ packaging/debian/*.deb
 packaging/rpm/RPMS/
 packaging/snap/*.snap
 build-dir/
+
+# MkDocs build output
+site/

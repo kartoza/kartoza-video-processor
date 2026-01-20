@@ -68,7 +68,7 @@ func (u *Uploader) Upload(ctx context.Context, opts UploadOptions, progressFunc 
 	if err != nil {
 		return nil, fmt.Errorf("failed to open video file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Get file size for progress
 	fileInfo, err := file.Stat()
@@ -151,7 +151,7 @@ func (u *Uploader) SetThumbnail(ctx context.Context, videoID, thumbnailPath stri
 	if err != nil {
 		return fmt.Errorf("failed to open thumbnail: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	call := u.service.Thumbnails.Set(videoID)
 	call = call.Media(file)

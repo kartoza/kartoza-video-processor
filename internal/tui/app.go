@@ -223,7 +223,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case recordingSetupCompleteMsg:
 		// Recording setup is complete, save presets for next time and start countdown
-		m.recordingSetup.SaveAllPresets()
+		_ = m.recordingSetup.SaveAllPresets()
 		m.metadata = m.recordingSetup.GetMetadata()
 		m.screen = ScreenRecording
 		m.state = stateCountdown
@@ -458,7 +458,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case recordingSetupCompleteMsg:
 		// Recording setup is complete, save presets for next time and start countdown
-		m.recordingSetup.SaveAllPresets()
+		_ = m.recordingSetup.SaveAllPresets()
 		m.metadata = m.recordingSetup.GetMetadata()
 		m.screen = ScreenRecording
 		m.state = stateCountdown
@@ -670,12 +670,13 @@ func (m AppModel) handleRecordingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, key.NewBinding(key.WithKeys(" ", "enter"))):
 		if m.status.IsRecording || m.isPaused {
-			if m.selectedButton == ButtonPause {
+			switch m.selectedButton {
+			case ButtonPause:
 				if m.isPaused {
 					return m.handleResume()
 				}
 				return m.handlePause()
-			} else if m.selectedButton == ButtonStop {
+			case ButtonStop:
 				return m.handleStop()
 			}
 		}
@@ -1209,69 +1210,6 @@ func (m AppModel) renderRecordingButtons() string {
 
 	// Join buttons horizontally with spacing
 	return lipgloss.JoinHorizontal(lipgloss.Center, pauseBtn, "    ", stopBtn)
-}
-
-// renderMonitors renders the monitor list
-func (m AppModel) renderMonitors(cursorMonitor string) string {
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorBlue).
-		MarginBottom(1)
-
-	markerStyle := lipgloss.NewStyle().
-		Foreground(ColorOrange).
-		Bold(true)
-
-	monitorStyle := lipgloss.NewStyle().
-		Foreground(ColorWhite)
-
-	dimStyle := lipgloss.NewStyle().
-		Foreground(ColorGray)
-
-	var content string
-	content += titleStyle.Render("Available Monitors") + "\n"
-
-	if len(m.monitors) == 0 {
-		content += dimStyle.Render("No monitors detected")
-	} else {
-		for _, mon := range m.monitors {
-			marker := "  "
-			style := monitorStyle
-			if mon.Name == cursorMonitor {
-				marker = markerStyle.Render("→ ")
-				style = ActiveStyle
-			}
-			line := fmt.Sprintf("%s%s (%dx%d)", marker, mon.Name, mon.Width, mon.Height)
-			content += style.Render(line) + "\n"
-		}
-	}
-
-	return content
-}
-
-// renderRecordingInfo renders info about the current recording
-func (m AppModel) renderRecordingInfo() string {
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorRed).
-		MarginBottom(1)
-
-	labelStyle := lipgloss.NewStyle().
-		Foreground(ColorGray)
-
-	valueStyle := lipgloss.NewStyle().
-		Foreground(ColorWhite)
-
-	var content string
-	content += titleStyle.Render("Recording In Progress") + "\n"
-	content += labelStyle.Render("Video: ") + valueStyle.Render(m.status.VideoFile) + "\n"
-	content += labelStyle.Render("Audio: ") + valueStyle.Render(m.status.AudioFile) + "\n"
-
-	if m.status.WebcamFile != "" {
-		content += labelStyle.Render("Webcam: ") + valueStyle.Render(m.status.WebcamFile) + "\n"
-	}
-
-	return content
 }
 
 // renderHelp renders the help content

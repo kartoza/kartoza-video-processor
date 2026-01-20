@@ -22,9 +22,9 @@ func TestNew(t *testing.T) {
 
 func TestRecorder_IsRecording_NoPIDFiles(t *testing.T) {
 	// Clean up any existing PID files
-	os.Remove(config.VideoPIDFile)
-	os.Remove(config.AudioPIDFile)
-	os.Remove(config.WebcamPIDFile)
+	_ = os.Remove(config.VideoPIDFile)
+	_ = os.Remove(config.AudioPIDFile)
+	_ = os.Remove(config.WebcamPIDFile)
 
 	rec := New()
 
@@ -35,10 +35,10 @@ func TestRecorder_IsRecording_NoPIDFiles(t *testing.T) {
 
 func TestRecorder_GetStatus_NotRecording(t *testing.T) {
 	// Clean up any existing PID files
-	os.Remove(config.VideoPIDFile)
-	os.Remove(config.AudioPIDFile)
-	os.Remove(config.WebcamPIDFile)
-	os.Remove(config.StatusFile)
+	_ = os.Remove(config.VideoPIDFile)
+	_ = os.Remove(config.AudioPIDFile)
+	_ = os.Remove(config.WebcamPIDFile)
+	_ = os.Remove(config.StatusFile)
 
 	rec := New()
 	status := rec.GetStatus()
@@ -169,7 +169,7 @@ func TestReadPID_InvalidContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	pid := readPID(tmpFile)
 
@@ -185,7 +185,7 @@ func TestReadPID_ValidContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	pid := readPID(tmpFile)
 
@@ -196,7 +196,7 @@ func TestReadPID_ValidContent(t *testing.T) {
 
 func TestWritePID(t *testing.T) {
 	tmpFile := filepath.Join(os.TempDir(), "test-write-pid")
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	writePID(tmpFile, 54321)
 
@@ -226,7 +226,7 @@ func TestReadPath_ValidContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	path := readPath(tmpFile)
 
@@ -237,9 +237,9 @@ func TestReadPath_ValidContent(t *testing.T) {
 
 func TestRecorder_Stop_NoRecording(t *testing.T) {
 	// Clean up any existing PID files
-	os.Remove(config.VideoPIDFile)
-	os.Remove(config.AudioPIDFile)
-	os.Remove(config.WebcamPIDFile)
+	_ = os.Remove(config.VideoPIDFile)
+	_ = os.Remove(config.AudioPIDFile)
+	_ = os.Remove(config.WebcamPIDFile)
 
 	rec := New()
 	err := rec.Stop()
@@ -261,7 +261,7 @@ func TestCheckPID_InvalidPID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	result := checkPID(tmpFile)
 
@@ -278,7 +278,7 @@ func TestCheckPID_DeadProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	result := checkPID(tmpFile)
 
@@ -291,9 +291,9 @@ func TestCheckPID_DeadProcess(t *testing.T) {
 
 func TestRecorder_IsRecordingLocked(t *testing.T) {
 	// Clean up any existing PID files
-	os.Remove(config.VideoPIDFile)
-	os.Remove(config.AudioPIDFile)
-	os.Remove(config.WebcamPIDFile)
+	_ = os.Remove(config.VideoPIDFile)
+	_ = os.Remove(config.AudioPIDFile)
+	_ = os.Remove(config.WebcamPIDFile)
 
 	rec := New()
 

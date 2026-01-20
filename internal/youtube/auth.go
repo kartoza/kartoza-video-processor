@@ -133,7 +133,7 @@ func (a *Auth) authenticateInternal(ctx context.Context, onURL func(string)) err
 	if err != nil {
 		return fmt.Errorf("failed to start callback server: %w", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	port := listener.Addr().(*net.TCPAddr).Port
 	redirectURL := fmt.Sprintf("http://127.0.0.1:%d/callback", port)
@@ -187,7 +187,7 @@ func (a *Auth) authenticateInternal(ctx context.Context, onURL func(string)) err
 			if errParam := r.URL.Query().Get("error"); errParam != "" {
 				errDesc := r.URL.Query().Get("error_description")
 				errChan <- fmt.Errorf("authorization error: %s - %s", errParam, errDesc)
-				fmt.Fprintf(w, `<!DOCTYPE html>
+				_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
 <html><head><title>Authorization Failed</title>
 <style>body{font-family:sans-serif;text-align:center;padding:50px;}</style>
 </head><body>
@@ -209,7 +209,7 @@ func (a *Auth) authenticateInternal(ctx context.Context, onURL func(string)) err
 			codeChan <- code
 
 			// Show success page
-			fmt.Fprint(w, `<!DOCTYPE html>
+			_, _ = fmt.Fprint(w, `<!DOCTYPE html>
 <html><head><title>Authorization Successful</title>
 <style>
 body{font-family:sans-serif;text-align:center;padding:50px;background:#1a1a2e;color:#fff;}
@@ -251,7 +251,7 @@ h1{color:#f97316;}
 	// Shutdown server
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	server.Shutdown(shutdownCtx)
+	_ = server.Shutdown(shutdownCtx)
 
 	// Exchange code for token with PKCE verifier
 	token, err := a.config.Exchange(ctx, code,
@@ -514,11 +514,11 @@ func (a *Auth) RevokeToken(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		var result map[string]interface{}
-		json.NewDecoder(resp.Body).Decode(&result)
+		_ = json.NewDecoder(resp.Body).Decode(&result)
 		return fmt.Errorf("revoke failed: %v", result)
 	}
 

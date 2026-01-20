@@ -195,7 +195,7 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 			// Update local metadata
 			if h.selectedRecording != nil && h.selectedRecording.Metadata.YouTube != nil {
 				h.selectedRecording.Metadata.YouTube.Privacy = msg.newPrivacy
-				h.selectedRecording.Save()
+				_ = h.selectedRecording.Save()
 				// Update in list
 				for i := range h.recordings {
 					if h.recordings[i].Files.FolderPath == h.selectedRecording.Files.FolderPath {
@@ -216,7 +216,7 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 			// Clear YouTube metadata
 			if h.selectedRecording != nil {
 				h.selectedRecording.Metadata.YouTube = nil
-				h.selectedRecording.Save()
+				_ = h.selectedRecording.Save()
 				// Update in list
 				for i := range h.recordings {
 					if h.recordings[i].Files.FolderPath == h.selectedRecording.Files.FolderPath {

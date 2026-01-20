@@ -144,8 +144,6 @@ type CountdownModel struct {
 	cancelled bool
 }
 
-// countdownDoneMsg signals countdown is complete
-type countdownDoneMsg struct{}
 
 // NewCountdownModel creates a new countdown model
 func NewCountdownModel() *CountdownModel {
@@ -357,7 +355,7 @@ func trySpeakerTest(freq int) bool {
 	// Kill after 100ms
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 	}()
 
 	return true

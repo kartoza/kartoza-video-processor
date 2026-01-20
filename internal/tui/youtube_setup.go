@@ -47,18 +47,16 @@ type YouTubeSetupModel struct {
 	authURL          string // URL for manual browser opening
 
 	// Verification data
-	isVerifying  bool
-	verifyError  string
-	channelID    string
-	channelDesc  string
-	playlists    []youtube.Playlist
+	isVerifying bool
+	verifyError string
+	channelID   string
+	playlists   []youtube.Playlist
 	playlistPage int // For scrolling through playlists
 
 	// Playlist management
-	isLoadingPlaylists   bool
-	playlistsError       string
-	selectedPlaylistIdx  int
-	newPlaylistTitle     textinput.Model
+	isLoadingPlaylists  bool
+	playlistsError      string
+	newPlaylistTitle    textinput.Model
 	newPlaylistDesc      textinput.Model
 	newPlaylistPrivacy   youtube.PrivacyStatus
 	createPlaylistFocus  int  // 0=title, 1=desc, 2=privacy
@@ -161,7 +159,7 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 			m.channelName = msg.channelName
 			// Save channel name to config
 			m.cfg.YouTube.ChannelName = msg.channelName
-			config.Save(m.cfg)
+			_ = config.Save(m.cfg)
 		}
 		return m, nil
 
@@ -169,7 +167,7 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 		m.authStatus = youtube.AuthStatusConfigured
 		m.channelName = ""
 		m.cfg.YouTube.ChannelName = ""
-		config.Save(m.cfg)
+		_ = config.Save(m.cfg)
 		m.step = YouTubeStepCredentials
 		return m, nil
 
@@ -187,7 +185,7 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 			// Save channel info to config
 			m.cfg.YouTube.ChannelName = msg.channelName
 			m.cfg.YouTube.ChannelID = msg.channelID
-			config.Save(m.cfg)
+			_ = config.Save(m.cfg)
 		}
 		return m, nil
 
@@ -221,16 +219,19 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 	}
 
 	// Update text inputs
-	if m.step == YouTubeStepCredentials {
-		if m.focusedInput == 0 {
+	switch m.step {
+	case YouTubeStepCredentials:
+		switch m.focusedInput {
+		case 0:
 			m.clientID, cmd = m.clientID.Update(msg)
-		} else {
+		default:
 			m.clientSecret, cmd = m.clientSecret.Update(msg)
 		}
-	} else if m.step == YouTubeStepCreatePlaylist {
-		if m.createPlaylistFocus == 0 {
+	case YouTubeStepCreatePlaylist:
+		switch m.createPlaylistFocus {
+		case 0:
 			m.newPlaylistTitle, cmd = m.newPlaylistTitle.Update(msg)
-		} else if m.createPlaylistFocus == 1 {
+		case 1:
 			m.newPlaylistDesc, cmd = m.newPlaylistDesc.Update(msg)
 		}
 	}
@@ -432,9 +433,10 @@ func (m *YouTubeSetupModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeSetupModel, te
 		default:
 			// Forward to focused text input
 			var cmd tea.Cmd
-			if m.createPlaylistFocus == 0 {
+			switch m.createPlaylistFocus {
+			case 0:
 				m.newPlaylistTitle, cmd = m.newPlaylistTitle.Update(msg)
-			} else if m.createPlaylistFocus == 1 {
+			case 1:
 				m.newPlaylistDesc, cmd = m.newPlaylistDesc.Update(msg)
 			}
 			return m, cmd
@@ -586,7 +588,7 @@ func (m *YouTubeSetupModel) disconnect() tea.Cmd {
 
 	return func() tea.Msg {
 		// Delete token
-		youtube.DeleteToken(configDir)
+		_ = youtube.DeleteToken(configDir)
 		return youtubeDisconnectMsg{}
 	}
 }
@@ -1550,7 +1552,7 @@ func (m *YouTubeSetupModel) renderCreatePlaylist() string {
 	rows = append(rows, "")
 
 	// Privacy field
-	privacyLabel := "  Privacy: "
+	var privacyLabel string
 	if m.createPlaylistFocus == 2 {
 		privacyLabel = focusedLabelStyle.Render("▶ Privacy: ")
 	} else {

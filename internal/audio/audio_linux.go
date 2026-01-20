@@ -52,7 +52,7 @@ func (r *Recorder) Stop() error {
 		return r.cmd.Process.Kill()
 	}
 
-	r.cmd.Wait()
+	_ = r.cmd.Wait()
 	return nil
 }
 

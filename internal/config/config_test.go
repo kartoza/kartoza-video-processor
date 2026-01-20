@@ -81,7 +81,7 @@ func TestSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Temporarily override home directory behavior by creating our own config path
 	configPath := filepath.Join(tmpDir, ConfigFileName)

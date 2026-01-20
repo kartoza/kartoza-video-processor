@@ -325,39 +325,6 @@ func easeInOutCubic(t float64) float64 {
 	return 1 - (-2*t+2)*(-2*t+2)*(-2*t+2)/2
 }
 
-// Alternative easing functions for different effects:
-
-// easeOutExpo - fast start, slow end (like a bouncing ball coming to rest)
-func easeOutExpo(t float64) float64 {
-	if t == 1 {
-		return 1
-	}
-	return 1 - mathPow(2, -10*t)
-}
-
-// easeInExpo - slow start, fast end
-func easeInExpo(t float64) float64 {
-	if t == 0 {
-		return 0
-	}
-	return mathPow(2, 10*(t-1))
-}
-
-// mathPow is a simple power function for the easing calculations
-func mathPow(base, exp float64) float64 {
-	result := 1.0
-	for i := 0; i < int(exp); i++ {
-		result *= base
-	}
-	// Handle fractional exponents approximately
-	if exp != float64(int(exp)) {
-		// Use repeated multiplication approximation
-		frac := exp - float64(int(exp))
-		result *= (1 + frac*(base-1))
-	}
-	return result
-}
-
 // ExitSplashModel represents the exit splash screen state (reverse of entry splash)
 // It starts at full size and shrinks to tiny
 type ExitSplashModel struct {

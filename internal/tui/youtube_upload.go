@@ -79,8 +79,7 @@ type YouTubeUploadModel struct {
 	uploadProgressCh chan uploadUpdate
 
 	// Status
-	errorMessage  string
-	statusMessage string
+	errorMessage string
 
 	// Config
 	cfg *config.Config
@@ -115,9 +114,10 @@ func NewYouTubeUploadModel(videoPath, outputDir, title, description, topic strin
 
 	// Determine default privacy from config
 	defaultPrivacyIdx := 0 // Default to unlisted
-	if cfg.YouTube.DefaultPrivacy == youtube.PrivacyPrivate {
+	switch cfg.YouTube.DefaultPrivacy {
+	case youtube.PrivacyPrivate:
 		defaultPrivacyIdx = 1
-	} else if cfg.YouTube.DefaultPrivacy == youtube.PrivacyPublic {
+	case youtube.PrivacyPublic:
 		defaultPrivacyIdx = 2
 	}
 
@@ -212,7 +212,7 @@ func (m *YouTubeUploadModel) Update(msg tea.Msg) (*YouTubeUploadModel, tea.Cmd) 
 			if m.selectedPlaylist >= 0 && m.selectedPlaylist < len(m.playlists) {
 				m.cfg.YouTube.DefaultPlaylistID = m.playlists[m.selectedPlaylist].ID
 				m.cfg.YouTube.DefaultPlaylistName = m.playlists[m.selectedPlaylist].Title
-				config.Save(m.cfg)
+				_ = config.Save(m.cfg)
 			}
 		}
 		// Refresh YouTube status
@@ -261,7 +261,7 @@ func (m *YouTubeUploadModel) saveYouTubeMetadata(result *youtube.UploadResult) {
 	}
 
 	m.recordingInfo.Metadata.YouTube = ytMeta
-	m.recordingInfo.Save()
+	_ = m.recordingInfo.Save()
 }
 
 // handleKeyMsg handles keyboard input

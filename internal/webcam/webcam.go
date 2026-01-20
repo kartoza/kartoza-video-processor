@@ -119,12 +119,12 @@ func GetFullVideoInfo(filepath string) (*VideoMetadata, error) {
 
 	// Parse duration
 	if probeResult.Format.Duration != "" {
-		fmt.Sscanf(probeResult.Format.Duration, "%f", &meta.Duration)
+		_, _ = fmt.Sscanf(probeResult.Format.Duration, "%f", &meta.Duration)
 	}
 
 	// Parse bitrate
 	if stream.BitRate != "" {
-		fmt.Sscanf(stream.BitRate, "%d", &meta.Bitrate)
+		_, _ = fmt.Sscanf(stream.BitRate, "%d", &meta.Bitrate)
 	}
 
 	// Calculate aspect ratio

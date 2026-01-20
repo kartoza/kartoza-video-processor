@@ -27,7 +27,7 @@ func NewProcessor(opts models.AudioProcessingOptions) *Processor {
 
 // AnalyzeLoudness performs first-pass loudnorm analysis
 func (p *Processor) AnalyzeLoudness(inputFile string) (*models.LoudnormStats, error) {
-	notify.ProcessingStep("Analyzing audio levels...")
+	_ = notify.ProcessingStep("Analyzing audio levels...")
 
 	filter := fmt.Sprintf("loudnorm=I=%.1f:TP=%.1f:LRA=%.1f:print_format=json",
 		p.options.TargetLoudness,
@@ -58,7 +58,7 @@ func (p *Processor) AnalyzeLoudness(inputFile string) (*models.LoudnormStats, er
 
 // Normalize performs two-pass loudness normalization
 func (p *Processor) Normalize(inputFile, outputFile string, stats *models.LoudnormStats) error {
-	notify.ProcessingStep("Normalizing audio...")
+	_ = notify.ProcessingStep("Normalizing audio...")
 
 	filter := fmt.Sprintf(
 		"loudnorm=I=%.1f:TP=%.1f:LRA=%.1f:measured_I=%s:measured_TP=%s:measured_LRA=%s:measured_thresh=%s:linear=true:print_format=summary",
@@ -92,12 +92,12 @@ func (p *Processor) Process(inputFile, outputFile string) error {
 	if p.options.NormalizeEnabled {
 		stats, err := p.AnalyzeLoudness(inputFile)
 		if err != nil {
-			notify.Warning("Audio Normalization Warning", "Using original audio")
+			_ = notify.Warning("Audio Normalization Warning", "Using original audio")
 			return nil
 		}
 
 		if err := p.Normalize(inputFile, outputFile, stats); err != nil {
-			notify.Warning("Audio Normalization Warning", "Using original audio")
+			_ = notify.Warning("Audio Normalization Warning", "Using original audio")
 			return nil
 		}
 	}

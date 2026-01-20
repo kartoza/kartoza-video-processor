@@ -203,10 +203,10 @@ func concatenateParts(parts []string, outputFile string) error {
 		// FFmpeg concat format: file 'path'
 		// Need to escape single quotes in path
 		escapedPath := strings.ReplaceAll(part, "'", "'\\''")
-		fmt.Fprintf(f, "file '%s'\n", escapedPath)
+		_, _ = fmt.Fprintf(f, "file '%s'\n", escapedPath)
 	}
-	f.Close()
-	defer os.Remove(listFile)
+	_ = f.Close()
+	defer func() { _ = os.Remove(listFile) }()
 
 	// Run FFmpeg to concatenate
 	cmd := exec.Command("ffmpeg",
@@ -232,13 +232,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 
 	destination, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer destination.Close()
+	defer func() { _ = destination.Close() }()
 
 	_, err = io.Copy(destination, source)
 	return err
@@ -309,7 +309,7 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 		stats, err = processor.AnalyzeLoudness(opts.AudioFile)
 		if err != nil {
 			m.reportProgress(StepAnalyzingAudio, true, true, err)
-			notify.Warning("Audio Analysis Warning", "Skipping normalization")
+			_ = notify.Warning("Audio Analysis Warning", "Skipping normalization")
 		} else {
 			m.reportProgress(StepAnalyzingAudio, true, false, nil)
 		}
@@ -324,7 +324,7 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 		if m.audioOpts.NormalizeEnabled && stats != nil {
 			if err := processor.Normalize(opts.AudioFile, normalizedAudio, stats); err != nil {
 				m.reportProgress(StepNormalizing, true, true, err)
-				notify.Warning("Audio Normalization Warning", "Using original audio")
+				_ = notify.Warning("Audio Normalization Warning", "Using original audio")
 				normalizedAudio = opts.AudioFile
 			} else {
 				result.NormalizeApplied = true
@@ -360,19 +360,19 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	switch {
 	case hasVideo && hasAudio:
 		// Standard merge: video + audio
-		notify.ProcessingStep("Merging video and audio...")
+		_ = notify.ProcessingStep("Merging video and audio...")
 		mergeErr = m.mergeVideoAudio(opts.VideoFile, normalizedAudio, outputFile)
 	case hasVideo && !hasAudio:
 		// Video only: copy/re-encode video without audio
-		notify.ProcessingStep("Processing video (no audio)...")
+		_ = notify.ProcessingStep("Processing video (no audio)...")
 		mergeErr = m.processVideoOnly(opts.VideoFile, outputFile)
 	case !hasVideo && hasWebcam && hasAudio:
 		// Webcam + audio only (no screen video)
-		notify.ProcessingStep("Merging webcam and audio...")
+		_ = notify.ProcessingStep("Merging webcam and audio...")
 		mergeErr = m.mergeVideoAudio(opts.WebcamFile, normalizedAudio, outputFile)
 	case !hasVideo && hasWebcam && !hasAudio:
 		// Webcam only: copy/re-encode webcam without audio
-		notify.ProcessingStep("Processing webcam video (no audio)...")
+		_ = notify.ProcessingStep("Processing webcam video (no audio)...")
 		mergeErr = m.processVideoOnly(opts.WebcamFile, outputFile)
 	}
 
@@ -383,7 +383,7 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	m.reportProgress(StepMerging, true, false, nil)
 
 	result.MergedFile = outputFile
-	notify.RecordingComplete(filepath.Base(outputFile))
+	_ = notify.RecordingComplete(filepath.Base(outputFile))
 
 	// Step 4: Create vertical video with webcam if available
 	m.reportProgress(StepCreatingVertical, false, false, nil)
@@ -399,11 +399,11 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 
 		if verticalErr != nil {
 			m.reportProgress(StepCreatingVertical, true, true, verticalErr)
-			notify.Warning("Vertical Video Warning", "Failed to create vertical video")
+			_ = notify.Warning("Vertical Video Warning", "Failed to create vertical video")
 		} else {
 			result.VerticalFile = verticalFile
 			m.reportProgress(StepCreatingVertical, true, false, nil)
-			notify.VerticalComplete(filepath.Base(verticalFile))
+			_ = notify.VerticalComplete(filepath.Base(verticalFile))
 		}
 	} else {
 		m.reportProgress(StepCreatingVertical, true, true, nil)
@@ -473,7 +473,7 @@ const (
 // createVerticalVideo creates a vertical video with webcam at the bottom
 // Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
 func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFile string, opts *MergeOptions) error {
-	notify.ProcessingStep("Creating vertical video (1080x1920) with webcam...")
+	_ = notify.ProcessingStep("Creating vertical video (1080x1920) with webcam...")
 
 	// Get screen video dimensions
 	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
@@ -515,9 +515,9 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 
 	// Copy logos to output directory if needed
 	var logo1Path, logo2Path, companyLogoPath string
-	gifLoopMode := opts.GifLoopMode
-	if gifLoopMode == "" {
-		gifLoopMode = config.GifLoopContinuous // Default to continuous
+	gifLoopMode := config.GifLoopContinuous // Default to continuous
+	if opts != nil && opts.GifLoopMode != "" {
+		gifLoopMode = opts.GifLoopMode
 	}
 	if opts != nil && opts.AddLogos && opts.OutputDir != "" {
 		if opts.ProductLogo1 != "" {
@@ -672,7 +672,7 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 // createVerticalVideoNoAudio creates a vertical video with webcam but without audio
 // Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
 func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile string, opts *MergeOptions) error {
-	notify.ProcessingStep("Creating vertical video (1080x1920) with webcam (no audio)...")
+	_ = notify.ProcessingStep("Creating vertical video (1080x1920) with webcam (no audio)...")
 
 	// Get screen video dimensions
 	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
@@ -705,9 +705,9 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 
 	// Copy logos to output directory if needed
 	var logo1Path, logo2Path, companyLogoPath string
-	gifLoopMode := opts.GifLoopMode
-	if gifLoopMode == "" {
-		gifLoopMode = config.GifLoopContinuous
+	gifLoopMode := config.GifLoopContinuous // Default to continuous
+	if opts != nil && opts.GifLoopMode != "" {
+		gifLoopMode = opts.GifLoopMode
 	}
 	if opts != nil && opts.AddLogos && opts.OutputDir != "" {
 		if opts.ProductLogo1 != "" {
@@ -859,13 +859,13 @@ func (m *Merger) copyLogoToOutputDir(srcPath, outputDir, baseName string) string
 	if err != nil {
 		return ""
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	dst, err := os.Create(destPath)
 	if err != nil {
 		return ""
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 
 	if _, err := io.Copy(dst, src); err != nil {
 		return ""

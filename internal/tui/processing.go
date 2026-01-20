@@ -84,11 +84,12 @@ func (p *ProcessingState) ConfigureSteps(hasAudio, hasScreen, hasWebcam, createV
 // SetStepByIndex directly sets a step's status by index
 func (p *ProcessingState) SetStepByIndex(index int, status StepStatus) {
 	if index >= 0 && index < len(p.Steps) {
-		if status == StepRunning {
+		switch status {
+		case StepRunning:
 			p.Steps[index].StartTime = time.Now()
 			p.Steps[index].Progress = -1 // Indeterminate by default
 			p.CurrentStep = index
-		} else if status == StepComplete || status == StepSkipped || status == StepFailed {
+		case StepComplete, StepSkipped, StepFailed:
 			p.Steps[index].EndTime = time.Now()
 			p.Steps[index].Progress = 100 // Mark as complete
 		}

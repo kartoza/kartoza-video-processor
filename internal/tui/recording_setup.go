@@ -52,9 +52,6 @@ type RecordingSetupModel struct {
 	numberInput textinput.Model
 	descInput   textarea.Model
 
-	// Form values
-	topic string
-
 	// Options (bool toggles)
 	recordAudio   bool
 	recordWebcam  bool
@@ -845,8 +842,7 @@ func (m *RecordingSetupModel) renderToggle(value bool, focused bool) string {
 }
 
 func (m *RecordingSetupModel) renderToggleWithDisabled(value bool, focused bool, disabled bool) string {
-	yes := "Yes"
-	no := "No"
+	var yes, no string
 
 	if disabled {
 		// Disabled state - show dimmed

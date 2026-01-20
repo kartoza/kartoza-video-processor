@@ -12,6 +12,15 @@
         pkgs = nixpkgs.legacyPackages.${system};
         version = "0.1.0";
 
+        # MkDocs with Material theme for documentation
+        mkdocsEnv = pkgs.python3.withPackages (ps: with ps; [
+          mkdocs
+          mkdocs-material
+          mkdocs-minify-plugin
+          pygments
+          pymdown-extensions
+        ]);
+
         # Helper function for cross-compilation
         mkPackage = { pkgs, system, GOOS, GOARCH }:
           pkgs.buildGoModule {
@@ -161,6 +170,9 @@
             pipewire
             libnotify
 
+            # Documentation
+            mkdocsEnv
+
             # Nix tools
             nil
             nixpkgs-fmt
@@ -188,6 +200,10 @@
             alias gom='go mod tidy'
             alias gol='golangci-lint run'
 
+            # Documentation aliases
+            alias docs='mkdocs serve'
+            alias docs-build='mkdocs build'
+
             echo ""
             echo "🎬 Kartoza Video Processor Development Environment"
             echo ""
@@ -197,6 +213,10 @@
             echo "  gob  - Build binary"
             echo "  gom  - Tidy go modules"
             echo "  gol  - Run linter"
+            echo ""
+            echo "Documentation:"
+            echo "  docs       - Serve docs locally (http://localhost:8000)"
+            echo "  docs-build - Build static docs site"
             echo ""
             echo "Make targets:"
             echo "  make build    - Build binary"

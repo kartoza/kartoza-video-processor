@@ -114,7 +114,7 @@ func (w *Webcam) Stop() error {
 	}
 
 	// Wait for process to finish
-	w.cmd.Wait()
+	_ = w.cmd.Wait()
 	return nil
 }
 
