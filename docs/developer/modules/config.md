@@ -198,7 +198,7 @@ func defaultConfig() *Config {
 {
   "topics": [
     {
-      "name": "QGIS sketcher sketches",
+      "name": "QGIS sketches",
       "color": "#FF9500"
     },
     {

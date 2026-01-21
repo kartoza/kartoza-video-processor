@@ -910,3 +910,9 @@ if we are reprocessing a video it should skip the stopping recording step as the
 the video preview v keybind should show the vertical video not the merged one. you can make another bind for the merged audio and video and another (a?) for the audio only playback
 2026-01-21 08:07:11 - add o to open the work folder and the a bind should play the normalised final audio track
 2026-01-21 08:16:00 - the o should open the folder with nautils / finder / explorer as needed
+2026-01-21 12:23:25 - the youtube uploader screen should let me select whether i want to upload the vertical video or just the screen and voice track
+2026-01-21 21:29:59 - in the status column, if a video has been uploaded to youtube, a clapper icon should be added next to any other icons to indicate this
+2026-01-21 21:35:57 - when the video is finished processing, show the youtube upload button on the progress page. Also update the youtube update to have a slider to choose whether to upload the vertical or merged video
+2026-01-21 21:44:18 - The video title and description needs to be spell checked and grammar checked (UK english) and any issues highlighted
+2026-01-21 22:10:00 - if I edit the recording from the history item edit screen, it should also spell check the title and description too.
+2026-01-21 22:30:00 - when you edit the details of a video from the history item list the form is beautifully presented. The form for creating a new video should be stylistically the same

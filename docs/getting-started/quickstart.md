@@ -57,7 +57,7 @@ Fill in the recording details:
 
 <span class="t-orange">Title:</span>     <span class="t-white">My First Recording</span>
 <span class="t-blue">Episode:</span>   <span class="t-white">1</span>
-<span class="t-blue">Topic:</span>     <span class="t-white">QGIS sketcher sketches</span>
+<span class="t-blue">Topic:</span>     <span class="t-white">QGIS sketches</span>
 
 <span class="t-header">Recording Options</span>
   <span class="t-green">[✓]</span> Record Audio

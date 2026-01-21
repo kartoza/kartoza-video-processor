@@ -212,8 +212,13 @@ When all steps finish successfully:
 
 **Options after completion:**
 
-- **Upload to YouTube** - Navigate to [YouTube Upload](youtube-upload.md)
-- **Return to Menu** - Go back to [Main Menu](main-menu.md)
+| Button | Description |
+|--------|-------------|
+| **Upload to YouTube** | Navigate to [YouTube Upload](youtube-upload.md) to share your recording |
+| **Return to Menu** | Go back to [Main Menu](main-menu.md) |
+
+!!! note "YouTube Button"
+    The "Upload to YouTube" button only appears if YouTube is configured in [Options](options.md). Use ++left++ / ++right++ or ++tab++ to switch between buttons, then ++enter++ to confirm.
 
 ## Error Handling
 

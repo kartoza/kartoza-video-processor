@@ -11,42 +11,46 @@ The Recording Setup screen is where you configure all aspects of your recording 
 <div class="terminal-button yellow"></div>
 <div class="terminal-button green"></div>
 </div>
-<div class="terminal-title">Recording Setup</div>
+<div class="terminal-title">New Recording</div>
 </div>
-<div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━━ Recording Setup ━━━━━━━━━━━━━━━━</span>
-
-<span class="t-orange">Title:</span>        <span class="t-white">Introduction to QGIS sketcher</span>
-<span class="t-blue">Episode #:</span>    <span class="t-white">42</span>
-<span class="t-blue">Topic:</span>        <span class="t-white">QGIS sketcher sketches</span>  <span class="t-gray">←/→ to change</span>
-
-<span class="t-header">Recording Options</span>
-  <span class="t-green">[✓]</span> <span class="t-white">Record Audio</span>          <span class="t-gray">Capture microphone</span>
-  <span class="t-gray">[○]</span> <span class="t-gray">Record Webcam</span>         <span class="t-gray">Picture-in-picture overlay</span>
-  <span class="t-green">[✓]</span> <span class="t-white">Record Screen</span>         <span class="t-gray">Capture monitor</span>
-  <span class="t-gray">[○]</span> <span class="t-gray">Vertical Video</span>        <span class="t-gray">9:16 aspect ratio</span>
-  <span class="t-green">[✓]</span> <span class="t-white">Add Logo Overlays</span>     <span class="t-gray">Brand your video</span>
-
-<span class="t-header">Logo Configuration</span>     <span class="t-gray">(requires "Add Logo Overlays")</span>
-  <span class="t-blue">Left Logo:</span>    <span class="t-cyan">kartoza-logo.gif</span>    <span class="t-gray">←/→ to change</span>
-  <span class="t-blue">Right Logo:</span>   <span class="t-cyan">qgis-sketcher.png</span>   <span class="t-gray">←/→ to change</span>
-  <span class="t-blue">Bottom Logo:</span>  <span class="t-gray">(none)</span>              <span class="t-gray">←/→ to change</span>
-  <span class="t-blue">Title Color:</span>  <span class="t-orange">Orange</span>              <span class="t-gray">←/→ to change</span>
-  <span class="t-blue">GIF Mode:</span>     <span class="t-white">Continuous</span>          <span class="t-gray">←/→ to change</span>
-
-<span class="t-header">Monitor Selection</span>
-  <span class="t-orange">→</span> <span class="t-white">DP-1</span>        <span class="t-cyan">2560×1440</span>  <span class="t-gray">Primary</span>
-    <span class="t-gray">HDMI-1</span>      <span class="t-gray">1920×1080</span>
-
-<span class="t-header">Description</span>
-<span class="t-gray">┌────────────────────────────────────────────────┐</span>
-<span class="t-gray">│</span> <span class="t-white">Learn how to use the sketcher tool in QGIS...</span> <span class="t-gray">│</span>
-<span class="t-gray">│</span>                                                <span class="t-gray">│</span>
-<span class="t-gray">└────────────────────────────────────────────────┘</span>
-
-  <span class="t-green">[ Go Live ]</span>    <span class="t-gray">[ Cancel ]</span>
-
-<span class="t-gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-<span class="t-gray">tab: next field • shift+tab: prev • space: toggle • esc: cancel</span>
+<div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━━ New Recording ━━━━━━━━━━━━━━━━</span>
+<span class="t-gray">╭──────────────────────────────────────────────────────────────────╮</span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>   <span class="t-orange">Title:</span>  <span class="t-gray">╭────────────────────────────────────────────╮</span>
+<span class="t-gray">│</span>           <span class="t-gray">│</span> <span class="t-white">Introduction to QGIS</span>              <span class="t-gray">│</span>
+<span class="t-gray">│</span>           <span class="t-gray">╰────────────────────────────────────────────╯</span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>  <span class="t-gray">Number:</span>  <span class="t-gray">╭──────────────────╮</span>
+<span class="t-gray">│</span>           <span class="t-gray">│</span> <span class="t-white">042</span>              <span class="t-gray">│</span>
+<span class="t-gray">│</span>           <span class="t-gray">╰──────────────────╯</span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>   <span class="t-gray">Topic:</span>   <span class="t-orange-bg"> QGIS </span>  <span class="t-gray"> GIS development </span>  <span class="t-gray"> General </span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>  <span class="t-gray">──────────────────────────────────────────────────────────────</span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>  <span class="t-gray">Record Audio:</span>     <span class="t-green">Yes</span>  <span class="t-gray">No</span>
+<span class="t-gray">│</span>  <span class="t-gray">Record Webcam:</span>    <span class="t-gray">Yes</span>  <span class="t-red">No</span>
+<span class="t-gray">│</span>  <span class="t-gray">Record Screen:</span>    <span class="t-green">Yes</span>  <span class="t-gray">No</span>
+<span class="t-gray">│</span>  <span class="t-gray">Monitor:</span>          ◀ <span class="t-white">DP-1 (2560x1440)</span> ▶
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>  <span class="t-gray">──────────────────────────────────────────────────────────────</span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>  <span class="t-gray">Vertical Video:</span>   <span class="t-gray">Yes</span>  <span class="t-red">No</span>
+<span class="t-gray">│</span>  <span class="t-gray">Add Logos:</span>        <span class="t-green">Yes</span>  <span class="t-gray">No</span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>  <span class="t-gray">──────────────────────────────────────────────────────────────</span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>  <span class="t-gray">Description:</span>  <span class="t-gray">╭────────────────────────────────────────────╮</span>
+<span class="t-gray">│</span>                <span class="t-gray">│</span> <span class="t-white">Learn how to get started with QGIS...</span> <span class="t-gray">│</span>
+<span class="t-gray">│</span>                <span class="t-gray">│</span>                                        <span class="t-gray">│</span>
+<span class="t-gray">│</span>                <span class="t-gray">╰────────────────────────────────────────────╯</span>
+<span class="t-gray">│</span>  <span class="t-orange">⚠ "color" → consider "colour" (UK spelling)</span>
+<span class="t-gray">│</span>
+<span class="t-gray">│</span>                 <span class="t-orange-bg"> Go Live! </span>    <span class="t-gray">Cancel</span>
+<span class="t-gray">│</span>
+<span class="t-gray">╰──────────────────────────────────────────────────────────────────╯</span>
+<span class="t-gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="t-gray">Tab/↓: Next • Shift+Tab/↑: Prev • ←/→: Toggle/Select • Enter: Go Live</span>
 </div>
 </div>
 
@@ -63,6 +67,8 @@ The title of your recording. This becomes:
 - The video title on YouTube
 - Part of the output folder name
 - Displayed in the recording history
+
+**Spell Check:** The title is automatically checked for UK English spelling and grammar issues as you type. Warnings appear below the input field with ⚠ indicators.
 
 !!! tip "Best Practices"
     Use descriptive titles that explain what the video covers. Avoid special characters that may cause filesystem issues.
@@ -91,7 +97,7 @@ The category/topic for this recording. Topics help organize your recordings and 
 
 **Default Topics:**
 
-- QGIS sketcher sketches
+- QGIS sketches
 - GIS development tutorials
 - Open source workflows
 - General tutorials
@@ -265,6 +271,14 @@ Use ++up++ / ++down++ to select, or navigate with ++tab++.
 <span class="t-header">**Description**</span> - *Text Area*
 
 A multi-line description for your recording. This becomes the video description on YouTube.
+
+**Spell Check:** The description is automatically checked for UK English spelling and grammar issues as you type:
+
+- **UK English**: US spellings are flagged with UK alternatives (e.g., "color" → "colour")
+- **Grammar**: Common grammar issues are detected (e.g., "a" vs "an", double spaces)
+- **GIS Terms**: Common GIS and QGIS terminology is recognized and not flagged
+
+Warnings appear as ⚠ messages below the field. Up to 3 issues are shown at a time.
 
 **Tips:**
 

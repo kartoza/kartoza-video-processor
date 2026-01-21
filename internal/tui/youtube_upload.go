@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-video-processor/internal/config"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-video-processor/internal/spellcheck"
 	"github.com/kartoza/kartoza-video-processor/internal/youtube"
 )
 
@@ -31,7 +34,8 @@ const (
 type YouTubeUploadField int
 
 const (
-	YouTubeUploadFieldTitle YouTubeUploadField = iota
+	YouTubeUploadFieldVideoSource YouTubeUploadField = iota
+	YouTubeUploadFieldTitle
 	YouTubeUploadFieldDescription
 	YouTubeUploadFieldTags
 	YouTubeUploadFieldPlaylist
@@ -40,6 +44,25 @@ const (
 	YouTubeUploadFieldCancel
 )
 
+// VideoSourceOption represents which video file to upload
+type VideoSourceOption int
+
+const (
+	VideoSourceVertical VideoSourceOption = iota
+	VideoSourceMerged
+)
+
+func (v VideoSourceOption) String() string {
+	switch v {
+	case VideoSourceVertical:
+		return "Vertical (9:16)"
+	case VideoSourceMerged:
+		return "Landscape (16:9)"
+	default:
+		return "Unknown"
+	}
+}
+
 // YouTubeUploadModel handles YouTube upload UI
 type YouTubeUploadModel struct {
 	width  int
@@ -47,6 +70,14 @@ type YouTubeUploadModel struct {
 
 	step         YouTubeUploadStep
 	focusedField YouTubeUploadField
+
+	// Video source selection
+	videoSourceOptions   []VideoSourceOption
+	selectedVideoSource  int
+	verticalVideoPath    string
+	mergedVideoPath      string
+	hasVerticalVideo     bool
+	hasMergedVideo       bool
 
 	// Video info
 	videoPath     string
@@ -80,6 +111,11 @@ type YouTubeUploadModel struct {
 
 	// Status
 	errorMessage string
+
+	// Spell checking
+	spellChecker   *spellcheck.SpellChecker
+	titleIssues    []spellcheck.Issue
+	descIssues     []spellcheck.Issue
 
 	// Config
 	cfg *config.Config
@@ -121,7 +157,9 @@ func NewYouTubeUploadModel(videoPath, outputDir, title, description, topic strin
 		defaultPrivacyIdx = 2
 	}
 
-	return &YouTubeUploadModel{
+	sc := spellcheck.NewSpellChecker()
+
+	m := &YouTubeUploadModel{
 		step:             YouTubeUploadStepPrompt,
 		focusedField:     YouTubeUploadFieldTitle,
 		videoPath:        videoPath,
@@ -136,8 +174,23 @@ func NewYouTubeUploadModel(videoPath, outputDir, title, description, topic strin
 		selectedPrivacy:  defaultPrivacyIdx,
 		selectedPlaylist: -1, // No playlist by default
 		progress:         prog,
+		spellChecker:     sc,
 		cfg:              cfg,
 	}
+
+	// Initial spell check
+	m.updateSpellCheck()
+
+	return m
+}
+
+// updateSpellCheck updates the spell check issues for title and description
+func (m *YouTubeUploadModel) updateSpellCheck() {
+	if m.spellChecker == nil {
+		return
+	}
+	m.titleIssues = m.spellChecker.Check(m.titleInput.Value())
+	m.descIssues = m.spellChecker.Check(m.descriptionInput.Value())
 }
 
 // NewYouTubeUploadModelWithRecording creates a new YouTube upload model with recording info
@@ -150,6 +203,40 @@ func NewYouTubeUploadModelWithRecording(videoPath string, recordingInfo *models.
 		recordingInfo.Metadata.Topic,
 	)
 	m.recordingInfo = recordingInfo
+
+	// Set up video source options based on available files
+	m.verticalVideoPath = recordingInfo.Files.VerticalFile
+	m.mergedVideoPath = recordingInfo.Files.MergedFile
+
+	// Check which video files actually exist
+	if m.verticalVideoPath != "" {
+		if _, err := os.Stat(m.verticalVideoPath); err == nil {
+			m.hasVerticalVideo = true
+		}
+	}
+	if m.mergedVideoPath != "" {
+		if _, err := os.Stat(m.mergedVideoPath); err == nil {
+			m.hasMergedVideo = true
+		}
+	}
+
+	// Build available options list
+	m.videoSourceOptions = []VideoSourceOption{}
+	if m.hasVerticalVideo {
+		m.videoSourceOptions = append(m.videoSourceOptions, VideoSourceVertical)
+	}
+	if m.hasMergedVideo {
+		m.videoSourceOptions = append(m.videoSourceOptions, VideoSourceMerged)
+	}
+
+	// Default to vertical if available, otherwise merged
+	m.selectedVideoSource = 0
+	if m.hasVerticalVideo {
+		m.videoPath = m.verticalVideoPath
+	} else if m.hasMergedVideo {
+		m.videoPath = m.mergedVideoPath
+	}
+
 	return m
 }
 
@@ -220,12 +307,20 @@ func (m *YouTubeUploadModel) Update(msg tea.Msg) (*YouTubeUploadModel, tea.Cmd) 
 		return m, nil
 	}
 
-	// Update focused input
+	// Update focused input and re-run spell check
 	switch m.focusedField {
 	case YouTubeUploadFieldTitle:
+		oldValue := m.titleInput.Value()
 		m.titleInput, cmd = m.titleInput.Update(msg)
+		if m.titleInput.Value() != oldValue {
+			m.titleIssues = m.spellChecker.Check(m.titleInput.Value())
+		}
 	case YouTubeUploadFieldDescription:
+		oldValue := m.descriptionInput.Value()
 		m.descriptionInput, cmd = m.descriptionInput.Update(msg)
+		if m.descriptionInput.Value() != oldValue {
+			m.descIssues = m.spellChecker.Check(m.descriptionInput.Value())
+		}
 	case YouTubeUploadFieldTags:
 		m.tagsInput, cmd = m.tagsInput.Update(msg)
 	}
@@ -296,7 +391,13 @@ func (m *YouTubeUploadModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeUploadModel, 
 				return m, nil
 			}
 			m.step = YouTubeUploadStepMetadata
-			m.titleInput.Focus()
+			// Set initial focus to video source if multiple options, otherwise title
+			if len(m.videoSourceOptions) > 1 {
+				m.focusedField = YouTubeUploadFieldVideoSource
+			} else {
+				m.focusedField = YouTubeUploadFieldTitle
+				m.titleInput.Focus()
+			}
 			m.loadingPlaylists = true
 			return m, tea.Batch(textinput.Blink, m.loadPlaylists())
 
@@ -316,6 +417,22 @@ func (m *YouTubeUploadModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeUploadModel, 
 			return m, textinput.Blink
 
 		case "left", "right":
+			if m.focusedField == YouTubeUploadFieldVideoSource && len(m.videoSourceOptions) > 1 {
+				if msg.String() == "left" {
+					m.selectedVideoSource--
+					if m.selectedVideoSource < 0 {
+						m.selectedVideoSource = len(m.videoSourceOptions) - 1
+					}
+				} else {
+					m.selectedVideoSource++
+					if m.selectedVideoSource >= len(m.videoSourceOptions) {
+						m.selectedVideoSource = 0
+					}
+				}
+				// Update the video path based on selection
+				m.updateVideoPath()
+				return m, nil
+			}
 			if m.focusedField == YouTubeUploadFieldPrivacy {
 				if msg.String() == "left" {
 					m.selectedPrivacy--
@@ -383,7 +500,13 @@ func (m *YouTubeUploadModel) handleEnter() (*YouTubeUploadModel, tea.Cmd) {
 			return m, nil
 		}
 		m.step = YouTubeUploadStepMetadata
-		m.titleInput.Focus()
+		// Set initial focus to video source if multiple options, otherwise title
+		if len(m.videoSourceOptions) > 1 {
+			m.focusedField = YouTubeUploadFieldVideoSource
+		} else {
+			m.focusedField = YouTubeUploadFieldTitle
+			m.titleInput.Focus()
+		}
 		m.loadingPlaylists = true
 		return m, tea.Batch(textinput.Blink, m.loadPlaylists())
 
@@ -415,8 +538,16 @@ func (m *YouTubeUploadModel) handleEnter() (*YouTubeUploadModel, tea.Cmd) {
 func (m *YouTubeUploadModel) nextField() {
 	m.unfocusAll()
 	m.focusedField++
+	// Skip video source if only one option available
+	if m.focusedField == YouTubeUploadFieldVideoSource && len(m.videoSourceOptions) <= 1 {
+		m.focusedField++
+	}
 	if m.focusedField > YouTubeUploadFieldCancel {
-		m.focusedField = YouTubeUploadFieldTitle
+		m.focusedField = YouTubeUploadFieldVideoSource
+		// Skip video source if only one option available
+		if len(m.videoSourceOptions) <= 1 {
+			m.focusedField = YouTubeUploadFieldTitle
+		}
 	}
 	m.focusCurrent()
 }
@@ -425,10 +556,27 @@ func (m *YouTubeUploadModel) nextField() {
 func (m *YouTubeUploadModel) prevField() {
 	m.unfocusAll()
 	m.focusedField--
-	if m.focusedField < YouTubeUploadFieldTitle {
+	// Skip video source if only one option available
+	if m.focusedField == YouTubeUploadFieldVideoSource && len(m.videoSourceOptions) <= 1 {
+		m.focusedField--
+	}
+	if m.focusedField < YouTubeUploadFieldVideoSource {
 		m.focusedField = YouTubeUploadFieldCancel
 	}
 	m.focusCurrent()
+}
+
+// updateVideoPath updates the video path based on the selected video source
+func (m *YouTubeUploadModel) updateVideoPath() {
+	if m.selectedVideoSource < 0 || m.selectedVideoSource >= len(m.videoSourceOptions) {
+		return
+	}
+	switch m.videoSourceOptions[m.selectedVideoSource] {
+	case VideoSourceVertical:
+		m.videoPath = m.verticalVideoPath
+	case VideoSourceMerged:
+		m.videoPath = m.mergedVideoPath
+	}
 }
 
 // unfocusAll removes focus from all inputs
@@ -660,6 +808,35 @@ func (m *YouTubeUploadModel) renderMetadata() string {
 		Background(ColorGray).
 		Foreground(ColorWhite)
 
+	// Video source row (only show if multiple options available)
+	var videoSourceRow string
+	if len(m.videoSourceOptions) > 1 {
+		videoSourceLabel := labelStyle.Render("Video: ")
+		if m.focusedField == YouTubeUploadFieldVideoSource {
+			videoSourceLabel = labelActiveStyle.Render("Video: ")
+		}
+		var videoSourceValues []string
+		for i, opt := range m.videoSourceOptions {
+			style := lipgloss.NewStyle().Foreground(ColorGray)
+			if i == m.selectedVideoSource {
+				if m.focusedField == YouTubeUploadFieldVideoSource {
+					style = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000000"))
+				} else {
+					style = lipgloss.NewStyle().Foreground(ColorWhite).Bold(true)
+				}
+			}
+			videoSourceValues = append(videoSourceValues, style.Render(" "+opt.String()+" "))
+		}
+		videoSourceValue := lipgloss.JoinHorizontal(lipgloss.Center, videoSourceValues...)
+		videoSourceRow = lipgloss.JoinHorizontal(lipgloss.Center, videoSourceLabel, videoSourceValue)
+	}
+
+	// Spell check warning style
+	warningStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Italic(true).
+		PaddingLeft(16)
+
 	// Title row
 	titleLabel := labelStyle.Render("Title: ")
 	if m.focusedField == YouTubeUploadFieldTitle {
@@ -667,12 +844,46 @@ func (m *YouTubeUploadModel) renderMetadata() string {
 	}
 	titleRow := lipgloss.JoinHorizontal(lipgloss.Center, titleLabel, m.titleInput.View())
 
+	// Title spell check warnings
+	var titleWarnings string
+	if len(m.titleIssues) > 0 {
+		var warnings []string
+		for _, issue := range m.titleIssues {
+			warning := "⚠ " + issue.Word + ": " + issue.Message
+			if len(issue.Suggestions) > 0 && issue.Suggestions[0] != "" {
+				warning += " → " + issue.Suggestions[0]
+			}
+			warnings = append(warnings, warningStyle.Render(warning))
+		}
+		titleWarnings = lipgloss.JoinVertical(lipgloss.Left, warnings...)
+	}
+
 	// Description row
 	descLabel := labelStyle.Render("Description: ")
 	if m.focusedField == YouTubeUploadFieldDescription {
 		descLabel = labelActiveStyle.Render("Description: ")
 	}
 	descRow := lipgloss.JoinHorizontal(lipgloss.Center, descLabel, m.descriptionInput.View())
+
+	// Description spell check warnings
+	var descWarnings string
+	if len(m.descIssues) > 0 {
+		var warnings []string
+		maxWarnings := 3 // Limit to avoid UI clutter
+		for i, issue := range m.descIssues {
+			if i >= maxWarnings {
+				remaining := len(m.descIssues) - maxWarnings
+				warnings = append(warnings, warningStyle.Render(fmt.Sprintf("  ... and %d more issues", remaining)))
+				break
+			}
+			warning := "⚠ " + issue.Word + ": " + issue.Message
+			if len(issue.Suggestions) > 0 && issue.Suggestions[0] != "" {
+				warning += " → " + issue.Suggestions[0]
+			}
+			warnings = append(warnings, warningStyle.Render(warning))
+		}
+		descWarnings = lipgloss.JoinVertical(lipgloss.Left, warnings...)
+	}
 
 	// Tags row
 	tagsLabel := labelStyle.Render("Tags: ")
@@ -752,17 +963,22 @@ func (m *YouTubeUploadModel) renderMetadata() string {
 			Render(m.errorMessage)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		titleRow,
-		descRow,
-		tagsRow,
-		playlistRow,
-		privacyRow,
-		"",
-		buttonRow,
-		"",
-		errorLine,
-	)
+	// Build the rows to display
+	rows := []string{}
+	if videoSourceRow != "" {
+		rows = append(rows, videoSourceRow)
+	}
+	rows = append(rows, titleRow)
+	if titleWarnings != "" {
+		rows = append(rows, titleWarnings)
+	}
+	rows = append(rows, descRow)
+	if descWarnings != "" {
+		rows = append(rows, descWarnings)
+	}
+	rows = append(rows, tagsRow, playlistRow, privacyRow, "", buttonRow, "", errorLine)
+
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 // renderUploading renders the upload progress

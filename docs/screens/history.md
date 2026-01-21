@@ -17,10 +17,10 @@ The History screen displays all your past recordings in a searchable, sortable t
 
 <span class="t-white">Status   Topic            Date         Duration    Size    </span>
 <span class="t-gray">────────────────────────────────────────────────────────────</span>
-<span class="t-selected"><span class="t-orange">→</span> <span class="t-green">✓ Done</span>   <span class="t-white">QGIS sketcher</span>    <span class="t-cyan">2024-01-15</span>   <span class="t-white">12:34</span>       <span class="t-green">245 MB</span></span>
+<span class="t-selected"><span class="t-orange">→</span> <span class="t-green">✓ Done</span>   <span class="t-white">QGIS</span>    <span class="t-cyan">2024-01-15</span>   <span class="t-white">12:34</span>       <span class="t-green">245 MB</span></span>
   <span class="t-green">✓ Done</span>   <span class="t-blue">GIS development</span>  <span class="t-cyan">2024-01-14</span>   <span class="t-white">08:22</span>       <span class="t-green">156 MB</span>
   <span class="t-red">✗ Error</span>  <span class="t-blue">Open source</span>      <span class="t-cyan">2024-01-13</span>   <span class="t-white">15:47</span>       <span class="t-green">312 MB</span>
-  <span class="t-green">✓ Done</span>   <span class="t-blue">QGIS sketcher</span>    <span class="t-cyan">2024-01-12</span>   <span class="t-white">05:18</span>       <span class="t-green">98 MB</span>
+  <span class="t-green">✓ Done</span>   <span class="t-blue">QGIS</span>    <span class="t-cyan">2024-01-12</span>   <span class="t-white">05:18</span>       <span class="t-green">98 MB</span>
   <span class="t-orange">⟳ Proc</span>   <span class="t-blue">General tutorials</span><span class="t-cyan">2024-01-10</span>   <span class="t-white">20:05</span>       <span class="t-green">425 MB</span>
 
 <span class="t-gray">────────────────────────────────────────────────────────────</span>
@@ -46,6 +46,10 @@ Shows the current processing status of each recording:
 | <span class="t-orange">⟳ Proc</span> | Processing | Currently being processed |
 | <span class="t-red">● Rec</span> | Recording | Currently being recorded |
 | <span class="t-orange">⏸ Pause</span> | Paused | Recording is paused |
+
+**YouTube Upload Indicator:**
+
+A 🎬 (clapper) icon appears next to the status when the recording has been uploaded to YouTube. For example: <span class="t-green">✓ Done</span>🎬
 
 ---
 
@@ -105,7 +109,7 @@ Press ++enter++ to view detailed information about the selected recording.
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━ Recording Details ━━━━━━━━━━━━</span>
 
 <span class="t-orange">Title:</span>       <span class="t-white">Introduction to sketcher sketches</span>
-<span class="t-blue">Topic:</span>       <span class="t-white">QGIS sketcher sketches</span>
+<span class="t-blue">Topic:</span>       <span class="t-white">QGIS sketches</span>
 <span class="t-blue">Episode:</span>     <span class="t-white">#42</span>
 <span class="t-blue">Date:</span>        <span class="t-cyan">2024-01-15 14:32:05</span>
 <span class="t-blue">Duration:</span>    <span class="t-white">12 minutes 34 seconds</span>
@@ -187,7 +191,7 @@ When viewing a recording that failed during processing, you'll see additional er
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━ Recording Details ━━━━━━━━━━━━</span>
 
 <span class="t-orange">Title:</span>       <span class="t-white">Introduction to sketcher sketches</span>
-<span class="t-blue">Topic:</span>       <span class="t-white">QGIS sketcher sketches</span>
+<span class="t-blue">Topic:</span>       <span class="t-white">QGIS sketches</span>
 ...
 <span class="t-header">────────────────────────────────────────────</span>
 <span class="t-red-bg">✗ Processing Failed</span>
@@ -258,6 +262,81 @@ Press ++v++ to view the full error details with scrollable traceback information
 
 ---
 
+### Edit Recording
+
+Press ++e++ from the detail view to edit the recording's metadata.
+
+<div class="terminal-mockup">
+<div class="terminal-header">
+<div class="terminal-buttons">
+<div class="terminal-button red"></div>
+<div class="terminal-button yellow"></div>
+<div class="terminal-button green"></div>
+</div>
+<div class="terminal-title">Edit Recording</div>
+</div>
+<div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━ Edit Recording ━━━━━━━━━━━━━━━</span>
+
+<span class="t-gray">Folder:</span>    <span class="t-blue">001-introduction-to-qgis</span>
+<span class="t-gray">Date:</span>      <span class="t-blue">2024-01-15</span>
+<span class="t-gray">Duration:</span>  <span class="t-blue">12:34</span>
+
+<span class="t-gray">────────────────────────────────────────────────────</span>
+
+<span class="t-orange">Title:</span>
+<span class="t-gray">┌────────────────────────────────────────────┐</span>
+<span class="t-gray">│</span> <span class="t-white">Introduction to QGIS</span>              <span class="t-gray">│</span>
+<span class="t-gray">└────────────────────────────────────────────┘</span>
+
+<span class="t-gray">Description:</span>
+<span class="t-gray">┌────────────────────────────────────────────┐</span>
+<span class="t-gray">│</span> <span class="t-white">Learn how to get started with QGIS...</span> <span class="t-gray">│</span>
+<span class="t-gray">└────────────────────────────────────────────┘</span>
+<span class="t-orange">⚠ "color" → consider "colour" (UK spelling)</span>
+
+<span class="t-gray">Topic:</span>     <span class="t-orange-bg"> QGIS </span>  <span class="t-gray"> GIS development </span>  <span class="t-gray"> General </span>
+
+<span class="t-gray">Presenter:</span>
+<span class="t-gray">┌────────────────────────────────────────────┐</span>
+<span class="t-gray">│</span> <span class="t-white">Tim Sketcher</span>                       <span class="t-gray">│</span>
+<span class="t-gray">└────────────────────────────────────────────┘</span>
+
+<span class="t-gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+<span class="t-gray">Tab: Next • ←/→: Topic • Ctrl+S: Save • Esc: Cancel</span>
+</div>
+</div>
+
+**Editable Fields:**
+
+| Field | Description |
+|-------|-------------|
+| **Title** | The video title (max 100 characters) |
+| **Description** | The video description (max 2000 characters) |
+| **Topic** | The category for the recording |
+| **Presenter** | The presenter's name |
+
+**Spell Check:**
+
+The title and description fields are automatically spell-checked in real time:
+
+- **UK English**: US spellings are flagged with UK alternatives (e.g., "color" → "colour")
+- **Grammar**: Common grammar issues are detected (e.g., "a" vs "an", double spaces)
+- **GIS Terms**: Common GIS and QGIS terminology is recognized and not flagged
+
+Warnings appear as ⚠ messages below each field. Up to 3 issues are shown for the description field.
+
+**Navigation:**
+
+| Key | Action |
+|-----|--------|
+| ++tab++ | Move to next field |
+| ++shift+tab++ | Move to previous field |
+| ++left++ / ++right++ | Change topic selection |
+| ++ctrl+s++ | Save changes |
+| ++esc++ | Cancel editing |
+
+---
+
 ### Delete Recording
 
 Press ++d++ to delete the selected recording.
@@ -306,6 +385,7 @@ Press ++d++ to delete the selected recording.
 | Key | Action |
 |-----|--------|
 | ++enter++ | View recording details |
+| ++e++ | Edit recording metadata |
 | ++o++ | Open folder in file manager |
 | ++u++ | Upload to YouTube |
 | ++v++ | Play vertical video (completed) / View error details (failed) |
@@ -342,7 +422,7 @@ Recordings are stored in:
 
 ```
 ~/Videos/Screencasts/
-├── QGIS sketcher sketches/
+├── QGIS sketches/
 │   ├── Introduction to sketcher/
 │   │   ├── final.mp4
 │   │   ├── final_vertical.mp4
@@ -363,6 +443,7 @@ Recordings are stored in:
 | ++up++ / ++k++ | Move up |
 | ++down++ / ++j++ | Move down |
 | ++enter++ | View details |
+| ++e++ | Edit recording metadata |
 | ++o++ | Open folder |
 | ++u++ | Upload to YouTube |
 | ++v++ | Play vertical video / View error details |

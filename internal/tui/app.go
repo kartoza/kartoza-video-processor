@@ -61,6 +61,8 @@ type AppModel struct {
 	countdownNum    int
 	processing      *ProcessingState
 	processingFrame int
+	processingBtn   ProcessingButton // Selected button on processing complete screen
+	processingDone  bool             // Whether processing is complete and showing buttons
 	metadata        models.RecordingMetadata
 	recordingInfo   *models.RecordingInfo
 	outputDir       string
@@ -412,9 +414,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case processingCompleteMsg:
 		if m.state == stateProcessing && m.processing != nil {
 			m.processing.Complete()
-			return m, tea.Tick(1500*time.Millisecond, func(t time.Time) tea.Msg {
-				return processingDoneMsg{}
-			})
+			m.processingDone = true
+			// Default to Upload button if YouTube is connected, else Menu button
+			cfg, _ := config.Load()
+			if cfg.IsYouTubeConnected() {
+				m.processingBtn = ProcessingButtonUpload
+			} else {
+				m.processingBtn = ProcessingButtonMenu
+			}
 		}
 		return m, nil
 
@@ -586,10 +593,52 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg handles keyboard input based on current state
 func (m AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle processing state - only allow quit
+	// Handle processing state
 	if m.state == stateProcessing {
 		if key.Matches(msg, key.NewBinding(key.WithKeys("q", "ctrl+c"))) {
 			return m, tea.Quit
+		}
+		// When processing is done, allow button navigation
+		if m.processingDone {
+			cfg, _ := config.Load()
+			youtubeConnected := cfg.IsYouTubeConnected()
+
+			switch msg.String() {
+			case "left", "right", "tab":
+				if youtubeConnected {
+					// Toggle between upload and menu buttons
+					if m.processingBtn == ProcessingButtonUpload {
+						m.processingBtn = ProcessingButtonMenu
+					} else {
+						m.processingBtn = ProcessingButtonUpload
+					}
+				}
+				return m, nil
+			case "enter":
+				if m.processingBtn == ProcessingButtonUpload && youtubeConnected {
+					// Go to YouTube upload
+					m.processingDone = false
+					m.state = stateReady
+					m.processing.Reset()
+					m.screen = ScreenYouTubeUpload
+					if m.recordingInfo != nil {
+						videoPath := m.recordingInfo.Files.MergedFile
+						if m.recordingInfo.Files.VerticalFile != "" {
+							videoPath = m.recordingInfo.Files.VerticalFile
+						}
+						m.youtubeUpload = NewYouTubeUploadModelWithRecording(videoPath, m.recordingInfo)
+					}
+					return m, nil
+				} else {
+					// Return to menu
+					m.processingDone = false
+					m.state = stateReady
+					m.processing.Reset()
+					m.screen = ScreenMenu
+					updateGlobalAppState(false, true, "Ready")
+					return m, nil
+				}
+			}
 		}
 		return m, nil
 	}
@@ -997,7 +1046,9 @@ func (m AppModel) View() string {
 
 	// Show processing screen if in processing state
 	if m.state == stateProcessing {
-		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame)
+		cfg, _ := config.Load()
+		youtubeConnected := cfg.IsYouTubeConnected()
+		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame, m.processingBtn, youtubeConnected)
 	}
 
 	// Render based on current screen

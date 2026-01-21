@@ -16,7 +16,7 @@ The Options screen allows you to configure application-wide settings including t
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━━━━ Options ━━━━━━━━━━━━━━━━━━</span>
 
 <span class="t-header">Topics</span>
-<span class="t-selected"><span class="t-orange">→</span> <span class="t-white">QGIS sketcher sketches</span></span>
+<span class="t-selected"><span class="t-orange">→</span> <span class="t-white">QGIS sketches</span></span>
   <span class="t-blue">GIS development tutorials</span>
   <span class="t-blue">Open source workflows</span>
   <span class="t-blue">General tutorials</span>
@@ -56,7 +56,7 @@ Displays all configured topics. Use ++up++ / ++down++ to navigate.
 
 **Default Topics:**
 
-- QGIS sketcher sketches
+- QGIS sketches
 - GIS development tutorials
 - Open source workflows
 - General tutorials
@@ -210,7 +210,7 @@ Settings are stored in JSON format:
 ```json
 {
   "topics": [
-    {"name": "QGIS sketcher sketches", "color": "#FF9500"},
+    {"name": "QGIS sketches", "color": "#FF9500"},
     {"name": "GIS development tutorials", "color": "#0066CC"},
     {"name": "Open source workflows", "color": "#00CC66"},
     {"name": "General tutorials", "color": "#9966FF"}

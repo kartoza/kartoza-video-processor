@@ -180,7 +180,7 @@ func TestProcessingState_Reset(t *testing.T) {
 }
 
 func TestRenderProcessingView_Nil(t *testing.T) {
-	result := RenderProcessingView(nil, 80, 24, 0)
+	result := RenderProcessingView(nil, 80, 24, 0, ProcessingButtonMenu, false)
 	if result != "" {
 		t.Errorf("expected empty string for nil state, got %q", result)
 	}
@@ -190,7 +190,7 @@ func TestRenderProcessingView_Basic(t *testing.T) {
 	p := NewProcessingState()
 	p.Start()
 
-	result := RenderProcessingView(p, 80, 24, 0)
+	result := RenderProcessingView(p, 80, 24, 0, ProcessingButtonMenu, false)
 
 	if result == "" {
 		t.Error("expected non-empty view")
@@ -212,8 +212,8 @@ func TestRenderProcessingView_Animation(t *testing.T) {
 
 	// Render at different frames should produce different output
 	// (due to spinning animation)
-	result0 := RenderProcessingView(p, 80, 24, 0)
-	result1 := RenderProcessingView(p, 80, 24, 1)
+	result0 := RenderProcessingView(p, 80, 24, 0, ProcessingButtonMenu, false)
+	result1 := RenderProcessingView(p, 80, 24, 1, ProcessingButtonMenu, false)
 
 	// They might be different due to animation, but both should be non-empty
 	if result0 == "" || result1 == "" {
@@ -229,10 +229,28 @@ func TestRenderProcessingView_Complete(t *testing.T) {
 	}
 	p.Complete()
 
-	result := RenderProcessingView(p, 80, 24, 0)
+	result := RenderProcessingView(p, 80, 24, 0, ProcessingButtonMenu, false)
 
 	if !containsString(result, "complete") {
 		t.Error("expected view to contain 'complete'")
+	}
+}
+
+func TestRenderProcessingView_CompleteWithYouTube(t *testing.T) {
+	p := NewProcessingState()
+	p.Start()
+	for i := 0; i < 5; i++ {
+		p.NextStep()
+	}
+	p.Complete()
+
+	result := RenderProcessingView(p, 80, 24, 0, ProcessingButtonUpload, true)
+
+	if !containsString(result, "Upload to YouTube") {
+		t.Error("expected view to contain 'Upload to YouTube' button")
+	}
+	if !containsString(result, "Return to Menu") {
+		t.Error("expected view to contain 'Return to Menu' button")
 	}
 }
 
@@ -241,7 +259,7 @@ func TestRenderProcessingView_Error(t *testing.T) {
 	p.Start()
 	p.FailStep(errors.New("test error"))
 
-	result := RenderProcessingView(p, 80, 24, 0)
+	result := RenderProcessingView(p, 80, 24, 0, ProcessingButtonMenu, false)
 
 	if !containsString(result, "test error") {
 		t.Error("expected view to contain error message")

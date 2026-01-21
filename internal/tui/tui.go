@@ -76,6 +76,8 @@ type Model struct {
 	countdownNum    int
 	processing      *ProcessingState
 	processingFrame int
+	processingBtn   ProcessingButton
+	processingDone  bool
 }
 
 // NewModel creates a new TUI model
@@ -298,7 +300,7 @@ func (m Model) View() string {
 
 	// Show processing screen if in processing state
 	if m.state == stateProcessing {
-		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame)
+		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame, m.processingBtn, false)
 	}
 
 	// Update global app state for header

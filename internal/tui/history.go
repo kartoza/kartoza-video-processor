@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-video-processor/internal/config"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-video-processor/internal/spellcheck"
 	"github.com/kartoza/kartoza-video-processor/internal/youtube"
 )
 
@@ -80,6 +81,11 @@ type HistoryModel struct {
 
 	// Error detail view scroll position
 	errorViewScrollOffset int
+
+	// Spell checking
+	spellChecker      *spellcheck.SpellChecker
+	editTitleIssues   []spellcheck.Issue
+	editDescIssues    []spellcheck.Issue
 }
 
 // NewHistoryModel creates a new history model
@@ -115,6 +121,7 @@ func NewHistoryModel() *HistoryModel {
 		mode:                  HistoryListMode,
 		topics:                topics,
 		youtubePrivacyOptions: []string{"unlisted", "private", "public"},
+		spellChecker:          spellcheck.NewSpellChecker(),
 	}
 
 	h.editFields.title = titleInput
@@ -578,8 +585,12 @@ func (h *HistoryModel) updateEditMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
 	switch h.editFocusField {
 	case 0:
 		h.editFields.title, cmd = h.editFields.title.Update(msg)
+		// Update spell check for title
+		h.editTitleIssues = h.spellChecker.Check(h.editFields.title.Value())
 	case 1:
 		h.editFields.description, cmd = h.editFields.description.Update(msg)
+		// Update spell check for description
+		h.editDescIssues = h.spellChecker.Check(h.editFields.description.Value())
 	case 3:
 		h.editFields.presenter, cmd = h.editFields.presenter.Update(msg)
 	}
@@ -810,6 +821,18 @@ func (h *HistoryModel) initEditFields() {
 			break
 		}
 	}
+
+	// Run initial spell check on title and description
+	h.updateEditSpellCheck()
+}
+
+// updateEditSpellCheck runs spell check on the title and description fields
+func (h *HistoryModel) updateEditSpellCheck() {
+	if h.spellChecker == nil {
+		return
+	}
+	h.editTitleIssues = h.spellChecker.Check(h.editFields.title.Value())
+	h.editDescIssues = h.spellChecker.Check(h.editFields.description.Value())
 }
 
 // blurAllEditFields removes focus from all edit fields
@@ -1577,6 +1600,11 @@ func (h *HistoryModel) renderEditView() string {
 	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
 	rows = append(rows, "")
 
+	// Spell check warning style
+	warningStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		MarginLeft(16)
+
 	// Editable fields
 	// Title
 	titleLabel := labelStyle.Render("Title:")
@@ -1591,6 +1619,14 @@ func (h *HistoryModel) renderEditView() string {
 		titleBoxStyle.Render(h.editFields.title.View()),
 	))
 
+	// Title spell check warnings
+	if len(h.editTitleIssues) > 0 {
+		titleWarning := spellcheck.FormatIssues(h.editTitleIssues)
+		if titleWarning != "" {
+			rows = append(rows, warningStyle.Render("⚠ "+titleWarning))
+		}
+	}
+
 	// Description
 	descLabel := labelStyle.Render("Description:")
 	descBoxStyle := inputBoxStyle.Height(5)
@@ -1603,6 +1639,24 @@ func (h *HistoryModel) renderEditView() string {
 		"  ",
 		descBoxStyle.Render(h.editFields.description.View()),
 	))
+
+	// Description spell check warnings (limit to 3)
+	if len(h.editDescIssues) > 0 {
+		maxIssues := 3
+		issuesToShow := h.editDescIssues
+		extraCount := 0
+		if len(issuesToShow) > maxIssues {
+			extraCount = len(issuesToShow) - maxIssues
+			issuesToShow = issuesToShow[:maxIssues]
+		}
+		descWarning := spellcheck.FormatIssues(issuesToShow)
+		if descWarning != "" {
+			if extraCount > 0 {
+				descWarning += fmt.Sprintf(" ... and %d more issues", extraCount)
+			}
+			rows = append(rows, warningStyle.Render("⚠ "+descWarning))
+		}
+	}
 
 	// Topic
 	topicLabel := labelStyle.Render("Topic:")
@@ -1816,7 +1870,7 @@ func (h *HistoryModel) renderScrollableTable() string {
 		Align(lipgloss.Left)
 
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
-		headerStyle.Width(8).Render("Status"),
+		headerStyle.Width(10).Render("Status"),
 		headerStyle.Width(12).Render("Topic"),
 		headerStyle.Width(12).Render("Date"),
 		headerStyle.Width(10).Render("Duration"),
@@ -1831,15 +1885,20 @@ func (h *HistoryModel) renderScrollableTable() string {
 		// Determine status icon and color
 		statusIcon, statusColor := getStatusDisplay(rec.Status)
 
+		// Add YouTube clapper icon if video has been uploaded
+		if rec.Metadata.YouTube != nil && rec.Metadata.YouTube.VideoID != "" {
+			statusIcon = statusIcon + "🎬"
+		}
+
 		topic := truncateStr(rec.Metadata.Topic, 10)
 		dateStr := rec.StartTime.Format("2006-01-02")
 		duration := models.FormatDuration(rec.Duration)
 		size := models.FormatFileSize(rec.Files.TotalSize)
 		folder := rec.Metadata.FolderName
 
-		// Status cell with appropriate color
-		statusCellStyle := cellStyle.Width(8).Foreground(statusColor)
-		selectedStatusStyle := selectedStyle.Width(8)
+		// Status cell with appropriate color (width 10 to accommodate YouTube icon)
+		statusCellStyle := cellStyle.Width(10).Foreground(statusColor)
+		selectedStatusStyle := selectedStyle.Width(10)
 
 		var row1 string
 		if isSelected {

@@ -120,7 +120,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 ```
 ~/Videos/Screencasts/
-├── QGIS sketcher sketches/
+├── QGIS sketches/
 │   ├── Introduction/
 │   └── Advanced/
 └── GIS tutorials/

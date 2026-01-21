@@ -212,8 +212,16 @@ var donutFrames = []string{
 	"◐", "◓", "◑", "◒",
 }
 
+// ProcessingButton represents a button option on the processing complete screen
+type ProcessingButton int
+
+const (
+	ProcessingButtonUpload ProcessingButton = iota
+	ProcessingButtonMenu
+)
+
 // RenderProcessingView renders the processing screen with donut indicators
-func RenderProcessingView(state *ProcessingState, width, height int, frame int) string {
+func RenderProcessingView(state *ProcessingState, width, height int, frame int, selectedButton ProcessingButton, youtubeConnected bool) string {
 	if state == nil {
 		return ""
 	}
@@ -261,11 +269,57 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int) 
 		statusMsg = statusStyle.Render("Please wait...")
 	}
 
-	// Hint
-	hintStyle := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		MarginTop(2)
-	hint := hintStyle.Render("Recording controls disabled during processing")
+	// Buttons (only shown when processing is complete and no error)
+	var buttonsRow string
+	var hint string
+	if !state.IsProcessing && state.Error == nil {
+		buttonStyle := lipgloss.NewStyle().
+			Padding(0, 2).
+			Bold(true)
+
+		activeButtonStyle := buttonStyle.
+			Background(ColorOrange).
+			Foreground(lipgloss.Color("#000000"))
+
+		inactiveButtonStyle := buttonStyle.
+			Background(ColorGray).
+			Foreground(ColorWhite)
+
+		// Upload button (only if YouTube is connected)
+		var uploadBtn string
+		if youtubeConnected {
+			if selectedButton == ProcessingButtonUpload {
+				uploadBtn = activeButtonStyle.Render("Upload to YouTube")
+			} else {
+				uploadBtn = inactiveButtonStyle.Render("Upload to YouTube")
+			}
+		}
+
+		// Menu button
+		var menuBtn string
+		if selectedButton == ProcessingButtonMenu {
+			menuBtn = activeButtonStyle.Render("Return to Menu")
+		} else {
+			menuBtn = inactiveButtonStyle.Render("Return to Menu")
+		}
+
+		if youtubeConnected {
+			buttonsRow = lipgloss.JoinHorizontal(lipgloss.Center, uploadBtn, "  ", menuBtn)
+		} else {
+			buttonsRow = menuBtn
+		}
+
+		hintStyle := lipgloss.NewStyle().
+			Foreground(ColorGray).
+			MarginTop(1)
+		hint = hintStyle.Render("←/→: select • enter: confirm")
+	} else {
+		// Hint during processing
+		hintStyle := lipgloss.NewStyle().
+			Foreground(ColorGray).
+			MarginTop(2)
+		hint = hintStyle.Render("Recording controls disabled during processing")
+	}
 
 	// Combine all elements
 	content := lipgloss.JoinVertical(
@@ -277,6 +331,8 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int) 
 		stepsContent,
 		"",
 		statusMsg,
+		"",
+		buttonsRow,
 		hint,
 	)
 

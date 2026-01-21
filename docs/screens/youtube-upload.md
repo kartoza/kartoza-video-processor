@@ -15,10 +15,12 @@ The YouTube Upload screen handles the video upload process to YouTube, including
 </div>
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━ Upload to YouTube ━━━━━━━━━━━━━━</span>
 
-<span class="t-orange">Title:</span>
-<span class="t-cyan">┌────────────────────────────────────────────────┐</span>
-<span class="t-cyan">│</span> <span class="t-white">Introduction to QGIS sketcher - Episode 42</span>    <span class="t-cyan">│</span>
-<span class="t-cyan">└────────────────────────────────────────────────┘</span>
+<span class="t-orange">Video:</span>       <span class="t-orange-bg"> Vertical (9:16) </span>  <span class="t-gray"> Landscape (16:9) </span>
+
+<span class="t-blue">Title:</span>
+<span class="t-gray">┌────────────────────────────────────────────────┐</span>
+<span class="t-gray">│</span> <span class="t-white">Introduction to QGIS - Episode 42</span>    <span class="t-gray">│</span>
+<span class="t-gray">└────────────────────────────────────────────────┘</span>
 
 <span class="t-blue">Description:</span>
 <span class="t-gray">┌────────────────────────────────────────────────┐</span>
@@ -42,6 +44,24 @@ The YouTube Upload screen handles the video upload process to YouTube, including
 
 ## Upload Configuration
 
+### Video Source
+
+<span class="t-orange">**Video:**</span> *Selection*
+
+When both vertical (9:16) and landscape (16:9) versions of your video exist, you can choose which one to upload:
+
+| Option | Aspect Ratio | Best For |
+|--------|--------------|----------|
+| **Vertical (9:16)** | Portrait | YouTube Shorts, mobile viewing |
+| **Landscape (16:9)** | Widescreen | Standard YouTube videos, desktop viewing |
+
+Use ++left++ / ++right++ to change selection.
+
+!!! note "Single Format"
+    If only one video format exists (vertical or landscape), this option is hidden and the available format is used automatically.
+
+---
+
 ### Title
 
 <span class="t-orange">**Title:**</span> *Text Input*
@@ -50,6 +70,13 @@ The video title displayed on YouTube. Pre-filled from recording metadata.
 
 **Character Limit:** 100 characters
 
+**Spell Check:** The title is automatically checked for:
+
+- UK English spelling (US spellings are flagged with suggestions)
+- Common grammar issues (e.g., "a" vs "an")
+
+Issues are shown below the input field with ⚠ warnings and suggested corrections.
+
 ---
 
 ### Description
@@ -57,6 +84,14 @@ The video title displayed on YouTube. Pre-filled from recording metadata.
 <span class="t-blue">**Description:**</span> *Text Area*
 
 The video description. Pre-filled from recording metadata.
+
+**Spell Check:** The description is automatically checked for:
+
+- UK English spelling (e.g., "colour" not "color")
+- Common grammar issues
+- Multiple consecutive spaces
+
+Up to 3 issues are displayed; additional issues show as "... and X more issues".
 
 **Best Practices:**
 
@@ -115,7 +150,7 @@ After pressing **[ Upload ]**:
 </div>
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━ Uploading Video ━━━━━━━━━━━━━━━</span>
 
-<span class="t-white">Introduction to QGIS sketcher - Episode 42</span>
+<span class="t-white">Introduction to QGIS - Episode 42</span>
 
 <span class="t-cyan">Uploading...</span> <span class="t-white">67%</span>
 <span class="t-blue">████████████████████████████░░░░░░░░░░░░░░</span>
@@ -156,7 +191,7 @@ After successful upload:
 
 <span class="t-green">✓ Video uploaded successfully!</span>
 
-<span class="t-blue">Title:</span>    <span class="t-white">Introduction to QGIS sketcher - Episode 42</span>
+<span class="t-blue">Title:</span>    <span class="t-white">Introduction to QGIS - Episode 42</span>
 <span class="t-blue">Privacy:</span>  <span class="t-white">Unlisted</span>
 <span class="t-blue">Playlist:</span> <span class="t-white">QGIS Tutorials</span>
 

@@ -15,6 +15,7 @@ import (
 	"github.com/kartoza/kartoza-video-processor/internal/config"
 	"github.com/kartoza/kartoza-video-processor/internal/models"
 	"github.com/kartoza/kartoza-video-processor/internal/monitor"
+	"github.com/kartoza/kartoza-video-processor/internal/spellcheck"
 )
 
 // Field indices for navigation
@@ -83,6 +84,11 @@ type RecordingSetupModel struct {
 
 	// Confirm selection (true = Go Live, false = Cancel)
 	confirmSelected bool
+
+	// Spell checking
+	spellChecker *spellcheck.SpellChecker
+	titleIssues  []spellcheck.Issue
+	descIssues   []spellcheck.Issue
 }
 
 // NewRecordingSetupModel creates a new recording setup model
@@ -189,6 +195,7 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 		selectedColorIdx:   colorIdx,
 		gifLoopMode:        gifLoopMode,
 		selectedGifLoopIdx: gifLoopIdx,
+		spellChecker:       spellcheck.NewSpellChecker(),
 	}
 
 	// Load available logos from directory
@@ -299,10 +306,12 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 				switch m.focusedField {
 				case fieldTitle:
 					m.titleInput, cmd = m.titleInput.Update(msg)
+					m.titleIssues = m.spellChecker.Check(m.titleInput.Value())
 				case fieldNumber:
 					m.numberInput, cmd = m.numberInput.Update(msg)
 				case fieldDescription:
 					m.descInput, cmd = m.descInput.Update(msg)
+					m.descIssues = m.spellChecker.Check(m.descInput.Value())
 				}
 				return m, cmd
 			}
@@ -368,10 +377,12 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 				switch m.focusedField {
 				case fieldTitle:
 					m.titleInput, cmd = m.titleInput.Update(msg)
+					m.titleIssues = m.spellChecker.Check(m.titleInput.Value())
 				case fieldNumber:
 					m.numberInput, cmd = m.numberInput.Update(msg)
 				case fieldDescription:
 					m.descInput, cmd = m.descInput.Update(msg)
+					m.descIssues = m.spellChecker.Check(m.descInput.Value())
 				}
 				return m, cmd
 			}
@@ -720,109 +731,374 @@ func (m *RecordingSetupModel) SaveAllPresets() error {
 	return config.Save(cfg)
 }
 
-// View renders the two-column form layout
+// View renders the recording setup form matching the history edit view styling
 func (m *RecordingSetupModel) View() string {
-	// Column widths
-	labelWidth := 20
-	widgetWidth := 35
-
-	// Styles
+	// Styles matching history edit view
 	labelStyle := lipgloss.NewStyle().
-		Width(labelWidth).
-		Align(lipgloss.Right).
 		Foreground(ColorGray).
-		PaddingRight(2)
+		Width(16).
+		Align(lipgloss.Right)
 
-	labelFocusedStyle := lipgloss.NewStyle().
-		Width(labelWidth).
-		Align(lipgloss.Right).
+	focusedLabelStyle := lipgloss.NewStyle().
 		Foreground(ColorOrange).
 		Bold(true).
-		PaddingRight(2)
+		Width(16).
+		Align(lipgloss.Right)
 
-	widgetStyle := lipgloss.NewStyle().
-		Width(widgetWidth).
-		Align(lipgloss.Left)
+	dividerStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
 
-	// Build rows
+	warningStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		MarginLeft(18)
+
+	// Build form rows
 	var rows []string
 
-	// Title
-	rows = append(rows, m.renderRow(fieldTitle, "Title", m.titleInput.View(), labelStyle, labelFocusedStyle, widgetStyle))
+	// Title field
+	titleLabel := labelStyle.Render("Title:")
+	if m.focusedField == fieldTitle {
+		titleLabel = focusedLabelStyle.Render("Title:")
+		if m.inputMode {
+			titleLabel = focusedLabelStyle.Render("» Title:")
+		}
+	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		titleLabel,
+		"  ",
+		m.titleInput.View(),
+	))
 
-	// Number
-	rows = append(rows, m.renderRow(fieldNumber, "Number", m.numberInput.View(), labelStyle, labelFocusedStyle, widgetStyle))
-
-	// Topic
-	topicValue := m.renderSelector(m.topics, m.selectedTopic, func(t models.Topic) string { return t.Name }, m.focusedField == fieldTopic)
-	rows = append(rows, m.renderRow(fieldTopic, "Topic", topicValue, labelStyle, labelFocusedStyle, widgetStyle))
-
-	// Spacer
-	rows = append(rows, "")
-
-	// Record Audio
-	rows = append(rows, m.renderRow(fieldRecordAudio, "Record Audio", m.renderToggle(m.recordAudio, m.focusedField == fieldRecordAudio), labelStyle, labelFocusedStyle, widgetStyle))
-
-	// Record Webcam
-	rows = append(rows, m.renderRow(fieldRecordWebcam, "Record Webcam", m.renderToggle(m.recordWebcam, m.focusedField == fieldRecordWebcam), labelStyle, labelFocusedStyle, widgetStyle))
-
-	// Record Screen
-	rows = append(rows, m.renderRow(fieldRecordScreen, "Record Screen", m.renderToggle(m.recordScreen, m.focusedField == fieldRecordScreen), labelStyle, labelFocusedStyle, widgetStyle))
-
-	// Monitor (only if screen recording enabled)
-	if m.recordScreen && len(m.monitors) > 0 {
-		monitorValue := m.renderMonitorSelector()
-		rows = append(rows, m.renderRow(fieldMonitor, "Monitor", monitorValue, labelStyle, labelFocusedStyle, widgetStyle))
+	// Title spell check warnings
+	if len(m.titleIssues) > 0 {
+		titleWarning := spellcheck.FormatIssues(m.titleIssues)
+		if titleWarning != "" {
+			rows = append(rows, warningStyle.Render("⚠ "+titleWarning))
+		}
 	}
 
-	// Spacer
+	// Number field
+	numberLabel := labelStyle.Render("Number:")
+	if m.focusedField == fieldNumber {
+		numberLabel = focusedLabelStyle.Render("Number:")
+		if m.inputMode {
+			numberLabel = focusedLabelStyle.Render("» Number:")
+		}
+	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		numberLabel,
+		"  ",
+		m.numberInput.View(),
+	))
+
+	// Topic selector
+	topicLabel := labelStyle.Render("Topic:")
+	if m.focusedField == fieldTopic {
+		topicLabel = focusedLabelStyle.Render("Topic:")
+	}
+	var topicOptions []string
+	for i, topic := range m.topics {
+		topicStyle := lipgloss.NewStyle().
+			Padding(0, 1).
+			Margin(0, 1)
+
+		if i == m.selectedTopic {
+			if m.focusedField == fieldTopic {
+				topicStyle = topicStyle.
+					Background(ColorOrange).
+					Foreground(lipgloss.Color("#000000")).
+					Bold(true)
+			} else {
+				topicStyle = topicStyle.
+					Background(ColorGray).
+					Foreground(ColorWhite)
+			}
+		} else {
+			topicStyle = topicStyle.
+				Foreground(ColorGray)
+		}
+		topicOptions = append(topicOptions, topicStyle.Render(topic.Name))
+	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		topicLabel,
+		"  ",
+		lipgloss.JoinHorizontal(lipgloss.Center, topicOptions...),
+	))
+
+	// Divider - Recording Options
+	rows = append(rows, "")
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 50)))
 	rows = append(rows, "")
 
-	// Vertical Video (disabled if neither webcam nor screen is enabled)
-	verticalDisabled := !m.canEnableVerticalVideo()
-	rows = append(rows, m.renderRow(fieldVerticalVideo, "Vertical Video", m.renderToggleWithDisabled(m.verticalVideo, m.focusedField == fieldVerticalVideo, verticalDisabled), labelStyle, labelFocusedStyle, widgetStyle))
+	// Record Audio toggle
+	audioLabel := labelStyle.Render("Record Audio:")
+	if m.focusedField == fieldRecordAudio {
+		audioLabel = focusedLabelStyle.Render("Record Audio:")
+	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		audioLabel,
+		"  ",
+		m.renderToggle(m.recordAudio, m.focusedField == fieldRecordAudio),
+	))
 
-	// Add Logos
-	rows = append(rows, m.renderRow(fieldAddLogos, "Add Logos", m.renderToggle(m.addLogos, m.focusedField == fieldAddLogos), labelStyle, labelFocusedStyle, widgetStyle))
+	// Record Webcam toggle
+	webcamLabel := labelStyle.Render("Record Webcam:")
+	if m.focusedField == fieldRecordWebcam {
+		webcamLabel = focusedLabelStyle.Render("Record Webcam:")
+	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		webcamLabel,
+		"  ",
+		m.renderToggle(m.recordWebcam, m.focusedField == fieldRecordWebcam),
+	))
+
+	// Record Screen toggle
+	screenLabel := labelStyle.Render("Record Screen:")
+	if m.focusedField == fieldRecordScreen {
+		screenLabel = focusedLabelStyle.Render("Record Screen:")
+	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		screenLabel,
+		"  ",
+		m.renderToggle(m.recordScreen, m.focusedField == fieldRecordScreen),
+	))
+
+	// Monitor selector (only if screen recording enabled)
+	if m.recordScreen && len(m.monitors) > 0 {
+		monitorLabel := labelStyle.Render("Monitor:")
+		if m.focusedField == fieldMonitor {
+			monitorLabel = focusedLabelStyle.Render("Monitor:")
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			monitorLabel,
+			"  ",
+			m.renderMonitorSelector(),
+		))
+	}
+
+	// Divider - Output Options
+	rows = append(rows, "")
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 50)))
+	rows = append(rows, "")
+
+	// Vertical Video toggle
+	verticalLabel := labelStyle.Render("Vertical Video:")
+	if m.focusedField == fieldVerticalVideo {
+		verticalLabel = focusedLabelStyle.Render("Vertical Video:")
+	}
+	verticalDisabled := !m.canEnableVerticalVideo()
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		verticalLabel,
+		"  ",
+		m.renderToggleWithDisabled(m.verticalVideo, m.focusedField == fieldVerticalVideo, verticalDisabled),
+	))
+
+	// Add Logos toggle
+	logosLabel := labelStyle.Render("Add Logos:")
+	if m.focusedField == fieldAddLogos {
+		logosLabel = focusedLabelStyle.Render("Add Logos:")
+	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		logosLabel,
+		"  ",
+		m.renderToggle(m.addLogos, m.focusedField == fieldAddLogos),
+	))
 
 	// Logo selection fields (only show if addLogos is enabled)
 	if m.addLogos {
 		// Logo size hints
-		hintStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
-		rows = append(rows, hintStyle.Render("  Logos: 216x216px @ 72dpi • Banner: 1080x200px @ 72dpi"))
+		hintStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).MarginLeft(18)
+		rows = append(rows, hintStyle.Render("Logos: 216x216px • Banner: 1080x200px"))
 
-		leftLogoValue := m.renderLogoSelector(m.selectedLeftIdx, m.focusedField == fieldLeftLogo)
-		rows = append(rows, m.renderRow(fieldLeftLogo, "Left Logo", leftLogoValue, labelStyle, labelFocusedStyle, widgetStyle))
+		leftLabel := labelStyle.Render("Left Logo:")
+		if m.focusedField == fieldLeftLogo {
+			leftLabel = focusedLabelStyle.Render("Left Logo:")
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			leftLabel,
+			"  ",
+			m.renderLogoSelector(m.selectedLeftIdx, m.focusedField == fieldLeftLogo),
+		))
 
-		rightLogoValue := m.renderLogoSelector(m.selectedRightIdx, m.focusedField == fieldRightLogo)
-		rows = append(rows, m.renderRow(fieldRightLogo, "Right Logo", rightLogoValue, labelStyle, labelFocusedStyle, widgetStyle))
+		rightLabel := labelStyle.Render("Right Logo:")
+		if m.focusedField == fieldRightLogo {
+			rightLabel = focusedLabelStyle.Render("Right Logo:")
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			rightLabel,
+			"  ",
+			m.renderLogoSelector(m.selectedRightIdx, m.focusedField == fieldRightLogo),
+		))
 
-		bottomLogoValue := m.renderLogoSelector(m.selectedBottomIdx, m.focusedField == fieldBottomLogo)
-		rows = append(rows, m.renderRow(fieldBottomLogo, "Bottom Banner", bottomLogoValue, labelStyle, labelFocusedStyle, widgetStyle))
+		bottomLabel := labelStyle.Render("Bottom Banner:")
+		if m.focusedField == fieldBottomLogo {
+			bottomLabel = focusedLabelStyle.Render("Bottom Banner:")
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			bottomLabel,
+			"  ",
+			m.renderLogoSelector(m.selectedBottomIdx, m.focusedField == fieldBottomLogo),
+		))
 
-		titleColorValue := m.renderColorSelector(m.focusedField == fieldTitleColor)
-		rows = append(rows, m.renderRow(fieldTitleColor, "Title Color", titleColorValue, labelStyle, labelFocusedStyle, widgetStyle))
+		colorLabel := labelStyle.Render("Title Color:")
+		if m.focusedField == fieldTitleColor {
+			colorLabel = focusedLabelStyle.Render("Title Color:")
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+			colorLabel,
+			"  ",
+			m.renderColorSelector(m.focusedField == fieldTitleColor),
+		))
 
 		// Only show GIF loop mode if bottom logo is a GIF
 		if m.isBottomLogoGif() {
-			gifLoopValue := m.renderGifLoopSelector(m.focusedField == fieldGifLoopMode)
-			rows = append(rows, m.renderRow(fieldGifLoopMode, "GIF Animation", gifLoopValue, labelStyle, labelFocusedStyle, widgetStyle))
+			gifLabel := labelStyle.Render("GIF Animation:")
+			if m.focusedField == fieldGifLoopMode {
+				gifLabel = focusedLabelStyle.Render("GIF Animation:")
+			}
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+				gifLabel,
+				"  ",
+				m.renderGifLoopSelector(m.focusedField == fieldGifLoopMode),
+			))
 		}
 	}
 
-	// Spacer
+	// Divider - Description
+	rows = append(rows, "")
+	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 50)))
 	rows = append(rows, "")
 
-	// Description
-	rows = append(rows, m.renderRow(fieldDescription, "Description", m.descInput.View(), labelStyle, labelFocusedStyle, widgetStyle))
+	// Description field
+	descLabel := labelStyle.Render("Description:")
+	if m.focusedField == fieldDescription {
+		descLabel = focusedLabelStyle.Render("Description:")
+		if m.inputMode {
+			descLabel = focusedLabelStyle.Render("» Description:")
+		}
+	}
+	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+		descLabel,
+		"  ",
+		m.descInput.View(),
+	))
 
-	// Spacer
+	// Description spell check warnings (limit to 3)
+	if len(m.descIssues) > 0 {
+		maxIssues := 3
+		issuesToShow := m.descIssues
+		extraCount := 0
+		if len(issuesToShow) > maxIssues {
+			extraCount = len(issuesToShow) - maxIssues
+			issuesToShow = issuesToShow[:maxIssues]
+		}
+		descWarning := spellcheck.FormatIssues(issuesToShow)
+		if descWarning != "" {
+			if extraCount > 0 {
+				descWarning += fmt.Sprintf(" ... and %d more issues", extraCount)
+			}
+			rows = append(rows, warningStyle.Render("⚠ "+descWarning))
+		}
+	}
+
+	// Spacer before buttons
 	rows = append(rows, "")
 
 	// Confirm buttons
-	rows = append(rows, m.renderConfirmRow(labelWidth, widgetWidth))
+	rows = append(rows, m.renderConfirmButtons())
 
+	// Return just the form content - app.go handles header/footer/centering
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+// renderConfirmButtons renders the action buttons at the bottom of the form
+func (m *RecordingSetupModel) renderConfirmButtons() string {
+	hasSource := m.hasRecordingSource()
+	hasTitle := strings.TrimSpace(m.titleInput.Value()) != ""
+	canGoLive := hasSource && hasTitle
+
+	var goLive, cancel string
+
+	if m.focusedField == fieldConfirm {
+		if m.confirmSelected {
+			if canGoLive {
+				goLive = lipgloss.NewStyle().
+					Background(ColorOrange).
+					Foreground(lipgloss.Color("#000")).
+					Bold(true).
+					Padding(0, 3).
+					Render("Go Live!")
+			} else {
+				goLive = lipgloss.NewStyle().
+					Background(ColorGray).
+					Foreground(lipgloss.Color("#666")).
+					Padding(0, 3).
+					Render("Go Live!")
+			}
+			cancel = lipgloss.NewStyle().
+				Foreground(ColorGray).
+				Padding(0, 3).
+				Render("Cancel")
+		} else {
+			if canGoLive {
+				goLive = lipgloss.NewStyle().
+					Foreground(ColorGray).
+					Padding(0, 3).
+					Render("Go Live!")
+			} else {
+				goLive = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#666")).
+					Padding(0, 3).
+					Render("Go Live!")
+			}
+			cancel = lipgloss.NewStyle().
+				Background(ColorGray).
+				Foreground(ColorWhite).
+				Bold(true).
+				Padding(0, 3).
+				Render("Cancel")
+		}
+	} else {
+		if canGoLive {
+			goLive = lipgloss.NewStyle().
+				Foreground(ColorGray).
+				Padding(0, 3).
+				Render("Go Live!")
+		} else {
+			goLive = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#666")).
+				Padding(0, 3).
+				Render("Go Live!")
+		}
+		cancel = lipgloss.NewStyle().
+			Foreground(ColorGray).
+			Padding(0, 3).
+			Render("Cancel")
+	}
+
+	buttons := fmt.Sprintf("%s    %s", goLive, cancel)
+	buttonRow := lipgloss.NewStyle().Width(62).Align(lipgloss.Center).Render(buttons)
+
+	// Show validation warnings
+	var warnings []string
+	if !hasTitle {
+		warnings = append(warnings, "Title is required")
+	}
+	if !hasSource {
+		warnings = append(warnings, "Enable at least one recording source")
+	}
+
+	if len(warnings) > 0 {
+		warningStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Italic(true).
+			Align(lipgloss.Center).
+			Width(62)
+		warningText := warningStyle.Render(strings.Join(warnings, " • "))
+		return lipgloss.JoinVertical(lipgloss.Center, buttonRow, warningText)
+	}
+
+	return buttonRow
 }
 
 func (m *RecordingSetupModel) renderRow(field int, label, widget string, labelStyle, labelFocusedStyle, widgetStyle lipgloss.Style) string {
@@ -946,64 +1222,6 @@ func (m *RecordingSetupModel) renderGifLoopSelector(focused bool) string {
 		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(label))
 	}
 	return lipgloss.NewStyle().Foreground(ColorWhite).Render(label)
-}
-
-func (m *RecordingSetupModel) renderConfirmRow(labelWidth, widgetWidth int) string {
-	// Center the buttons
-	spacer := lipgloss.NewStyle().Width(labelWidth).Render("")
-
-	var goLive, cancel string
-	hasSource := m.hasRecordingSource()
-	hasTitle := strings.TrimSpace(m.titleInput.Value()) != ""
-	canGoLive := hasSource && hasTitle
-
-	if m.focusedField == fieldConfirm {
-		if m.confirmSelected {
-			if canGoLive {
-				goLive = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000")).Bold(true).Padding(0, 3).Render("Go Live!")
-			} else {
-				// Disabled state - show as dim
-				goLive = lipgloss.NewStyle().Background(ColorGray).Foreground(lipgloss.Color("#666")).Padding(0, 3).Render("Go Live!")
-			}
-			cancel = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Cancel")
-		} else {
-			if canGoLive {
-				goLive = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Go Live!")
-			} else {
-				goLive = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Padding(0, 3).Render("Go Live!")
-			}
-			cancel = lipgloss.NewStyle().Background(ColorGray).Foreground(ColorWhite).Bold(true).Padding(0, 3).Render("Cancel")
-		}
-	} else {
-		if canGoLive {
-			goLive = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Go Live!")
-		} else {
-			goLive = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Padding(0, 3).Render("Go Live!")
-		}
-		cancel = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 3).Render("Cancel")
-	}
-
-	buttons := fmt.Sprintf("%s    %s", goLive, cancel)
-
-	// Show validation warnings
-	var warnings []string
-	if !hasTitle {
-		warnings = append(warnings, "Title is required")
-	}
-	if !hasSource {
-		warnings = append(warnings, "Enable at least one recording source")
-	}
-
-	if len(warnings) > 0 {
-		warningStyle := lipgloss.NewStyle().Foreground(ColorRed).Italic(true)
-		warningText := warningStyle.Render(strings.Join(warnings, " • "))
-		return lipgloss.JoinVertical(lipgloss.Center,
-			lipgloss.JoinHorizontal(lipgloss.Center, spacer, buttons),
-			lipgloss.JoinHorizontal(lipgloss.Center, spacer, warningText),
-		)
-	}
-
-	return lipgloss.JoinHorizontal(lipgloss.Center, spacer, buttons)
 }
 
 type recordingSetupCompleteMsg struct{}
