@@ -34,7 +34,8 @@ const (
 type YouTubeUploadField int
 
 const (
-	YouTubeUploadFieldVideoSource YouTubeUploadField = iota
+	YouTubeUploadFieldAccount YouTubeUploadField = iota
+	YouTubeUploadFieldVideoSource
 	YouTubeUploadFieldTitle
 	YouTubeUploadFieldDescription
 	YouTubeUploadFieldTags
@@ -70,6 +71,10 @@ type YouTubeUploadModel struct {
 
 	step         YouTubeUploadStep
 	focusedField YouTubeUploadField
+
+	// Account selection
+	accounts        []youtube.Account
+	selectedAccount int
 
 	// Video source selection
 	videoSourceOptions   []VideoSourceOption
@@ -159,9 +164,25 @@ func NewYouTubeUploadModel(videoPath, outputDir, title, description, topic strin
 
 	sc := spellcheck.NewSpellChecker()
 
+	// Get available YouTube accounts
+	accounts := cfg.YouTube.GetAccounts()
+	selectedAccountIdx := 0
+
+	// Find the last used account
+	if cfg.YouTube.LastUsedAccountID != "" {
+		for i, acc := range accounts {
+			if acc.ID == cfg.YouTube.LastUsedAccountID {
+				selectedAccountIdx = i
+				break
+			}
+		}
+	}
+
 	m := &YouTubeUploadModel{
 		step:             YouTubeUploadStepPrompt,
 		focusedField:     YouTubeUploadFieldTitle,
+		accounts:         accounts,
+		selectedAccount:  selectedAccountIdx,
 		videoPath:        videoPath,
 		outputDir:        outputDir,
 		title:            title,
@@ -347,16 +368,33 @@ func (m *YouTubeUploadModel) saveYouTubeMetadata(result *youtube.UploadResult) {
 		ytMeta.PlaylistName = m.playlists[m.selectedPlaylist].Title
 	}
 
-	// Add channel info if available
-	if m.cfg.YouTube.ChannelName != "" {
-		ytMeta.ChannelName = m.cfg.YouTube.ChannelName
-	}
-	if m.cfg.YouTube.ChannelID != "" {
-		ytMeta.ChannelID = m.cfg.YouTube.ChannelID
+	// Add channel info from selected account
+	if len(m.accounts) > 0 && m.selectedAccount < len(m.accounts) {
+		acc := m.accounts[m.selectedAccount]
+		if acc.ChannelName != "" {
+			ytMeta.ChannelName = acc.ChannelName
+		}
+		if acc.ChannelID != "" {
+			ytMeta.ChannelID = acc.ChannelID
+		}
+	} else {
+		// Fallback to legacy config
+		if m.cfg.YouTube.ChannelName != "" {
+			ytMeta.ChannelName = m.cfg.YouTube.ChannelName
+		}
+		if m.cfg.YouTube.ChannelID != "" {
+			ytMeta.ChannelID = m.cfg.YouTube.ChannelID
+		}
 	}
 
 	m.recordingInfo.Metadata.YouTube = ytMeta
 	_ = m.recordingInfo.Save()
+
+	// Save last used account ID
+	if len(m.accounts) > 0 && m.selectedAccount < len(m.accounts) {
+		m.cfg.YouTube.LastUsedAccountID = m.accounts[m.selectedAccount].ID
+		_ = config.Save(m.cfg)
+	}
 }
 
 // handleKeyMsg handles keyboard input
@@ -385,17 +423,21 @@ func (m *YouTubeUploadModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeUploadModel, 
 	case YouTubeUploadStepPrompt:
 		switch msg.String() {
 		case "y", "Y", "enter":
-			// Check if YouTube is connected
-			if !m.cfg.IsYouTubeConnected() {
-				m.errorMessage = "YouTube not connected. Go to Options > YouTube to set up."
+			// Check if any YouTube account is configured
+			if len(m.accounts) == 0 {
+				m.errorMessage = "No YouTube accounts configured. Go to Options > YouTube to set up."
+				return m, nil
+			}
+			// Check if selected account is authenticated
+			selectedAcc := m.accounts[m.selectedAccount]
+			if !youtube.IsAccountAuthenticated(&m.cfg.YouTube, config.GetConfigDir(), selectedAcc.ID) {
+				m.errorMessage = "Selected account not connected. Go to Options > YouTube to authenticate."
 				return m, nil
 			}
 			m.step = YouTubeUploadStepMetadata
-			// Set initial focus to video source if multiple options, otherwise title
-			if len(m.videoSourceOptions) > 1 {
-				m.focusedField = YouTubeUploadFieldVideoSource
-			} else {
-				m.focusedField = YouTubeUploadFieldTitle
+			// Set initial focus based on available fields
+			m.focusedField = m.getFirstField()
+			if m.focusedField == YouTubeUploadFieldTitle {
 				m.titleInput.Focus()
 			}
 			m.loadingPlaylists = true
@@ -417,6 +459,24 @@ func (m *YouTubeUploadModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeUploadModel, 
 			return m, textinput.Blink
 
 		case "left", "right":
+			if m.focusedField == YouTubeUploadFieldAccount && len(m.accounts) > 1 {
+				if msg.String() == "left" {
+					m.selectedAccount--
+					if m.selectedAccount < 0 {
+						m.selectedAccount = len(m.accounts) - 1
+					}
+				} else {
+					m.selectedAccount++
+					if m.selectedAccount >= len(m.accounts) {
+						m.selectedAccount = 0
+					}
+				}
+				// Reload playlists for new account
+				m.playlists = nil
+				m.selectedPlaylist = -1
+				m.loadingPlaylists = true
+				return m, m.loadPlaylists()
+			}
 			if m.focusedField == YouTubeUploadFieldVideoSource && len(m.videoSourceOptions) > 1 {
 				if msg.String() == "left" {
 					m.selectedVideoSource--
@@ -538,16 +598,16 @@ func (m *YouTubeUploadModel) handleEnter() (*YouTubeUploadModel, tea.Cmd) {
 func (m *YouTubeUploadModel) nextField() {
 	m.unfocusAll()
 	m.focusedField++
+	// Skip account if only one account available
+	if m.focusedField == YouTubeUploadFieldAccount && len(m.accounts) <= 1 {
+		m.focusedField++
+	}
 	// Skip video source if only one option available
 	if m.focusedField == YouTubeUploadFieldVideoSource && len(m.videoSourceOptions) <= 1 {
 		m.focusedField++
 	}
 	if m.focusedField > YouTubeUploadFieldCancel {
-		m.focusedField = YouTubeUploadFieldVideoSource
-		// Skip video source if only one option available
-		if len(m.videoSourceOptions) <= 1 {
-			m.focusedField = YouTubeUploadFieldTitle
-		}
+		m.focusedField = m.getFirstField()
 	}
 	m.focusCurrent()
 }
@@ -560,7 +620,11 @@ func (m *YouTubeUploadModel) prevField() {
 	if m.focusedField == YouTubeUploadFieldVideoSource && len(m.videoSourceOptions) <= 1 {
 		m.focusedField--
 	}
-	if m.focusedField < YouTubeUploadFieldVideoSource {
+	// Skip account if only one account available
+	if m.focusedField == YouTubeUploadFieldAccount && len(m.accounts) <= 1 {
+		m.focusedField--
+	}
+	if m.focusedField < YouTubeUploadFieldAccount {
 		m.focusedField = YouTubeUploadFieldCancel
 	}
 	m.focusCurrent()
@@ -598,11 +662,39 @@ func (m *YouTubeUploadModel) focusCurrent() {
 	}
 }
 
+// getFirstField returns the first field to focus based on available options
+func (m *YouTubeUploadModel) getFirstField() YouTubeUploadField {
+	// Start with account if multiple accounts
+	if len(m.accounts) > 1 {
+		return YouTubeUploadFieldAccount
+	}
+	// Then video source if multiple options
+	if len(m.videoSourceOptions) > 1 {
+		return YouTubeUploadFieldVideoSource
+	}
+	// Otherwise title
+	return YouTubeUploadFieldTitle
+}
+
 // loadPlaylists fetches playlists from YouTube
 func (m *YouTubeUploadModel) loadPlaylists() tea.Cmd {
+	// Capture the selected account for the goroutine
+	var clientID, clientSecret, accountID string
+	if len(m.accounts) > 0 && m.selectedAccount < len(m.accounts) {
+		acc := m.accounts[m.selectedAccount]
+		clientID = acc.ClientID
+		clientSecret = acc.ClientSecret
+		accountID = acc.ID
+	} else {
+		// Fallback to legacy config
+		clientID = m.cfg.YouTube.ClientID
+		clientSecret = m.cfg.YouTube.ClientSecret
+		accountID = "legacy"
+	}
+
 	return func() tea.Msg {
 		ctx := context.Background()
-		auth := youtube.NewAuth(m.cfg.YouTube.ClientID, m.cfg.YouTube.ClientSecret, config.GetConfigDir())
+		auth := youtube.NewAuthForAccount(clientID, clientSecret, config.GetConfigDir(), accountID)
 
 		uploader, err := youtube.NewUploader(ctx, auth)
 		if err != nil {
@@ -638,7 +730,6 @@ func (m *YouTubeUploadModel) startUpload() tea.Cmd {
 
 	// Capture values needed by the goroutine
 	progressCh := m.uploadProgressCh
-	cfg := m.cfg
 	videoPath := m.videoPath
 	title := m.titleInput.Value()
 	description := m.descriptionInput.Value()
@@ -650,12 +741,26 @@ func (m *YouTubeUploadModel) startUpload() tea.Cmd {
 		playlistID = m.playlists[m.selectedPlaylist].ID
 	}
 
+	// Get selected account credentials
+	var clientID, clientSecret, accountID string
+	if len(m.accounts) > 0 && m.selectedAccount < len(m.accounts) {
+		acc := m.accounts[m.selectedAccount]
+		clientID = acc.ClientID
+		clientSecret = acc.ClientSecret
+		accountID = acc.ID
+	} else {
+		// Fallback to legacy config
+		clientID = m.cfg.YouTube.ClientID
+		clientSecret = m.cfg.YouTube.ClientSecret
+		accountID = "legacy"
+	}
+
 	// Start the upload in a goroutine
 	go func() {
 		ctx := context.Background()
 
-		// Create auth
-		auth := youtube.NewAuth(cfg.YouTube.ClientID, cfg.YouTube.ClientSecret, config.GetConfigDir())
+		// Create auth for selected account
+		auth := youtube.NewAuthForAccount(clientID, clientSecret, config.GetConfigDir(), accountID)
 
 		// Create uploader
 		uploader, err := youtube.NewUploader(ctx, auth)
@@ -807,6 +912,36 @@ func (m *YouTubeUploadModel) renderMetadata() string {
 	inactiveButtonStyle := buttonStyle.
 		Background(ColorGray).
 		Foreground(ColorWhite)
+
+	// Account row (only show if multiple accounts available)
+	var accountRow string
+	if len(m.accounts) > 1 {
+		accountLabel := labelStyle.Render("Account: ")
+		if m.focusedField == YouTubeUploadFieldAccount {
+			accountLabel = labelActiveStyle.Render("Account: ")
+		}
+		var accountValues []string
+		for i, acc := range m.accounts {
+			displayName := acc.Name
+			if displayName == "" {
+				displayName = acc.ChannelName
+			}
+			if displayName == "" {
+				displayName = "Account " + acc.ID[:8]
+			}
+			style := lipgloss.NewStyle().Foreground(ColorGray)
+			if i == m.selectedAccount {
+				if m.focusedField == YouTubeUploadFieldAccount {
+					style = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000000"))
+				} else {
+					style = lipgloss.NewStyle().Foreground(ColorWhite).Bold(true)
+				}
+			}
+			accountValues = append(accountValues, style.Render(" "+displayName+" "))
+		}
+		accountValue := lipgloss.JoinHorizontal(lipgloss.Center, accountValues...)
+		accountRow = lipgloss.JoinHorizontal(lipgloss.Center, accountLabel, accountValue)
+	}
 
 	// Video source row (only show if multiple options available)
 	var videoSourceRow string
@@ -965,6 +1100,9 @@ func (m *YouTubeUploadModel) renderMetadata() string {
 
 	// Build the rows to display
 	rows := []string{}
+	if accountRow != "" {
+		rows = append(rows, accountRow)
+	}
 	if videoSourceRow != "" {
 		rows = append(rows, videoSourceRow)
 	}

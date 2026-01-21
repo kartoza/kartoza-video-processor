@@ -916,3 +916,83 @@ the video preview v keybind should show the vertical video not the merged one. y
 2026-01-21 21:44:18 - The video title and description needs to be spell checked and grammar checked (UK english) and any issues highlighted
 2026-01-21 22:10:00 - if I edit the recording from the history item edit screen, it should also spell check the title and description too.
 2026-01-21 22:30:00 - when you edit the details of a video from the history item list the form is beautifully presented. The form for creating a new video should be stylistically the same
+2026-01-21 - Add support for multiple youtube accounts. when doing an upload to youtube on any screen where this is offered, let the user select which account to upload to. It should default to whatever account was used last.
+
+**Summary:** Implemented multi-account YouTube support:
+
+1. **Updated youtube/config.go:**
+   - Added `Account` struct with ID, Name, ClientID, ClientSecret, DefaultPlaylistID, ChannelName, ChannelID
+   - Added `Accounts []Account` and `LastUsedAccountID` fields to Config
+   - Added helper methods: `GetAccounts()`, `GetAccount()`, `GetLastUsedAccount()`, `AddAccount()`, `UpdateAccount()`, `RemoveAccount()`, `GetAccountByChannelID()`
+   - Added per-account token functions: `GetTokenPathForAccount()`, `LoadTokenForAccount()`, `SaveTokenForAccount()`, `DeleteTokenForAccount()`, `HasTokenForAccount()`
+
+2. **Updated youtube/auth.go:**
+   - Added `accountID` field to Auth struct for multi-account support
+   - Added `NewAuthForAccount()` function for account-specific authentication
+   - Updated token load/save to use account-specific paths
+   - Added `GetAuthStatusForAccount()` and `IsAccountAuthenticated()` functions
+
+3. **Updated tui/youtube_upload.go:**
+   - Added `YouTubeUploadFieldAccount` to field enum (first field when multiple accounts)
+   - Added `accounts` and `selectedAccount` fields to model
+   - Added account selector UI row (only shows when >1 account configured)
+   - Updated `loadPlaylists()` to use selected account credentials
+   - Updated `startUpload()` to use selected account credentials
+   - Updated `saveYouTubeMetadata()` to record channel info from selected account
+   - Saves `LastUsedAccountID` to config after successful upload
+   - Playlists reload automatically when switching accounts
+
+4. **Updated tui/history.go:**
+   - Updated `changeYouTubePrivacy()` to find account by channel ID or fallback to last used
+   - Updated `deleteFromYouTube()` to find account by channel ID or fallback to last used
+
+5. **Updated documentation:**
+   - docs/screens/youtube-upload.md: Added Account Selection section
+   - docs/screens/youtube-setup.md: Added Multiple Accounts section with config examples
+   - docs/developer/modules/youtube.md: Added Account, Config, Auth types and token functions
+
+Key features:
+- Backwards compatible with legacy single-account config (treated as account ID "legacy")
+- Per-account token storage: `youtube_token.json` (legacy), `youtube_token_{accountID}.json` (new accounts)
+- Account selector only shows when multiple accounts are configured
+- Last used account is remembered and becomes default for next upload
+- YouTube operations (privacy change, delete) automatically use the correct account based on channel ID
+
+2026-01-21 - (follow-up) Add account management UI - "no I mean in the video processor app there is no option I can see to add more accounts" - "yes with a nice list view of the existing account plus crud operations for accounts"
+
+**Summary:** Added in-app account management UI to YouTube setup screen:
+
+1. **Updated youtube_setup.go:**
+   - Added new steps: `YouTubeStepAccounts`, `YouTubeStepAccountAdd`, `YouTubeStepAccountEdit`, `YouTubeStepAccountDelete`
+   - Added account management fields to model: `accounts`, `selectedAccountIndex`, `accountName`, `accountClientID`, `accountClientSecret`, `accountFormFocus`, `editingAccountID`, `isAuthenticatingAccount`, `accountAuthURL`
+   - Added key "A" on connected screen to access account management
+   - Added key handlers for account list (up/down, N/E/D/C, enter/esc)
+   - Added key handlers for add/edit form (tab, enter, esc)
+   - Added key handlers for delete confirmation (Y/N)
+   - Added `startAccountAuth()` and `waitForAccountAuthResult()` for per-account OAuth flow
+   - Added `renderAccounts()` - account list with connection status (✓ Connected / ○ Not connected)
+   - Added `renderAccountForm()` - add/edit form with name, client ID, client secret fields
+   - Added `renderAccountDelete()` - delete confirmation with warning
+
+2. **Account List Features:**
+   - Shows all accounts with connection status
+   - Highlights selected account with arrow indicator
+   - Shows channel name for connected accounts
+   - Navigate with up/down keys
+   - Press N to add, E to edit, D to delete, C to connect
+
+3. **Add/Edit Form:**
+   - Account name (friendly display name)
+   - Client ID (OAuth credential)
+   - Client Secret (masked input)
+   - Tab to cycle through fields
+   - Enter to save
+   - Validates credentials format before saving
+
+4. **Delete Confirmation:**
+   - Shows account details
+   - Warns that credentials and tokens will be removed
+   - Y to confirm, N/Esc to cancel
+
+5. **Updated documentation:**
+   - docs/screens/youtube-setup.md: Added "Managing Accounts in the App" section with keybindings and step-by-step instructions

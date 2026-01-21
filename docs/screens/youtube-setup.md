@@ -267,12 +267,91 @@ The application requests the following YouTube API scopes:
 | `youtube.readonly` | Read channel info |
 | `youtube` | Manage playlists |
 
+## Multiple Accounts
+
+The application supports multiple YouTube accounts, allowing you to upload videos to different channels.
+
+### How Multiple Accounts Work
+
+| Feature | Description |
+|---------|-------------|
+| **Per-Account Credentials** | Each account has its own OAuth credentials |
+| **Separate Tokens** | Authentication tokens are stored per account |
+| **Account Selection** | Choose which account to use when uploading |
+| **Last Used Default** | Defaults to the most recently used account |
+
+### Managing Accounts in the App
+
+From the YouTube Connected screen, press ++a++ to open the account management screen.
+
+| Key | Action |
+|-----|--------|
+| ++n++ | Add new account |
+| ++e++ | Edit selected account |
+| ++d++ | Delete selected account |
+| ++c++ | Connect/authenticate selected account |
+| ++up++ / ++down++ | Navigate account list |
+| ++enter++ | Back to connected screen |
+
+**Adding a new account:**
+
+1. Press ++a++ from the YouTube Connected screen
+2. Press ++n++ to add a new account
+3. Enter a friendly name for the account (e.g., "Work Channel")
+4. Enter the Client ID from Google Cloud Console
+5. Enter the Client Secret
+6. Press ++enter++ to save
+7. Select the account and press ++c++ to authenticate
+
+### Manual Configuration (Alternative)
+
+You can also edit config.json directly to add accounts:
+
+```json
+{
+  "youtube": {
+    "accounts": [
+      {
+        "id": "acc_12345678",
+        "name": "Work Channel",
+        "client_id": "your-client-id.apps.googleusercontent.com",
+        "client_secret": "your-client-secret"
+      },
+      {
+        "id": "acc_87654321",
+        "name": "Personal Channel",
+        "client_id": "another-client-id.apps.googleusercontent.com",
+        "client_secret": "another-client-secret"
+      }
+    ],
+    "last_used_account_id": "acc_12345678"
+  }
+}
+```
+
+Authenticate each account via Options > YouTube > Accounts > (select account) > C
+
+!!! tip "Legacy Account"
+    If you already have a single account configured (in the legacy format), it will automatically appear as "Default Account" in the account selector.
+
+### Using Multiple Accounts
+
+When uploading videos, if multiple accounts are configured:
+
+1. The **Account** field appears at the top of the upload form
+2. Use ++left++ / ++right++ to select the account
+3. Playlists reload automatically when switching accounts
+4. The selected account is remembered for next time
+
 ## Token Storage
 
 OAuth tokens are stored securely in:
 
 ```
-~/.config/kartoza-video-processor/config.json
+~/.config/kartoza-video-processor/
+├── config.json           # Configuration including credentials
+├── youtube_token.json    # Token for legacy/default account
+└── youtube_token_acc_*.json  # Tokens for additional accounts
 ```
 
 **Stored data:**

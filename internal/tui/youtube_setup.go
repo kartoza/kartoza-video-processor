@@ -26,6 +26,10 @@ const (
 	YouTubeStepVerified
 	YouTubeStepPlaylists
 	YouTubeStepCreatePlaylist
+	YouTubeStepAccounts      // Account list view
+	YouTubeStepAccountAdd    // Add new account
+	YouTubeStepAccountEdit   // Edit existing account
+	YouTubeStepAccountDelete // Delete confirmation
 	YouTubeStepError
 )
 
@@ -57,10 +61,21 @@ type YouTubeSetupModel struct {
 	isLoadingPlaylists  bool
 	playlistsError      string
 	newPlaylistTitle    textinput.Model
-	newPlaylistDesc      textinput.Model
-	newPlaylistPrivacy   youtube.PrivacyStatus
-	createPlaylistFocus  int  // 0=title, 1=desc, 2=privacy
-	isCreatingPlaylist   bool
+	newPlaylistDesc     textinput.Model
+	newPlaylistPrivacy  youtube.PrivacyStatus
+	createPlaylistFocus int // 0=title, 1=desc, 2=privacy
+	isCreatingPlaylist  bool
+
+	// Account management
+	accounts             []youtube.Account
+	selectedAccountIndex int
+	accountName          textinput.Model
+	accountClientID      textinput.Model
+	accountClientSecret  textinput.Model
+	accountFormFocus     int  // 0=name, 1=clientID, 2=clientSecret
+	editingAccountID     string
+	isAuthenticatingAccount bool
+	accountAuthURL       string
 
 	// Config
 	cfg *config.Config
@@ -90,6 +105,25 @@ func NewYouTubeSetupModel() *YouTubeSetupModel {
 	playlistDescInput.CharLimit = 500
 	playlistDescInput.Width = 50
 
+	// Account name input
+	accountNameInput := textinput.New()
+	accountNameInput.Placeholder = "My YouTube Channel"
+	accountNameInput.CharLimit = 100
+	accountNameInput.Width = 50
+
+	// Account client ID input
+	accountClientIDInput := textinput.New()
+	accountClientIDInput.Placeholder = "xxxxx.apps.googleusercontent.com"
+	accountClientIDInput.CharLimit = 200
+	accountClientIDInput.Width = 50
+
+	// Account client secret input
+	accountClientSecretInput := textinput.New()
+	accountClientSecretInput.Placeholder = "GOCSPX-xxxxx"
+	accountClientSecretInput.CharLimit = 100
+	accountClientSecretInput.Width = 50
+	accountClientSecretInput.EchoMode = textinput.EchoPassword
+
 	// Load existing config
 	cfg, _ := config.Load()
 
@@ -102,13 +136,17 @@ func NewYouTubeSetupModel() *YouTubeSetupModel {
 	}
 
 	m := &YouTubeSetupModel{
-		clientID:           clientIDInput,
-		clientSecret:       clientSecretInput,
-		newPlaylistTitle:   playlistTitleInput,
-		newPlaylistDesc:    playlistDescInput,
-		newPlaylistPrivacy: youtube.PrivacyPrivate,
-		cfg:                cfg,
-		authStatus:         cfg.GetYouTubeAuthStatus(),
+		clientID:            clientIDInput,
+		clientSecret:        clientSecretInput,
+		newPlaylistTitle:    playlistTitleInput,
+		newPlaylistDesc:     playlistDescInput,
+		newPlaylistPrivacy:  youtube.PrivacyPrivate,
+		accountName:         accountNameInput,
+		accountClientID:     accountClientIDInput,
+		accountClientSecret: accountClientSecretInput,
+		accounts:            cfg.YouTube.GetAccounts(),
+		cfg:                 cfg,
+		authStatus:          cfg.GetYouTubeAuthStatus(),
 	}
 
 	// Start at appropriate step based on current status
@@ -216,6 +254,31 @@ func (m *YouTubeSetupModel) Update(msg tea.Msg) (*YouTubeSetupModel, tea.Cmd) {
 			m.step = YouTubeStepPlaylists
 		}
 		return m, nil
+
+	case youtubeAccountAuthStartedMsg:
+		m.isAuthenticatingAccount = true
+		m.accountAuthURL = msg.authURL
+		return m, m.waitForAccountAuthResult()
+
+	case youtubeAccountAuthCompleteMsg:
+		m.isAuthenticatingAccount = false
+		m.accountAuthURL = ""
+		if msg.err != nil {
+			m.errorMessage = msg.err.Error()
+		} else {
+			// Update account with channel info
+			if m.selectedAccountIndex < len(m.accounts) {
+				acc := m.accounts[m.selectedAccountIndex]
+				acc.ChannelName = msg.channelName
+				acc.ChannelID = msg.channelID
+				m.cfg.YouTube.UpdateAccount(acc)
+				_ = config.Save(m.cfg)
+				m.accounts = m.cfg.YouTube.GetAccounts()
+			}
+			m.errorMessage = ""
+		}
+		m.step = YouTubeStepAccounts
+		return m, nil
 	}
 
 	// Update text inputs
@@ -317,6 +380,12 @@ func (m *YouTubeSetupModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeSetupModel, te
 			m.isLoadingPlaylists = true
 			m.playlistPage = 0
 			return m, m.loadPlaylists()
+		case "a":
+			// Manage accounts
+			m.accounts = m.cfg.YouTube.GetAccounts()
+			m.selectedAccountIndex = 0
+			m.step = YouTubeStepAccounts
+			return m, nil
 		}
 
 	case YouTubeStepVerifying:
@@ -440,6 +509,169 @@ func (m *YouTubeSetupModel) handleKeyMsg(msg tea.KeyMsg) (*YouTubeSetupModel, te
 				m.newPlaylistDesc, cmd = m.newPlaylistDesc.Update(msg)
 			}
 			return m, cmd
+		}
+
+	case YouTubeStepAccounts:
+		switch msg.String() {
+		case "enter", "b", "esc":
+			m.step = YouTubeStepConnected
+			return m, nil
+		case "up", "k":
+			if m.selectedAccountIndex > 0 {
+				m.selectedAccountIndex--
+			}
+		case "down", "j":
+			if m.selectedAccountIndex < len(m.accounts)-1 {
+				m.selectedAccountIndex++
+			}
+		case "n", "a":
+			// Add new account
+			m.accountName.SetValue("")
+			m.accountClientID.SetValue("")
+			m.accountClientSecret.SetValue("")
+			m.accountFormFocus = 0
+			m.accountName.Focus()
+			m.accountClientID.Blur()
+			m.accountClientSecret.Blur()
+			m.editingAccountID = ""
+			m.step = YouTubeStepAccountAdd
+			return m, textinput.Blink
+		case "e":
+			// Edit selected account
+			if len(m.accounts) > 0 && m.selectedAccountIndex < len(m.accounts) {
+				acc := m.accounts[m.selectedAccountIndex]
+				m.accountName.SetValue(acc.Name)
+				m.accountClientID.SetValue(acc.ClientID)
+				m.accountClientSecret.SetValue(acc.ClientSecret)
+				m.accountFormFocus = 0
+				m.accountName.Focus()
+				m.accountClientID.Blur()
+				m.accountClientSecret.Blur()
+				m.editingAccountID = acc.ID
+				m.step = YouTubeStepAccountEdit
+				return m, textinput.Blink
+			}
+		case "d":
+			// Delete selected account
+			if len(m.accounts) > 0 && m.selectedAccountIndex < len(m.accounts) {
+				m.step = YouTubeStepAccountDelete
+				return m, nil
+			}
+		case "c":
+			// Connect/authenticate selected account
+			if len(m.accounts) > 0 && m.selectedAccountIndex < len(m.accounts) {
+				acc := m.accounts[m.selectedAccountIndex]
+				if acc.IsConfigured() {
+					return m, m.startAccountAuth(acc)
+				}
+			}
+		}
+
+	case YouTubeStepAccountAdd, YouTubeStepAccountEdit:
+		if m.isAuthenticatingAccount {
+			return m, nil
+		}
+		switch msg.String() {
+		case "esc":
+			m.step = YouTubeStepAccounts
+			return m, nil
+		case "tab", "shift+tab":
+			// Cycle through fields: name -> clientID -> clientSecret -> name
+			m.accountFormFocus = (m.accountFormFocus + 1) % 3
+			switch m.accountFormFocus {
+			case 0:
+				m.accountName.Focus()
+				m.accountClientID.Blur()
+				m.accountClientSecret.Blur()
+			case 1:
+				m.accountName.Blur()
+				m.accountClientID.Focus()
+				m.accountClientSecret.Blur()
+			case 2:
+				m.accountName.Blur()
+				m.accountClientID.Blur()
+				m.accountClientSecret.Focus()
+			}
+			return m, textinput.Blink
+		case "enter":
+			// Save account
+			name := strings.TrimSpace(m.accountName.Value())
+			clientID := strings.TrimSpace(m.accountClientID.Value())
+			clientSecret := strings.TrimSpace(m.accountClientSecret.Value())
+
+			if name == "" {
+				m.errorMessage = "Account name is required"
+				return m, nil
+			}
+			if err := youtube.ValidateCredentials(context.Background(), clientID, clientSecret); err != nil {
+				m.errorMessage = err.Error()
+				return m, nil
+			}
+
+			if m.step == YouTubeStepAccountAdd {
+				// Add new account
+				newAccount := youtube.Account{
+					Name:         name,
+					ClientID:     clientID,
+					ClientSecret: clientSecret,
+				}
+				m.cfg.YouTube.AddAccount(newAccount)
+			} else {
+				// Update existing account
+				acc := m.cfg.YouTube.GetAccount(m.editingAccountID)
+				if acc != nil {
+					acc.Name = name
+					acc.ClientID = clientID
+					acc.ClientSecret = clientSecret
+					m.cfg.YouTube.UpdateAccount(*acc)
+				}
+			}
+
+			if err := config.Save(m.cfg); err != nil {
+				m.errorMessage = "Failed to save: " + err.Error()
+				return m, nil
+			}
+
+			m.accounts = m.cfg.YouTube.GetAccounts()
+			m.errorMessage = ""
+			m.step = YouTubeStepAccounts
+			return m, nil
+		default:
+			// Forward to focused text input
+			var cmd tea.Cmd
+			switch m.accountFormFocus {
+			case 0:
+				m.accountName, cmd = m.accountName.Update(msg)
+			case 1:
+				m.accountClientID, cmd = m.accountClientID.Update(msg)
+			case 2:
+				m.accountClientSecret, cmd = m.accountClientSecret.Update(msg)
+			}
+			return m, cmd
+		}
+
+	case YouTubeStepAccountDelete:
+		switch msg.String() {
+		case "y", "Y":
+			// Confirm delete
+			if len(m.accounts) > 0 && m.selectedAccountIndex < len(m.accounts) {
+				acc := m.accounts[m.selectedAccountIndex]
+				m.cfg.YouTube.RemoveAccount(acc.ID)
+				// Also delete the token file
+				_ = youtube.DeleteTokenForAccount(config.GetConfigDir(), acc.ID)
+				if err := config.Save(m.cfg); err != nil {
+					m.errorMessage = "Failed to save: " + err.Error()
+				}
+				m.accounts = m.cfg.YouTube.GetAccounts()
+				if m.selectedAccountIndex >= len(m.accounts) && m.selectedAccountIndex > 0 {
+					m.selectedAccountIndex--
+				}
+			}
+			m.step = YouTubeStepAccounts
+			return m, nil
+		case "n", "N", "esc":
+			m.step = YouTubeStepAccounts
+			return m, nil
 		}
 
 	case YouTubeStepError:
@@ -698,6 +930,78 @@ func (m *YouTubeSetupModel) createPlaylist() tea.Cmd {
 	}
 }
 
+// accountAuthState holds the state for async account authentication
+var currentAccountAuthState *authState
+
+// startAccountAuth starts OAuth authentication for a specific account
+func (m *YouTubeSetupModel) startAccountAuth(acc youtube.Account) tea.Cmd {
+	clientID := acc.ClientID
+	clientSecret := acc.ClientSecret
+	accountID := acc.ID
+	configDir := config.GetConfigDir()
+
+	// Create channels for communication
+	currentAccountAuthState = &authState{
+		urlChan:    make(chan string, 1),
+		resultChan: make(chan tea.Msg, 1),
+	}
+
+	// Start authentication in background goroutine
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		auth := youtube.NewAuthForAccount(clientID, clientSecret, configDir, accountID)
+
+		// Use the callback to capture and send the URL
+		err := auth.AuthenticateWithCallback(ctx, func(url string) {
+			select {
+			case currentAccountAuthState.urlChan <- url:
+			default:
+			}
+		})
+
+		if err != nil {
+			currentAccountAuthState.resultChan <- youtubeAccountAuthCompleteMsg{err: err}
+			return
+		}
+
+		// Get channel info
+		channelName, _ := auth.GetChannelName(ctx)
+		channelID, _ := auth.GetChannelID(ctx)
+
+		currentAccountAuthState.resultChan <- youtubeAccountAuthCompleteMsg{
+			channelName: channelName,
+			channelID:   channelID,
+		}
+	}()
+
+	// Return a command that waits for the URL and signals auth started
+	return func() tea.Msg {
+		select {
+		case url := <-currentAccountAuthState.urlChan:
+			return youtubeAccountAuthStartedMsg{authURL: url}
+		case <-time.After(5 * time.Second):
+			return youtubeAccountAuthStartedMsg{authURL: ""}
+		}
+	}
+}
+
+// waitForAccountAuthResult returns a command that waits for account auth to complete
+func (m *YouTubeSetupModel) waitForAccountAuthResult() tea.Cmd {
+	return func() tea.Msg {
+		if currentAccountAuthState == nil {
+			return youtubeAccountAuthCompleteMsg{err: nil}
+		}
+		select {
+		case msg := <-currentAccountAuthState.resultChan:
+			return msg
+		case <-time.After(5 * time.Minute):
+			return youtubeAccountAuthCompleteMsg{err: context.DeadlineExceeded}
+		}
+	}
+}
+
 // View renders the YouTube setup screen
 func (m *YouTubeSetupModel) View() string {
 	if m.width == 0 {
@@ -725,6 +1029,12 @@ func (m *YouTubeSetupModel) View() string {
 		content = m.renderPlaylists()
 	case YouTubeStepCreatePlaylist:
 		content = m.renderCreatePlaylist()
+	case YouTubeStepAccounts:
+		content = m.renderAccounts()
+	case YouTubeStepAccountAdd, YouTubeStepAccountEdit:
+		content = m.renderAccountForm()
+	case YouTubeStepAccountDelete:
+		content = m.renderAccountDelete()
 	case YouTubeStepError:
 		content = m.renderError()
 	}
@@ -1072,6 +1382,7 @@ func (m *YouTubeSetupModel) renderConnected() string {
 		Foreground(ColorGray)
 
 	optionsText := lipgloss.JoinVertical(lipgloss.Center,
+		optionStyle.Render("Press A to manage accounts"),
 		optionStyle.Render("Press P to manage playlists"),
 		optionStyle.Render("Press V to verify credentials"),
 		optionStyle.Render("Press D to disconnect account"),
@@ -1081,7 +1392,7 @@ func (m *YouTubeSetupModel) renderConnected() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Enter: Menu • P: Playlists • V: Verify • D: Disconnect • Esc: Back")
+	helpText := helpStyle.Render("Enter: Menu • A: Accounts • P: Playlists • V: Verify • D: Disconnect")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -1181,6 +1492,14 @@ type youtubePlaylistsLoadedMsg struct {
 type youtubePlaylistCreatedMsg struct {
 	err      error
 	playlist *youtube.Playlist
+}
+type youtubeAccountAuthStartedMsg struct {
+	authURL string
+}
+type youtubeAccountAuthCompleteMsg struct {
+	err         error
+	channelName string
+	channelID   string
 }
 
 // renderVerifying renders the verification in progress screen
@@ -1595,4 +1914,325 @@ func (m *YouTubeSetupModel) renderCreatePlaylist() string {
 	footer := RenderHelpFooter(helpText, m.width)
 
 	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+}
+
+// renderAccounts renders the account list screen
+func (m *YouTubeSetupModel) renderAccounts() string {
+	header := RenderHeader("YouTube - Manage Accounts")
+
+	// Show authenticating spinner if in progress
+	if m.isAuthenticatingAccount {
+		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+		frame := spinnerFrames[int(time.Now().UnixMilli()/200)%len(spinnerFrames)]
+
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true)
+
+		messageStyle := lipgloss.NewStyle().
+			Foreground(ColorWhite).
+			Bold(true)
+
+		subMessageStyle := lipgloss.NewStyle().
+			Foreground(ColorGray)
+
+		linkStyle := lipgloss.NewStyle().
+			Foreground(ColorBlue)
+
+		var rows []string
+		rows = append(rows, spinnerStyle.Render(frame)+" "+messageStyle.Render("Authenticating account..."))
+		rows = append(rows, "")
+		rows = append(rows, subMessageStyle.Render("A browser window should have opened."))
+		rows = append(rows, subMessageStyle.Render("Please sign in and grant access."))
+
+		if m.accountAuthURL != "" {
+			rows = append(rows, "")
+			rows = append(rows, subMessageStyle.Render("If browser didn't open, visit:"))
+			url := m.accountAuthURL
+			if len(url) > 60 {
+				url = url[:60] + "..."
+			}
+			rows = append(rows, linkStyle.Render(url))
+		}
+
+		content := lipgloss.JoinVertical(lipgloss.Center, rows...)
+
+		helpText := "Waiting for browser authentication..."
+		footer := RenderHelpFooter(helpText, m.width)
+		return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+	}
+
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorOrange).
+		Padding(1, 2).
+		Width(65)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	connectedStyle := lipgloss.NewStyle().
+		Foreground(ColorGreen)
+
+	notConnectedStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	sectionStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	// Build accounts list
+	var rows []string
+	rows = append(rows, sectionStyle.Render("Your YouTube Accounts")+" "+labelStyle.Render(fmt.Sprintf("(%d total)", len(m.accounts))))
+	rows = append(rows, "")
+
+	if len(m.accounts) == 0 {
+		rows = append(rows, labelStyle.Render("No accounts configured"))
+		rows = append(rows, "")
+		rows = append(rows, labelStyle.Render("Press N to add your first account"))
+	} else {
+		configDir := config.GetConfigDir()
+		for i, acc := range m.accounts {
+			// Show selection indicator
+			var prefix string
+			var nameStyle lipgloss.Style
+			if i == m.selectedAccountIndex {
+				prefix = "▶ "
+				nameStyle = selectedStyle
+			} else {
+				prefix = "  "
+				nameStyle = valueStyle
+			}
+
+			// Get display name
+			displayName := acc.Name
+			if displayName == "" {
+				displayName = acc.ChannelName
+			}
+			if displayName == "" {
+				displayName = "Unnamed Account"
+			}
+
+			// Check connection status
+			var statusText string
+			if youtube.IsAccountAuthenticated(&m.cfg.YouTube, configDir, acc.ID) {
+				channelInfo := ""
+				if acc.ChannelName != "" {
+					channelInfo = " (" + acc.ChannelName + ")"
+				}
+				statusText = connectedStyle.Render("✓ Connected") + labelStyle.Render(channelInfo)
+			} else if acc.IsConfigured() {
+				statusText = notConnectedStyle.Render("○ Not connected")
+			} else {
+				statusText = notConnectedStyle.Render("○ Not configured")
+			}
+
+			row := prefix + nameStyle.Render(displayName) + "  " + statusText
+			rows = append(rows, row)
+		}
+	}
+
+	// Error message
+	if m.errorMessage != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true)
+		rows = append(rows, "")
+		rows = append(rows, errorStyle.Render("Error: "+m.errorMessage))
+	}
+
+	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	helpText := helpStyle.Render("N: Add • E: Edit • D: Delete • C: Connect • Enter: Back")
+
+	fullContent := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		content,
+		"",
+		helpText,
+	)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fullContent)
+}
+
+// renderAccountForm renders the add/edit account form
+func (m *YouTubeSetupModel) renderAccountForm() string {
+	var title string
+	if m.step == YouTubeStepAccountAdd {
+		title = "YouTube - Add Account"
+	} else {
+		title = "YouTube - Edit Account"
+	}
+	header := RenderHeader(title)
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	focusedLabelStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+
+	hintStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	var rows []string
+
+	if m.step == YouTubeStepAccountAdd {
+		rows = append(rows, titleStyle.Render("Add a new YouTube account:"))
+	} else {
+		rows = append(rows, titleStyle.Render("Edit account details:"))
+	}
+	rows = append(rows, "")
+
+	// Account name
+	if m.accountFormFocus == 0 {
+		rows = append(rows, focusedLabelStyle.Render("▶ Account Name:"))
+	} else {
+		rows = append(rows, labelStyle.Render("  Account Name:"))
+	}
+	rows = append(rows, "  "+m.accountName.View())
+	rows = append(rows, hintStyle.Render("  (A friendly name to identify this account)"))
+	rows = append(rows, "")
+
+	// Client ID
+	if m.accountFormFocus == 1 {
+		rows = append(rows, focusedLabelStyle.Render("▶ Client ID:"))
+	} else {
+		rows = append(rows, labelStyle.Render("  Client ID:"))
+	}
+	rows = append(rows, "  "+m.accountClientID.View())
+	rows = append(rows, hintStyle.Render("  (ends with .apps.googleusercontent.com)"))
+	rows = append(rows, "")
+
+	// Client Secret
+	if m.accountFormFocus == 2 {
+		rows = append(rows, focusedLabelStyle.Render("▶ Client Secret:"))
+	} else {
+		rows = append(rows, labelStyle.Render("  Client Secret:"))
+	}
+	rows = append(rows, "  "+m.accountClientSecret.View())
+	rows = append(rows, hintStyle.Render("  (starts with GOCSPX-)"))
+
+	// Error message
+	if m.errorMessage != "" {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true)
+		rows = append(rows, "")
+		rows = append(rows, errorStyle.Render("Error: "+m.errorMessage))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, rows...)
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	helpText := helpStyle.Render("Tab: Next field • Enter: Save • Esc: Cancel")
+
+	footer := RenderHelpFooter(helpText, m.width)
+
+	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+}
+
+// renderAccountDelete renders the delete confirmation screen
+func (m *YouTubeSetupModel) renderAccountDelete() string {
+	header := RenderHeader("YouTube - Delete Account")
+
+	if m.selectedAccountIndex >= len(m.accounts) {
+		return LayoutWithHeaderFooter(header, "No account selected", "", m.width, m.height)
+	}
+
+	acc := m.accounts[m.selectedAccountIndex]
+
+	warningStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorRed).
+		Padding(1, 3).
+		Width(60)
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ColorRed).
+		Bold(true)
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(ColorGray)
+
+	valueStyle := lipgloss.NewStyle().
+		Foreground(ColorWhite).
+		Bold(true)
+
+	displayName := acc.Name
+	if displayName == "" {
+		displayName = acc.ChannelName
+	}
+	if displayName == "" {
+		displayName = "Unnamed Account"
+	}
+
+	warningContent := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render("⚠ Delete Account?"),
+		"",
+		labelStyle.Render("Account: ")+valueStyle.Render(displayName),
+		labelStyle.Render("ID:      ")+valueStyle.Render(acc.ID),
+		"",
+		labelStyle.Render("This will remove the account and its stored credentials."),
+		labelStyle.Render("You will need to re-authenticate if you add it again."),
+	)
+
+	content := warningStyle.Render(warningContent)
+
+	buttonRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		lipgloss.NewStyle().
+			Padding(0, 2).
+			Background(ColorRed).
+			Foreground(ColorWhite).
+			Bold(true).
+			Render("Y - Delete"),
+		"    ",
+		lipgloss.NewStyle().
+			Padding(0, 2).
+			Background(ColorGray).
+			Foreground(ColorWhite).
+			Bold(true).
+			Render("N - Cancel"),
+	)
+
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	helpText := helpStyle.Render("Y: Confirm delete • N/Esc: Cancel")
+
+	fullContent := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		content,
+		"",
+		buttonRow,
+		"",
+		helpText,
+	)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, fullContent)
 }

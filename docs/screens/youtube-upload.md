@@ -44,6 +44,25 @@ The YouTube Upload screen handles the video upload process to YouTube, including
 
 ## Upload Configuration
 
+### Account Selection
+
+<span class="t-orange">**Account:**</span> *Selection*
+
+When multiple YouTube accounts are configured, you can choose which account to upload to.
+
+| Feature | Description |
+|---------|-------------|
+| **Multiple Accounts** | Upload to different YouTube channels |
+| **Last Used** | Defaults to the most recently used account |
+| **Per-Video** | Each video can be uploaded to a different account |
+
+Use ++left++ / ++right++ to change selection.
+
+!!! note "Single Account"
+    If only one YouTube account is configured, this option is hidden and the available account is used automatically.
+
+---
+
 ### Video Source
 
 <span class="t-orange">**Video:**</span> *Selection*

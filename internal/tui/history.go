@@ -727,7 +727,29 @@ func (h *HistoryModel) changeYouTubePrivacy(newPrivacy string) tea.Cmd {
 			return youtubePrivacyChangedMsg{err: err}
 		}
 
-		auth := youtube.NewAuth(cfg.YouTube.ClientID, cfg.YouTube.ClientSecret, config.GetConfigDir())
+		// Find the account that matches the video's channel ID
+		var clientID, clientSecret, accountID string
+		if rec.Metadata.YouTube != nil && rec.Metadata.YouTube.ChannelID != "" {
+			if acc := cfg.YouTube.GetAccountByChannelID(rec.Metadata.YouTube.ChannelID); acc != nil {
+				clientID = acc.ClientID
+				clientSecret = acc.ClientSecret
+				accountID = acc.ID
+			}
+		}
+		// Fallback to last used account or legacy
+		if clientID == "" {
+			if acc := cfg.YouTube.GetLastUsedAccount(); acc != nil {
+				clientID = acc.ClientID
+				clientSecret = acc.ClientSecret
+				accountID = acc.ID
+			} else {
+				clientID = cfg.YouTube.ClientID
+				clientSecret = cfg.YouTube.ClientSecret
+				accountID = "legacy"
+			}
+		}
+
+		auth := youtube.NewAuthForAccount(clientID, clientSecret, config.GetConfigDir(), accountID)
 		uploader, err := youtube.NewUploader(ctx, auth)
 		if err != nil {
 			return youtubePrivacyChangedMsg{err: err}
@@ -752,7 +774,29 @@ func (h *HistoryModel) deleteFromYouTube() tea.Cmd {
 			return youtubeVideoDeletedMsg{err: err}
 		}
 
-		auth := youtube.NewAuth(cfg.YouTube.ClientID, cfg.YouTube.ClientSecret, config.GetConfigDir())
+		// Find the account that matches the video's channel ID
+		var clientID, clientSecret, accountID string
+		if rec.Metadata.YouTube != nil && rec.Metadata.YouTube.ChannelID != "" {
+			if acc := cfg.YouTube.GetAccountByChannelID(rec.Metadata.YouTube.ChannelID); acc != nil {
+				clientID = acc.ClientID
+				clientSecret = acc.ClientSecret
+				accountID = acc.ID
+			}
+		}
+		// Fallback to last used account or legacy
+		if clientID == "" {
+			if acc := cfg.YouTube.GetLastUsedAccount(); acc != nil {
+				clientID = acc.ClientID
+				clientSecret = acc.ClientSecret
+				accountID = acc.ID
+			} else {
+				clientID = cfg.YouTube.ClientID
+				clientSecret = cfg.YouTube.ClientSecret
+				accountID = "legacy"
+			}
+		}
+
+		auth := youtube.NewAuthForAccount(clientID, clientSecret, config.GetConfigDir(), accountID)
 		uploader, err := youtube.NewUploader(ctx, auth)
 		if err != nil {
 			return youtubeVideoDeletedMsg{err: err}

@@ -24,16 +24,50 @@ internal/youtube/
 
 ## Key Types
 
-### Client
+### Account
 
-YouTube API client wrapper:
+YouTube account with credentials:
 
 ```go
-type Client struct {
-    service      *youtube.Service
-    config       *oauth2.Config
-    token        *oauth2.Token
-    uploadClient *http.Client
+type Account struct {
+    ID                  string `json:"id"`                    // Unique identifier
+    Name                string `json:"name"`                  // User-friendly name
+    ClientID            string `json:"client_id,omitempty"`
+    ClientSecret        string `json:"client_secret,omitempty"`
+    DefaultPlaylistID   string `json:"default_playlist_id,omitempty"`
+    DefaultPlaylistName string `json:"default_playlist_name,omitempty"`
+    ChannelName         string `json:"channel_name,omitempty"`
+    ChannelID           string `json:"channel_id,omitempty"`
+}
+```
+
+### Config
+
+YouTube configuration supporting multiple accounts:
+
+```go
+type Config struct {
+    // Legacy single-account fields (backwards compatibility)
+    ClientID           string        `json:"client_id,omitempty"`
+    ClientSecret       string        `json:"client_secret,omitempty"`
+    // ...
+
+    // Multi-account support
+    Accounts          []Account     `json:"accounts,omitempty"`
+    LastUsedAccountID string        `json:"last_used_account_id,omitempty"`
+}
+```
+
+### Auth
+
+YouTube API authentication handler:
+
+```go
+type Auth struct {
+    config    *oauth2.Config
+    configDir string
+    accountID string  // Account ID for multi-account support
+    token     *oauth2.Token
 }
 ```
 
@@ -267,16 +301,52 @@ func (c *Client) GetChannelInfo() (*ChannelInfo, error) {
 
 ## Token Storage
 
-Tokens stored in config:
+Tokens are stored per-account in separate files:
+
+```
+~/.config/kartoza-video-processor/
+├── youtube_token.json           # Legacy/default account token
+└── youtube_token_acc_*.json     # Additional account tokens
+```
+
+Token file format:
 
 ```go
-type YouTubeConfig struct {
-    ClientID     string `json:"client_id"`
-    ClientSecret string `json:"client_secret"`
+type Token struct {
     AccessToken  string `json:"access_token"`
     RefreshToken string `json:"refresh_token"`
-    Expiry       time.Time `json:"expiry"`
+    TokenType    string `json:"token_type"`
+    Expiry       string `json:"expiry"` // RFC3339 format
 }
+```
+
+### Token Functions
+
+```go
+// Load token for specific account
+func LoadTokenForAccount(configDir, accountID string) (*Token, error)
+
+// Save token for specific account
+func SaveTokenForAccount(configDir, accountID string, token *Token) error
+
+// Check if account has token
+func HasTokenForAccount(configDir, accountID string) bool
+
+// Delete token for specific account
+func DeleteTokenForAccount(configDir, accountID string) error
+```
+
+### Account Authentication
+
+```go
+// Create auth for specific account
+func NewAuthForAccount(clientID, clientSecret, configDir, accountID string) *Auth
+
+// Check authentication status for account
+func GetAuthStatusForAccount(cfg *Config, configDir, accountID string) AuthStatus
+
+// Check if account is authenticated
+func IsAccountAuthenticated(cfg *Config, configDir, accountID string) bool
 ```
 
 ## Error Handling

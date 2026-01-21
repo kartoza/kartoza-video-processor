@@ -31,11 +31,17 @@ var oauthScopes = []string{
 type Auth struct {
 	config    *oauth2.Config
 	configDir string
+	accountID string // Account ID for multi-account support
 	token     *oauth2.Token
 }
 
-// NewAuth creates a new YouTube authenticator
+// NewAuth creates a new YouTube authenticator (legacy, uses default account)
 func NewAuth(clientID, clientSecret, configDir string) *Auth {
+	return NewAuthForAccount(clientID, clientSecret, configDir, "legacy")
+}
+
+// NewAuthForAccount creates a new YouTube authenticator for a specific account
+func NewAuthForAccount(clientID, clientSecret, configDir, accountID string) *Auth {
 	return &Auth{
 		config: &oauth2.Config{
 			ClientID:     clientID,
@@ -45,6 +51,7 @@ func NewAuth(clientID, clientSecret, configDir string) *Auth {
 			// RedirectURL will be set dynamically when starting auth
 		},
 		configDir: configDir,
+		accountID: accountID,
 	}
 }
 
@@ -305,12 +312,12 @@ func (a *Auth) GetClient(ctx context.Context) (*http.Client, error) {
 // Logout removes stored credentials
 func (a *Auth) Logout() error {
 	a.token = nil
-	return DeleteToken(a.configDir)
+	return DeleteTokenForAccount(a.configDir, a.accountID)
 }
 
 // loadToken loads the OAuth token from disk and converts to oauth2.Token
 func (a *Auth) loadToken() (*oauth2.Token, error) {
-	storedToken, err := LoadToken(a.configDir)
+	storedToken, err := LoadTokenForAccount(a.configDir, a.accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +340,7 @@ func (a *Auth) saveToken(token *oauth2.Token) error {
 		TokenType:    token.TokenType,
 		Expiry:       token.Expiry.Format(time.RFC3339),
 	}
-	return SaveToken(a.configDir, storedToken)
+	return SaveTokenForAccount(a.configDir, a.accountID, storedToken)
 }
 
 // generateCodeVerifier generates a random code verifier for PKCE
@@ -436,17 +443,32 @@ const (
 	AuthStatusExpired                         // Token expired, needs refresh
 )
 
-// GetAuthStatus returns the current authentication status
+// GetAuthStatus returns the current authentication status (legacy, checks default account)
 func GetAuthStatus(cfg *Config, configDir string) AuthStatus {
-	if !cfg.IsConfigured() {
-		return AuthStatusNotConfigured
+	return GetAuthStatusForAccount(cfg, configDir, "legacy")
+}
+
+// GetAuthStatusForAccount returns the authentication status for a specific account
+func GetAuthStatusForAccount(cfg *Config, configDir, accountID string) AuthStatus {
+	var account *Account
+
+	if accountID == "legacy" {
+		// Check legacy config
+		if cfg.ClientID == "" || cfg.ClientSecret == "" {
+			return AuthStatusNotConfigured
+		}
+	} else {
+		account = cfg.GetAccount(accountID)
+		if account == nil || !account.IsConfigured() {
+			return AuthStatusNotConfigured
+		}
 	}
 
-	if !HasToken(configDir) {
+	if !HasTokenForAccount(configDir, accountID) {
 		return AuthStatusConfigured
 	}
 
-	token, err := LoadToken(configDir)
+	token, err := LoadTokenForAccount(configDir, accountID)
 	if err != nil {
 		return AuthStatusConfigured
 	}
@@ -461,6 +483,11 @@ func GetAuthStatus(cfg *Config, configDir string) AuthStatus {
 	}
 
 	return AuthStatusAuthenticated
+}
+
+// IsAccountAuthenticated checks if a specific account is authenticated
+func IsAccountAuthenticated(cfg *Config, configDir, accountID string) bool {
+	return GetAuthStatusForAccount(cfg, configDir, accountID) == AuthStatusAuthenticated
 }
 
 // AuthStatusString returns a human-readable status string
