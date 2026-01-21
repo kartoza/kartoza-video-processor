@@ -15,13 +15,13 @@ The History screen displays all your past recordings in a searchable, sortable t
 </div>
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━ Recording History ━━━━━━━━━━━━━━━</span>
 
-<span class="t-white">Topic                    Date         Duration    Size    </span>
+<span class="t-white">Status   Topic            Date         Duration    Size    </span>
 <span class="t-gray">────────────────────────────────────────────────────────────</span>
-<span class="t-selected"><span class="t-orange">→</span> <span class="t-white">QGIS sketcher</span>          <span class="t-cyan">2024-01-15</span>   <span class="t-white">12:34</span>       <span class="t-green">245 MB</span></span>
-  <span class="t-blue">GIS development</span>        <span class="t-cyan">2024-01-14</span>   <span class="t-white">08:22</span>       <span class="t-green">156 MB</span>
-  <span class="t-blue">Open source</span>            <span class="t-cyan">2024-01-13</span>   <span class="t-white">15:47</span>       <span class="t-green">312 MB</span>
-  <span class="t-blue">QGIS sketcher</span>          <span class="t-cyan">2024-01-12</span>   <span class="t-white">05:18</span>       <span class="t-green">98 MB</span>
-  <span class="t-blue">General tutorials</span>      <span class="t-cyan">2024-01-10</span>   <span class="t-white">20:05</span>       <span class="t-green">425 MB</span>
+<span class="t-selected"><span class="t-orange">→</span> <span class="t-green">✓ Done</span>   <span class="t-white">QGIS sketcher</span>    <span class="t-cyan">2024-01-15</span>   <span class="t-white">12:34</span>       <span class="t-green">245 MB</span></span>
+  <span class="t-green">✓ Done</span>   <span class="t-blue">GIS development</span>  <span class="t-cyan">2024-01-14</span>   <span class="t-white">08:22</span>       <span class="t-green">156 MB</span>
+  <span class="t-red">✗ Error</span>  <span class="t-blue">Open source</span>      <span class="t-cyan">2024-01-13</span>   <span class="t-white">15:47</span>       <span class="t-green">312 MB</span>
+  <span class="t-green">✓ Done</span>   <span class="t-blue">QGIS sketcher</span>    <span class="t-cyan">2024-01-12</span>   <span class="t-white">05:18</span>       <span class="t-green">98 MB</span>
+  <span class="t-orange">⟳ Proc</span>   <span class="t-blue">General tutorials</span><span class="t-cyan">2024-01-10</span>   <span class="t-white">20:05</span>       <span class="t-green">425 MB</span>
 
 <span class="t-gray">────────────────────────────────────────────────────────────</span>
 <span class="t-gray">Showing 1-5 of 42 recordings</span>
@@ -32,6 +32,22 @@ The History screen displays all your past recordings in a searchable, sortable t
 </div>
 
 ## Table Columns
+
+### Status
+
+<span class="t-green">**Status**</span>
+
+Shows the current processing status of each recording:
+
+| Icon | Status | Description |
+|------|--------|-------------|
+| <span class="t-green">✓ Done</span> | Completed | Recording processed successfully |
+| <span class="t-red">✗ Error</span> | Failed | Processing encountered an error |
+| <span class="t-orange">⟳ Proc</span> | Processing | Currently being processed |
+| <span class="t-red">● Rec</span> | Recording | Currently being recorded |
+| <span class="t-orange">⏸ Pause</span> | Paused | Recording is paused |
+
+---
 
 ### Topic
 
@@ -136,6 +152,112 @@ Navigates to [YouTube Upload](youtube-upload.md) screen.
 
 ---
 
+### Play Video
+
+There are three keybindings to play different versions of your recording:
+
+| Key | Action |
+|-----|--------|
+| ++v++ | Play vertical video (falls back to merged if no vertical exists) |
+| ++m++ | Play merged video (screen + audio combined) |
+| ++a++ | Play normalized audio (falls back to original if normalization wasn't applied) |
+
+**Behavior:**
+
+- Uses `xdg-open` on Linux to launch the default media player
+- Does not block the application - you can continue using the app while playing
+- Only available for completed recordings
+- Audio playback prefers the normalized audio track (`audio-normalized.wav`) if available
+
+---
+
+### View Error Details (Failed Recordings)
+
+When viewing a recording that failed during processing, you'll see additional error information:
+
+<div class="terminal-mockup">
+<div class="terminal-header">
+<div class="terminal-buttons">
+<div class="terminal-button red"></div>
+<div class="terminal-button yellow"></div>
+<div class="terminal-button green"></div>
+</div>
+<div class="terminal-title">Recording Details (Failed)</div>
+</div>
+<div class="terminal-content"><span class="t-header">━━━━━━━━━━━━ Recording Details ━━━━━━━━━━━━</span>
+
+<span class="t-orange">Title:</span>       <span class="t-white">Introduction to sketcher sketches</span>
+<span class="t-blue">Topic:</span>       <span class="t-white">QGIS sketcher sketches</span>
+...
+<span class="t-header">────────────────────────────────────────────</span>
+<span class="t-red-bg">✗ Processing Failed</span>
+
+<span class="t-gray">Error:</span>  <span class="t-red">failed to merge recordings: ffmpeg error</span>
+
+<span class="t-gray">Details:</span>
+<span class="t-gray">Video post-processing failed.</span>
+<span class="t-gray">Error: ffmpeg exited with code 1...</span>
+
+<span class="t-orange">Press 'v' to view full error details and traceback</span>
+
+<span class="t-gray">e: Edit • r: Reprocess • v: View Error Details • Esc: Back</span>
+</div>
+</div>
+
+Press ++v++ to view the full error details with scrollable traceback information:
+
+<div class="terminal-mockup">
+<div class="terminal-header">
+<div class="terminal-buttons">
+<div class="terminal-button red"></div>
+<div class="terminal-button yellow"></div>
+<div class="terminal-button green"></div>
+</div>
+<div class="terminal-title">Error Details</div>
+</div>
+<div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━ Error Details ━━━━━━━━━━━━━━━</span>
+
+<span class="t-gray">Lines 1-25 of 45 ↓</span>
+
+<span class="t-orange">Recording:</span> <span class="t-white">Introduction to sketcher sketches</span>
+<span class="t-gray">Folder: 001-introduction-to-sketcher</span>
+
+<span class="t-red">ERROR SUMMARY:</span>
+  • failed to merge recordings: ffmpeg error
+
+<span class="t-orange">DETAILED ERROR INFORMATION:</span>
+<span class="t-gray">────────────────────────────────────────────────────────────</span>
+<span class="t-gray">Video post-processing failed.</span>
+
+<span class="t-gray">Error: ffmpeg exited with code 1</span>
+
+<span class="t-gray">Processing Context:</span>
+<span class="t-gray">  - Video file: /home/user/Videos/.../screen.mp4</span>
+<span class="t-gray">  - Audio file: /home/user/Videos/.../audio.wav</span>
+<span class="t-gray">  - Output directory: /home/user/Videos/...</span>
+<span class="t-gray">...</span>
+
+<span class="t-gray">↑/↓: Scroll • PgUp/PgDn: Page • r: Reprocess • Esc: Back</span>
+</div>
+</div>
+
+**Error Details Include:**
+
+- **Error Summary**: The primary error message
+- **Processing Context**: Details about input files, output directory, and processing options
+- **Possible Causes**: Suggestions based on the error type
+- **Suggested Actions**: Steps to resolve the issue
+- **Stack Trace**: Technical debugging information for bug reports
+
+!!! tip "Recovering from Errors"
+    You can try to fix the issue and press ++r++ to reprocess the recording. Common fixes include:
+
+    - Ensuring sufficient disk space
+    - Checking that input files exist
+    - Restarting the application
+
+---
+
 ### Delete Recording
 
 Press ++d++ to delete the selected recording.
@@ -186,6 +308,10 @@ Press ++d++ to delete the selected recording.
 | ++enter++ | View recording details |
 | ++o++ | Open folder in file manager |
 | ++u++ | Upload to YouTube |
+| ++v++ | Play vertical video (completed) / View error details (failed) |
+| ++m++ | Play merged video (completed recordings) |
+| ++a++ | Play audio only (completed recordings) |
+| ++r++ | Reprocess recording |
 | ++d++ | Delete recording |
 | ++q++ / ++esc++ | Return to main menu |
 
@@ -239,6 +365,10 @@ Recordings are stored in:
 | ++enter++ | View details |
 | ++o++ | Open folder |
 | ++u++ | Upload to YouTube |
+| ++v++ | Play vertical video / View error details |
+| ++m++ | Play merged video |
+| ++a++ | Play normalized audio |
+| ++r++ | Reprocess recording |
 | ++d++ | Delete recording |
 | ++q++ / ++esc++ | Back to menu |
 

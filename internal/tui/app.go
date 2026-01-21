@@ -504,6 +504,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.recording == nil {
 			return m, nil
 		}
+
+		// Clear previous processing status and errors before reprocessing
+		msg.recording.SetStatus(models.StatusProcessing)
+		msg.recording.Processing.Errors = nil
+		msg.recording.Processing.ErrorDetail = ""
+		msg.recording.Processing.Traceback = ""
+		msg.recording.Processing.ProcessedAt = time.Time{}
+		msg.recording.Processing.NormalizeApplied = false
+		msg.recording.Processing.VerticalCreated = false
+		_ = msg.recording.Save()
+
 		// Set up for reprocessing
 		m.screen = ScreenRecording
 		m.state = stateProcessing
@@ -516,13 +527,15 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.recording.Settings.WebcamEnabled,
 			msg.recording.Settings.VerticalEnabled,
 		)
+		// Skip the "Stopping recorders" step since we're reprocessing existing files
+		m.processing.SetStepByIndex(ProcessStepStopping, StepSkipped)
 		m.processing.Start()
 		m.processingFrame = 0
 
 		// Configure recorder with the recording info
 		m.recorder.SetRecordingInfo(msg.recording)
 
-		// Start processing pipeline directly (skip step 0 since we're not stopping a recording)
+		// Start processing pipeline directly (no need to stop recorders)
 		m.progressChan = make(chan recorder.ProgressUpdate, 100)
 		go m.recorder.ProcessWithProgress(m.progressChan)
 

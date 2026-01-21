@@ -137,6 +137,10 @@ type ProcessingInfo struct {
 	NormalizeApplied bool          `json:"normalize_applied"`
 	VerticalCreated  bool          `json:"vertical_created"`
 	Errors           []string      `json:"errors,omitempty"`
+	// ErrorDetail provides a detailed, user-friendly explanation of what went wrong
+	ErrorDetail string `json:"error_detail,omitempty"`
+	// Traceback contains the full stack trace or error chain for debugging
+	Traceback string `json:"traceback,omitempty"`
 }
 
 // NewRecordingInfo creates a new RecordingInfo with system information populated
@@ -206,7 +210,43 @@ func LoadRecordingInfo(folderPath string) (*RecordingInfo, error) {
 		return nil, err
 	}
 
+	// Fix file paths to use the actual folder path (in case folder was moved or user changed)
+	info.fixFilePaths(folderPath)
+
 	return &info, nil
+}
+
+// fixFilePaths updates all file paths to be relative to the given folder path
+// This handles cases where the recording folder was moved or the user changed
+func (r *RecordingInfo) fixFilePaths(folderPath string) {
+	r.Files.FolderPath = folderPath
+
+	// Helper to fix a single path
+	fixPath := func(oldPath string) string {
+		if oldPath == "" {
+			return ""
+		}
+		// Get just the filename and join with the new folder path
+		return filepath.Join(folderPath, filepath.Base(oldPath))
+	}
+
+	// Fix main file paths
+	r.Files.VideoFile = fixPath(r.Files.VideoFile)
+	r.Files.AudioFile = fixPath(r.Files.AudioFile)
+	r.Files.WebcamFile = fixPath(r.Files.WebcamFile)
+	r.Files.MergedFile = fixPath(r.Files.MergedFile)
+	r.Files.VerticalFile = fixPath(r.Files.VerticalFile)
+
+	// Fix part file paths
+	for i, part := range r.Files.VideoParts {
+		r.Files.VideoParts[i] = fixPath(part)
+	}
+	for i, part := range r.Files.AudioParts {
+		r.Files.AudioParts[i] = fixPath(part)
+	}
+	for i, part := range r.Files.WebcamParts {
+		r.Files.WebcamParts[i] = fixPath(part)
+	}
 }
 
 // UpdateFileSizes updates the file size information

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +32,7 @@ const (
 	HistoryYouTubeDeleteConfirmMode
 	HistoryYouTubeUploadMode
 	HistoryReprocessConfirmMode
+	HistoryErrorDetailMode
 )
 
 // HistoryModel displays recording history with navigation
@@ -74,6 +77,9 @@ type HistoryModel struct {
 	youtubeActionError     string
 	youtubeActionSuccess   string
 	youtubeActionLoading   bool
+
+	// Error detail view scroll position
+	errorViewScrollOffset int
 }
 
 // NewHistoryModel creates a new history model
@@ -162,6 +168,8 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 			return h.updateYouTubeDeleteConfirmMode(msg)
 		case HistoryReprocessConfirmMode:
 			return h.updateReprocessConfirmMode(msg)
+		case HistoryErrorDetailMode:
+			return h.updateErrorDetailMode(msg)
 		}
 
 	case recordingsLoadedMsg:
@@ -437,6 +445,62 @@ func (h *HistoryModel) updateDetailMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd)
 			h.youtubeActionError = ""
 			h.youtubeActionSuccess = ""
 		}
+
+	case "v":
+		if h.selectedRecording != nil {
+			if h.selectedRecording.Status == models.StatusFailed {
+				// View full error details for failed recordings
+				h.mode = HistoryErrorDetailMode
+				h.errorViewScrollOffset = 0
+			} else if h.selectedRecording.Status == models.StatusCompleted {
+				// Play vertical video (preferred for preview)
+				videoPath := h.selectedRecording.Files.VerticalFile
+				if videoPath != "" {
+					return h, h.openVideoInPlayer(videoPath)
+				}
+				// Fall back to merged if no vertical
+				if h.selectedRecording.Files.MergedFile != "" {
+					return h, h.openVideoInPlayer(h.selectedRecording.Files.MergedFile)
+				}
+			}
+		}
+
+	case "m":
+		// Play merged video
+		if h.selectedRecording != nil && h.selectedRecording.Status == models.StatusCompleted {
+			videoPath := h.selectedRecording.Files.MergedFile
+			if videoPath == "" {
+				videoPath = h.selectedRecording.Files.VideoFile
+			}
+			if videoPath != "" {
+				return h, h.openVideoInPlayer(videoPath)
+			}
+		}
+
+	case "a":
+		// Play normalized audio (or original if normalized doesn't exist)
+		if h.selectedRecording != nil && h.selectedRecording.Status == models.StatusCompleted {
+			// Try normalized audio first
+			audioPath := h.selectedRecording.Files.AudioFile
+			if audioPath != "" {
+				// Construct normalized audio path
+				normalizedPath := strings.TrimSuffix(audioPath, ".wav") + "-normalized.wav"
+				if _, err := os.Stat(normalizedPath); err == nil {
+					return h, h.openVideoInPlayer(normalizedPath)
+				}
+				// Fall back to original audio
+				return h, h.openVideoInPlayer(audioPath)
+			}
+		}
+
+	case "o":
+		// Open work folder in file manager
+		if h.selectedRecording != nil {
+			folderPath := h.selectedRecording.Files.FolderPath
+			if folderPath != "" {
+				return h, h.openFolderInFileManager(folderPath)
+			}
+		}
 	}
 
 	return h, nil
@@ -602,6 +666,46 @@ func (h *HistoryModel) updateReprocessConfirmMode(msg tea.KeyMsg) (*HistoryModel
 	return h, nil
 }
 
+// updateErrorDetailMode handles input in error detail view mode
+func (h *HistoryModel) updateErrorDetailMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return h, tea.Quit
+
+	case "esc", "q":
+		h.mode = HistoryDetailMode
+		h.errorViewScrollOffset = 0
+
+	case "up", "k":
+		if h.errorViewScrollOffset > 0 {
+			h.errorViewScrollOffset--
+		}
+
+	case "down", "j":
+		h.errorViewScrollOffset++
+
+	case "pgup":
+		h.errorViewScrollOffset -= 10
+		if h.errorViewScrollOffset < 0 {
+			h.errorViewScrollOffset = 0
+		}
+
+	case "pgdown":
+		h.errorViewScrollOffset += 10
+
+	case "home", "g":
+		h.errorViewScrollOffset = 0
+
+	case "r":
+		// Reprocess from error view
+		if h.selectedRecording != nil {
+			h.mode = HistoryReprocessConfirmMode
+		}
+	}
+
+	return h, nil
+}
+
 // changeYouTubePrivacy changes the privacy setting of a YouTube video
 func (h *HistoryModel) changeYouTubePrivacy(newPrivacy string) tea.Cmd {
 	rec := h.selectedRecording
@@ -651,6 +755,42 @@ func (h *HistoryModel) deleteFromYouTube() tea.Cmd {
 		return youtubeVideoDeletedMsg{}
 	}
 }
+
+// openVideoInPlayer opens the video file in the system default video player
+func (h *HistoryModel) openVideoInPlayer(videoPath string) tea.Cmd {
+	return func() tea.Msg {
+		// Use xdg-open on Linux to open with default application
+		cmd := exec.Command("xdg-open", videoPath)
+		_ = cmd.Start() // Don't wait for it to finish
+		return videoOpenedMsg{}
+	}
+}
+
+// openFolderInFileManager opens the folder in the system file manager
+func (h *HistoryModel) openFolderInFileManager(folderPath string) tea.Cmd {
+	return func() tea.Msg {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			// macOS: use Finder via 'open' command
+			cmd = exec.Command("open", folderPath)
+		case "windows":
+			// Windows: use Explorer
+			cmd = exec.Command("explorer", folderPath)
+		default:
+			// Linux and others: use xdg-open (works with Nautilus, Dolphin, etc.)
+			cmd = exec.Command("xdg-open", folderPath)
+		}
+		_ = cmd.Start() // Don't wait for it to finish
+		return folderOpenedMsg{}
+	}
+}
+
+// videoOpenedMsg indicates video player was launched
+type videoOpenedMsg struct{}
+
+// folderOpenedMsg indicates file manager was launched
+type folderOpenedMsg struct{}
 
 // initEditFields populates edit fields from selected recording
 func (h *HistoryModel) initEditFields() {
@@ -734,6 +874,8 @@ func (h *HistoryModel) View() string {
 		return h.renderYouTubeDeleteConfirmView()
 	case HistoryReprocessConfirmMode:
 		return h.renderReprocessConfirmView()
+	case HistoryErrorDetailMode:
+		return h.renderErrorDetailView()
 	default:
 		return h.renderListView()
 	}
@@ -1019,11 +1161,63 @@ func (h *HistoryModel) renderDetailView() string {
 	if desc == "" {
 		desc = "(no description)"
 	}
-	descStyle := lipgloss.NewStyle().
+	descTextStyle := lipgloss.NewStyle().
 		Foreground(ColorWhite).
 		Width(60).
 		MarginLeft(2)
-	rows = append(rows, descStyle.Render(desc))
+	rows = append(rows, descTextStyle.Render(desc))
+
+	// Error section (shown only if status is failed)
+	if rec.Status == models.StatusFailed {
+		rows = append(rows, "")
+		rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
+		rows = append(rows, "")
+
+		// Error badge
+		errorBadge := lipgloss.NewStyle().
+			Background(ColorRed).
+			Foreground(ColorWhite).
+			Padding(0, 1).
+			Bold(true).
+			Render("✗ Processing Failed")
+		errorBadgeRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(errorBadge)
+		rows = append(rows, errorBadgeRow)
+		rows = append(rows, "")
+
+		// Show error summary
+		if len(rec.Processing.Errors) > 0 {
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
+				labelStyle.Render("Error:"),
+				"  ",
+				lipgloss.NewStyle().Foreground(ColorRed).Bold(true).Render(rec.Processing.Errors[0]),
+			))
+		}
+
+		// Show error detail if available
+		if rec.Processing.ErrorDetail != "" {
+			rows = append(rows, "")
+			rows = append(rows, labelStyle.Render("Details:"))
+			errorDetailStyle := lipgloss.NewStyle().
+				Foreground(ColorGray).
+				Width(60).
+				MarginLeft(2)
+			// Truncate for display, show first 300 chars
+			detail := rec.Processing.ErrorDetail
+			if len(detail) > 300 {
+				detail = detail[:300] + "...\n(Press 'v' to view full error details)"
+			}
+			rows = append(rows, errorDetailStyle.Render(detail))
+		}
+
+		// Hint about viewing full details
+		hintStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Italic(true).
+			Align(lipgloss.Center).
+			Width(62)
+		rows = append(rows, "")
+		rows = append(rows, hintStyle.Render("Press 'v' to view full error details and traceback"))
+	}
 
 	// YouTube section
 	rows = append(rows, "")
@@ -1122,16 +1316,22 @@ func (h *HistoryModel) renderDetailView() string {
 
 	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 
-	// Help text - changes based on YouTube status
+	// Help text - changes based on YouTube status and recording status
 	helpStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
 		Italic(true)
 
 	var helpText string
-	if rec.Metadata.IsPublishedToYouTube() {
-		helpText = "e: Edit • r: Reprocess • p: Change Privacy • x: Delete from YouTube • Esc: Back"
+	if rec.Status == models.StatusFailed {
+		helpText = "o: Open Folder • e: Edit • r: Reprocess • v: View Error Details • Esc: Back"
+	} else if rec.Status == models.StatusCompleted {
+		if rec.Metadata.IsPublishedToYouTube() {
+			helpText = "v: Vertical • m: Merged • a: Audio • o: Folder • e: Edit • r: Reprocess • p: Privacy • x: Del YT • Esc"
+		} else {
+			helpText = "v: Vertical • m: Merged • a: Audio • o: Folder • e: Edit • r: Reprocess • u: Upload • Esc"
+		}
 	} else {
-		helpText = "e: Edit • r: Reprocess • u: Upload to YouTube • Esc: Back"
+		helpText = "o: Open Folder • e: Edit • r: Reprocess • Esc: Back"
 	}
 
 	mainSection := lipgloss.JoinVertical(
@@ -1606,16 +1806,17 @@ func (h *HistoryModel) renderScrollableTable() string {
 
 	descStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
-		Width(56).
+		Width(62).
 		Align(lipgloss.Left)
 
 	selectedDescStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#000000")).
 		Background(ColorOrange).
-		Width(56).
+		Width(62).
 		Align(lipgloss.Left)
 
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
+		headerStyle.Width(8).Render("Status"),
 		headerStyle.Width(12).Render("Topic"),
 		headerStyle.Width(12).Render("Date"),
 		headerStyle.Width(10).Render("Duration"),
@@ -1627,15 +1828,23 @@ func (h *HistoryModel) renderScrollableTable() string {
 		absoluteIdx := startIdx + i
 		isSelected := absoluteIdx == h.cursor
 
+		// Determine status icon and color
+		statusIcon, statusColor := getStatusDisplay(rec.Status)
+
 		topic := truncateStr(rec.Metadata.Topic, 10)
 		dateStr := rec.StartTime.Format("2006-01-02")
 		duration := models.FormatDuration(rec.Duration)
 		size := models.FormatFileSize(rec.Files.TotalSize)
 		folder := rec.Metadata.FolderName
 
+		// Status cell with appropriate color
+		statusCellStyle := cellStyle.Width(8).Foreground(statusColor)
+		selectedStatusStyle := selectedStyle.Width(8)
+
 		var row1 string
 		if isSelected {
 			row1 = lipgloss.JoinHorizontal(lipgloss.Top,
+				selectedStatusStyle.Render(statusIcon),
 				selectedStyle.Width(12).Render(topic),
 				selectedStyle.Width(12).Render(dateStr),
 				selectedStyle.Width(10).Render(duration),
@@ -1643,6 +1852,7 @@ func (h *HistoryModel) renderScrollableTable() string {
 			)
 		} else {
 			row1 = lipgloss.JoinHorizontal(lipgloss.Top,
+				statusCellStyle.Render(statusIcon),
 				cellStyle.Width(12).Render(topic),
 				cellStyle.Width(12).Render(dateStr),
 				cellStyle.Width(10).Render(duration),
@@ -1662,7 +1872,7 @@ func (h *HistoryModel) renderScrollableTable() string {
 		if i < len(visibleRecordings)-1 {
 			sep := lipgloss.NewStyle().
 				Foreground(ColorGray).
-				Render(strings.Repeat("─", 56))
+				Render(strings.Repeat("─", 62))
 			rows = append(rows, sep)
 		}
 	}
@@ -1672,7 +1882,7 @@ func (h *HistoryModel) renderScrollableTable() string {
 		Foreground(ColorOrange).
 		Bold(true).
 		Align(lipgloss.Center).
-		Width(56)
+		Width(62)
 
 	if startIdx > 0 {
 		topIndicator = indicatorStyle.Render(fmt.Sprintf("↑ %d more recordings above", startIdx))
@@ -1745,6 +1955,24 @@ func truncateStr(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen-3] + "..."
+}
+
+// getStatusDisplay returns an icon and color for a recording status
+func getStatusDisplay(status string) (string, lipgloss.Color) {
+	switch status {
+	case models.StatusCompleted:
+		return "✓ Done", ColorGreen
+	case models.StatusFailed:
+		return "✗ Error", ColorRed
+	case models.StatusProcessing:
+		return "⟳ Proc", ColorOrange
+	case models.StatusRecording:
+		return "● Rec", ColorRed
+	case models.StatusPaused:
+		return "⏸ Pause", ColorOrange
+	default:
+		return "? Unknown", ColorGray
+	}
 }
 
 // renderYouTubePrivacyView renders the YouTube privacy change view
@@ -2006,6 +2234,149 @@ func (h *HistoryModel) renderYouTubeDeleteConfirmView() string {
 		lipgloss.Left,
 		centeredMain,
 		helpFooter.Render(helpStyle.Render("Y: Confirm Delete • N/Esc: Cancel")),
+	)
+}
+
+// renderErrorDetailView renders the full error detail view with scrolling
+func (h *HistoryModel) renderErrorDetailView() string {
+	if h.selectedRecording == nil {
+		return "No recording selected"
+	}
+
+	rec := h.selectedRecording
+	header := RenderHeader("Error Details")
+
+	// Styles
+	containerStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorRed).
+		Padding(1, 2).
+		Width(h.width - 10)
+
+	// Build content
+	var contentLines []string
+
+	// Title and folder
+	titleStyle := lipgloss.NewStyle().
+		Foreground(ColorOrange).
+		Bold(true)
+	contentLines = append(contentLines, titleStyle.Render("Recording: "+rec.Metadata.Title))
+	contentLines = append(contentLines, lipgloss.NewStyle().Foreground(ColorGray).Render("Folder: "+rec.Metadata.FolderName))
+	contentLines = append(contentLines, "")
+
+	// Error summary
+	if len(rec.Processing.Errors) > 0 {
+		errorStyle := lipgloss.NewStyle().
+			Foreground(ColorRed).
+			Bold(true)
+		contentLines = append(contentLines, errorStyle.Render("ERROR SUMMARY:"))
+		for _, e := range rec.Processing.Errors {
+			contentLines = append(contentLines, "  • "+e)
+		}
+		contentLines = append(contentLines, "")
+	}
+
+	// Error detail
+	if rec.Processing.ErrorDetail != "" {
+		sectionStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true)
+		contentLines = append(contentLines, sectionStyle.Render("DETAILED ERROR INFORMATION:"))
+		contentLines = append(contentLines, strings.Repeat("─", 60))
+		// Split detail into lines and add
+		detailLines := strings.Split(rec.Processing.ErrorDetail, "\n")
+		contentLines = append(contentLines, detailLines...)
+		contentLines = append(contentLines, "")
+	}
+
+	// Traceback
+	if rec.Processing.Traceback != "" {
+		sectionStyle := lipgloss.NewStyle().
+			Foreground(ColorOrange).
+			Bold(true)
+		contentLines = append(contentLines, sectionStyle.Render("STACK TRACE (for bug reports):"))
+		contentLines = append(contentLines, strings.Repeat("─", 60))
+		// Split traceback into lines
+		traceLines := strings.Split(rec.Processing.Traceback, "\n")
+		for _, line := range traceLines {
+			// Truncate very long lines
+			if len(line) > h.width-20 {
+				line = line[:h.width-23] + "..."
+			}
+			contentLines = append(contentLines, line)
+		}
+	}
+
+	// Calculate visible window
+	maxVisibleLines := h.height - 15
+	if maxVisibleLines < 5 {
+		maxVisibleLines = 5
+	}
+
+	totalLines := len(contentLines)
+
+	// Clamp scroll offset
+	maxOffset := totalLines - maxVisibleLines
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if h.errorViewScrollOffset > maxOffset {
+		h.errorViewScrollOffset = maxOffset
+	}
+
+	// Get visible portion
+	startLine := h.errorViewScrollOffset
+	endLine := startLine + maxVisibleLines
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+
+	visibleContent := strings.Join(contentLines[startLine:endLine], "\n")
+
+	// Scroll indicator
+	scrollInfo := fmt.Sprintf("Lines %d-%d of %d", startLine+1, endLine, totalLines)
+	if h.errorViewScrollOffset > 0 {
+		scrollInfo = "↑ " + scrollInfo
+	}
+	if endLine < totalLines {
+		scrollInfo = scrollInfo + " ↓"
+	}
+	scrollStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	content := containerStyle.Render(visibleContent)
+
+	// Help text
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Italic(true)
+
+	mainSection := lipgloss.JoinVertical(
+		lipgloss.Center,
+		header,
+		"",
+		scrollStyle.Render(scrollInfo),
+		"",
+		content,
+	)
+
+	centeredMain := lipgloss.Place(
+		h.width,
+		h.height-2,
+		lipgloss.Center,
+		lipgloss.Top,
+		mainSection,
+	)
+
+	helpFooter := lipgloss.NewStyle().
+		Width(h.width).
+		Align(lipgloss.Center)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		centeredMain,
+		helpFooter.Render(helpStyle.Render("↑/↓: Scroll • PgUp/PgDn: Page • r: Reprocess • Esc: Back")),
 	)
 }
 

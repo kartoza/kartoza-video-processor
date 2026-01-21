@@ -5,7 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -886,6 +888,16 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 	}
 
 	if videoFile == "" && audioFile == "" {
+		// No input files found - save error to recording info
+		if r.recordingInfo != nil {
+			errMsg := "No video or audio files found to process"
+			r.recordingInfo.Processing.Errors = append(r.recordingInfo.Processing.Errors, errMsg)
+			r.recordingInfo.Processing.ErrorDetail = buildErrorDetailFromMessage(errMsg, r.recordingInfo.Files.FolderPath)
+			r.recordingInfo.Processing.Traceback = captureTraceback()
+			r.recordingInfo.SetStatus(models.StatusFailed)
+			_ = r.recordingInfo.Save()
+		}
+		_ = notify.Error("Recording Error", "No video or audio files found to process")
 		return
 	}
 
@@ -962,19 +974,24 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		hasErrors = true
 		if r.recordingInfo != nil {
 			r.recordingInfo.Processing.Errors = append(r.recordingInfo.Processing.Errors, err.Error())
+			// Capture detailed error information for user diagnostics
+			r.recordingInfo.Processing.ErrorDetail = buildErrorDetail(err, mergeOpts)
+			r.recordingInfo.Processing.Traceback = captureTraceback()
 		}
 	}
 
 	// Update recording info with merged file paths and processing info
 	if r.recordingInfo != nil {
-		if mergeResult.MergedFile != "" {
-			r.recordingInfo.Files.MergedFile = mergeResult.MergedFile
+		if mergeResult != nil {
+			if mergeResult.MergedFile != "" {
+				r.recordingInfo.Files.MergedFile = mergeResult.MergedFile
+			}
+			if mergeResult.VerticalFile != "" {
+				r.recordingInfo.Files.VerticalFile = mergeResult.VerticalFile
+			}
+			r.recordingInfo.Processing.NormalizeApplied = mergeResult.NormalizeApplied
+			r.recordingInfo.Processing.VerticalCreated = mergeResult.VerticalFile != ""
 		}
-		if mergeResult.VerticalFile != "" {
-			r.recordingInfo.Files.VerticalFile = mergeResult.VerticalFile
-		}
-		r.recordingInfo.Processing.NormalizeApplied = mergeResult.NormalizeApplied
-		r.recordingInfo.Processing.VerticalCreated = mergeResult.VerticalFile != ""
 		r.recordingInfo.Processing.ProcessedAt = time.Now()
 		r.recordingInfo.UpdateFileSizes()
 
@@ -1247,4 +1264,119 @@ func (r *Recorder) Resume() error {
 
 	// Start recording with the new part number
 	return r.StartWithOptions(opts)
+}
+
+// buildErrorDetail creates a user-friendly error description with context
+func buildErrorDetail(err error, opts merger.MergeOptions) string {
+	var sb strings.Builder
+
+	sb.WriteString("Video post-processing failed.\n\n")
+	sb.WriteString("Error: ")
+	sb.WriteString(err.Error())
+	sb.WriteString("\n\n")
+
+	sb.WriteString("Processing Context:\n")
+	if opts.VideoFile != "" {
+		sb.WriteString("  - Video file: ")
+		sb.WriteString(opts.VideoFile)
+		if _, statErr := os.Stat(opts.VideoFile); statErr != nil {
+			sb.WriteString(" (NOT FOUND)")
+		}
+		sb.WriteString("\n")
+	}
+	if opts.AudioFile != "" {
+		sb.WriteString("  - Audio file: ")
+		sb.WriteString(opts.AudioFile)
+		if _, statErr := os.Stat(opts.AudioFile); statErr != nil {
+			sb.WriteString(" (NOT FOUND)")
+		}
+		sb.WriteString("\n")
+	}
+	if opts.WebcamFile != "" {
+		sb.WriteString("  - Webcam file: ")
+		sb.WriteString(opts.WebcamFile)
+		if _, statErr := os.Stat(opts.WebcamFile); statErr != nil {
+			sb.WriteString(" (NOT FOUND)")
+		}
+		sb.WriteString("\n")
+	}
+	if opts.OutputDir != "" {
+		sb.WriteString("  - Output directory: ")
+		sb.WriteString(opts.OutputDir)
+		sb.WriteString("\n")
+	}
+	sb.WriteString("  - Create vertical: ")
+	if opts.CreateVertical {
+		sb.WriteString("yes\n")
+	} else {
+		sb.WriteString("no\n")
+	}
+	sb.WriteString("  - Add logos: ")
+	if opts.AddLogos {
+		sb.WriteString("yes\n")
+	} else {
+		sb.WriteString("no\n")
+	}
+
+	sb.WriteString("\nPossible causes:\n")
+	errStr := err.Error()
+	if strings.Contains(errStr, "ffmpeg") || strings.Contains(errStr, "FFmpeg") {
+		sb.WriteString("  - FFmpeg encountered an error during encoding\n")
+		sb.WriteString("  - Input files may be corrupted or incompatible\n")
+		sb.WriteString("  - Insufficient disk space or memory\n")
+	}
+	if strings.Contains(errStr, "no such file") || strings.Contains(errStr, "not found") {
+		sb.WriteString("  - Required input files were not created during recording\n")
+		sb.WriteString("  - Recording may have been interrupted\n")
+	}
+	if strings.Contains(errStr, "permission denied") {
+		sb.WriteString("  - Insufficient permissions to read/write files\n")
+	}
+
+	sb.WriteString("\nSuggested actions:\n")
+	sb.WriteString("  1. Check that all input files exist and are valid\n")
+	sb.WriteString("  2. Ensure sufficient disk space is available\n")
+	sb.WriteString("  3. Try reprocessing the recording from History\n")
+	sb.WriteString("  4. If the issue persists, file a bug report with this error detail\n")
+
+	return sb.String()
+}
+
+// captureTraceback captures the current stack trace for debugging
+func captureTraceback() string {
+	// Capture stack trace
+	buf := make([]byte, 4096)
+	n := runtime.Stack(buf, false)
+	return string(buf[:n])
+}
+
+// buildErrorDetailFromMessage creates a user-friendly error description from a simple error message
+func buildErrorDetailFromMessage(errMsg string, folderPath string) string {
+	var sb strings.Builder
+
+	sb.WriteString("Video post-processing failed.\n\n")
+	sb.WriteString("Error: ")
+	sb.WriteString(errMsg)
+	sb.WriteString("\n\n")
+
+	sb.WriteString("Processing Context:\n")
+	if folderPath != "" {
+		sb.WriteString("  - Output directory: ")
+		sb.WriteString(folderPath)
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\nPossible causes:\n")
+	if strings.Contains(errMsg, "No video or audio") {
+		sb.WriteString("  - Recording files were not created properly\n")
+		sb.WriteString("  - Recording was stopped before any data was captured\n")
+		sb.WriteString("  - Files may have been moved or deleted\n")
+	}
+
+	sb.WriteString("\nSuggested actions:\n")
+	sb.WriteString("  1. Check that the recording folder contains the expected files\n")
+	sb.WriteString("  2. Try creating a new recording\n")
+	sb.WriteString("  3. If the issue persists, file a bug report with this error detail\n")
+
+	return sb.String()
 }
