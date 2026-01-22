@@ -5,6 +5,16 @@ All notable changes to Kartoza Video Processor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-01-22
+
+### Improved
+
+#### History Screen
+- Dynamic help text based on available video files (shows "v: Play" when only merged exists, "v: Vertical" when vertical exists)
+- New video indicator icons in recording list:
+  - 🎬 (clapper) shows when a processed video (vertical or merged) exists
+  - 📺 (TV) shows when uploaded to YouTube
+
 ## [0.6.0] - 2026-01-22
 
 ### Added
