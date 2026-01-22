@@ -996,3 +996,67 @@ Key features:
 
 5. **Updated documentation:**
    - docs/screens/youtube-setup.md: Added "Managing Accounts in the App" section with keybindings and step-by-step instructions
+
+---
+Date: 2026-01-21
+Prompt: Add multi-platform syndication system to announce YouTube uploads to social media and communication platforms
+
+**User Request:**
+Add syndication functionality to post announcements after YouTube uploads to:
+- Mastodon (OAuth2)
+- Bluesky (AT Protocol with app passwords)
+- LinkedIn (OAuth2)
+- Telegram (Bot API)
+- Signal (signal-cli)
+- ntfy.sh (HTTP POST)
+- Google Chat (Webhooks)
+- WordPress (REST API with app passwords)
+
+Requirements:
+- Full API integration for all platforms (not clipboard/browser)
+- Multi-account support for each platform
+- Auto-prompt after YouTube upload + manual trigger from history
+- Posts include title, description, YouTube link, and thumbnail
+
+**Implementation Summary:**
+
+1. **Core Infrastructure (`internal/syndication/`):**
+   - `provider.go`: Provider interface, PlatformType constants, Registry
+   - `config.go`: Account struct with platform-specific fields (union style), token/session management
+   - `post.go`: PostBuilder with templates for different platforms (plain text, Markdown, HTML, Telegram, ntfy, Google Chat cards)
+   - `manager.go`: Orchestrates multi-platform posting with concurrent execution
+
+2. **Platform Providers (`internal/syndication/providers/`):**
+   - `ntfy/ntfy.go`: HTTP POST to ntfy.sh topics with click actions
+   - `telegram/telegram.go`: Bot API with MarkdownV2, photo attachments
+   - `googlechat/googlechat.go`: Webhooks with card messages
+   - `wordpress/wordpress.go`: REST API with featured images, categories
+   - `mastodon/mastodon.go`: OAuth2 with image uploads
+   - `bluesky/bluesky.go`: AT Protocol session auth with blob uploads
+   - `linkedin/linkedin.go`: OAuth2 with UGC Posts
+   - `signal/signal.go`: signal-cli wrapper for groups/individuals
+
+3. **TUI Screens:**
+   - `syndication_setup.go`: Platform list, account management (add/edit/delete/connect/toggle)
+   - `syndication_post.go`: Account selection, preview, posting progress, results
+
+4. **Integration:**
+   - Added Syndication field to `internal/config/config.go`
+   - Added SyndicationMetadata to `internal/models/recording_metadata.go`
+   - Added ScreenSyndicationSetup and ScreenSyndicationPost to `internal/tui/app.go`
+   - Added Syndication Setup option to `internal/tui/options.go`
+   - Message routing for syndication auth and post events
+
+5. **Features:**
+   - Concurrent posting to multiple accounts
+   - Character limit handling per platform (300 for Bluesky, 500 for Mastodon, etc.)
+   - Image/thumbnail upload where supported
+   - OAuth code entry flow for Mastodon/LinkedIn
+   - Session persistence for Bluesky
+   - Results tracking in recording metadata
+   - Retry failed posts
+---
+Session continued from context limit
+Task: Fix syndication setup text input and layout issues
+Completed: Fixed undefined color constants (ColorCyan -> ColorBlue, ColorYellow -> ColorOrange)
+Build: Successful

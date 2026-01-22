@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +31,7 @@ const (
 	OptionsFieldDefaultPresenter
 	OptionsFieldLogoDirectory
 	OptionsFieldYouTubeSetup
+	OptionsFieldSyndicationSetup
 	OptionsFieldSave
 )
 
@@ -273,6 +275,8 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 				return m, nil
 			case OptionsFieldYouTubeSetup:
 				return m, func() tea.Msg { return goToYouTubeSetupMsg{} }
+			case OptionsFieldSyndicationSetup:
+				return m, func() tea.Msg { return goToSyndicationSetupMsg{} }
 			case OptionsFieldSave:
 				m.save()
 				return m, nil
@@ -558,6 +562,35 @@ func (m *OptionsModel) View() string {
 	youtubeStatusStyled := lipgloss.NewStyle().Foreground(youtubeStatusColor).Render(youtubeStatusText)
 	youtubeRow := lipgloss.JoinHorizontal(lipgloss.Center, youtubeLabel, youtubeStatusStyled)
 
+	// Syndication Section
+	syndicationSection := sectionStyle.Render("Syndication")
+	syndicationLabel := labelStyle.Render("Accounts: ")
+	if m.focusedField == OptionsFieldSyndicationSetup {
+		syndicationLabel = labelActiveStyle.Render("Accounts: ")
+	}
+
+	// Count syndication accounts
+	enabledAccounts := cfg.Syndication.GetEnabledAccounts()
+	totalAccounts := len(cfg.Syndication.GetAccounts())
+	var syndicationStatusText string
+	var syndicationStatusColor lipgloss.Color
+	if totalAccounts == 0 {
+		syndicationStatusText = "No accounts (press enter to configure)"
+		syndicationStatusColor = ColorGray
+	} else {
+		syndicationStatusText = fmt.Sprintf("%d enabled of %d (press enter to manage)", len(enabledAccounts), totalAccounts)
+		if len(enabledAccounts) > 0 {
+			syndicationStatusColor = ColorGreen
+		} else {
+			syndicationStatusColor = ColorOrange
+		}
+	}
+	if m.focusedField == OptionsFieldSyndicationSetup {
+		syndicationStatusText = "▶ " + syndicationStatusText
+	}
+	syndicationStatusStyled := lipgloss.NewStyle().Foreground(syndicationStatusColor).Render(syndicationStatusText)
+	syndicationRow := lipgloss.JoinHorizontal(lipgloss.Center, syndicationLabel, syndicationStatusStyled)
+
 	// Save button
 	saveLabel := labelStyle.Render("")
 	saveBtn := inactiveButtonStyle.Render("Save")
@@ -593,6 +626,8 @@ func (m *OptionsModel) View() string {
 		logoDirHint,
 		youtubeSection,
 		youtubeRow,
+		syndicationSection,
+		syndicationRow,
 		"",
 		saveRow,
 		"",
@@ -793,3 +828,6 @@ func (m *OptionsModel) renderFileBrowser() string {
 
 // goToYouTubeSetupMsg signals navigation to YouTube setup screen
 type goToYouTubeSetupMsg struct{}
+
+// goToSyndicationSetupMsg signals navigation to syndication setup screen
+type goToSyndicationSetupMsg struct{}

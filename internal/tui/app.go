@@ -29,6 +29,8 @@ const (
 	ScreenOptions
 	ScreenYouTubeSetup
 	ScreenYouTubeUpload
+	ScreenSyndicationSetup
+	ScreenSyndicationPost
 )
 
 // RecordingButton represents a button on the recording screen
@@ -41,14 +43,16 @@ const (
 
 // AppModel is the main application model that coordinates screens
 type AppModel struct {
-	screen          Screen
-	menu            *MenuModel
-	recordingSetup  *RecordingSetupModel
-	options         *OptionsModel
-	history         *HistoryModel
-	youtubeSetup    *YouTubeSetupModel
-	youtubeUpload   *YouTubeUploadModel
-	recorder        *recorder.Recorder
+	screen            Screen
+	menu              *MenuModel
+	recordingSetup    *RecordingSetupModel
+	options           *OptionsModel
+	history           *HistoryModel
+	youtubeSetup      *YouTubeSetupModel
+	youtubeUpload     *YouTubeUploadModel
+	syndicationSetup  *SyndicationSetupModel
+	syndicationPost   *SyndicationPostModel
+	recorder          *recorder.Recorder
 	status          models.RecordingStatus
 	monitors        []models.Monitor
 	spinner         spinner.Model
@@ -246,6 +250,35 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.youtubeSetup.width = m.width
 		m.youtubeSetup.height = m.height
 		return m, m.youtubeSetup.Init()
+	case goToSyndicationSetupMsg:
+		m.screen = ScreenSyndicationSetup
+		m.syndicationSetup = NewSyndicationSetupModel()
+		m.syndicationSetup.width = m.width
+		m.syndicationSetup.height = m.height
+		return m, m.syndicationSetup.Init()
+	case syndicationAuthStartedMsg, syndicationAuthCompleteMsg:
+		// Forward syndication auth messages
+		if m.screen == ScreenSyndicationSetup && m.syndicationSetup != nil {
+			newSetup, cmd := m.syndicationSetup.Update(msg)
+			m.syndicationSetup = newSetup
+			return m, cmd
+		}
+		return m, nil
+	case syndicationPostProgressMsg, syndicationPostCompleteMsg:
+		// Forward syndication post messages
+		if m.screen == ScreenSyndicationPost && m.syndicationPost != nil {
+			newPost, cmd := m.syndicationPost.Update(msg)
+			m.syndicationPost = newPost
+			return m, cmd
+		}
+		return m, nil
+	case backToHistoryMsg:
+		// Return to history from syndication post
+		m.screen = ScreenHistory
+		m.history = NewHistoryModel()
+		m.history.width = m.width
+		m.history.height = m.height
+		return m, m.history.Init()
 	case youtubeAuthStartedMsg, youtubeAuthCompleteMsg, youtubeDisconnectMsg, youtubeVerifyCompleteMsg, youtubePlaylistsLoadedMsg, youtubePlaylistCreatedMsg:
 		// Forward YouTube auth messages to the YouTube setup model
 		if m.screen == ScreenYouTubeSetup && m.youtubeSetup != nil {
@@ -670,6 +703,10 @@ func (m AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleYouTubeSetupKeys(msg)
 	case ScreenYouTubeUpload:
 		return m.handleYouTubeUploadKeys(msg)
+	case ScreenSyndicationSetup:
+		return m.handleSyndicationSetupKeys(msg)
+	case ScreenSyndicationPost:
+		return m.handleSyndicationPostKeys(msg)
 	}
 
 	return m, nil
@@ -1067,6 +1104,10 @@ func (m AppModel) View() string {
 		return m.renderYouTubeSetupScreen()
 	case ScreenYouTubeUpload:
 		return m.renderYouTubeUploadScreen()
+	case ScreenSyndicationSetup:
+		return m.renderSyndicationSetupScreen()
+	case ScreenSyndicationPost:
+		return m.renderSyndicationPostScreen()
 	}
 
 	return ""
@@ -1440,4 +1481,48 @@ func (m AppModel) renderYouTubeUploadScreen() string {
 	m.youtubeUpload.width = m.width
 	m.youtubeUpload.height = m.height
 	return m.youtubeUpload.View()
+}
+
+// handleSyndicationSetupKeys handles keys on the syndication setup screen
+func (m AppModel) handleSyndicationSetupKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	newSetup, cmd := m.syndicationSetup.Update(msg)
+	m.syndicationSetup = newSetup
+
+	// Check for back to menu message
+	if msg.String() == "q" && m.syndicationSetup.step == SyndicationStepPlatformList {
+		m.screen = ScreenOptions
+		m.options = NewOptionsModel()
+		m.options.width = m.width
+		m.options.height = m.height
+		return m, m.options.Init()
+	}
+
+	return m, cmd
+}
+
+// renderSyndicationSetupScreen renders the syndication setup screen
+func (m AppModel) renderSyndicationSetupScreen() string {
+	if m.syndicationSetup == nil {
+		return ""
+	}
+	m.syndicationSetup.width = m.width
+	m.syndicationSetup.height = m.height
+	return m.syndicationSetup.View()
+}
+
+// handleSyndicationPostKeys handles keys on the syndication post screen
+func (m AppModel) handleSyndicationPostKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	newPost, cmd := m.syndicationPost.Update(msg)
+	m.syndicationPost = newPost
+	return m, cmd
+}
+
+// renderSyndicationPostScreen renders the syndication post screen
+func (m AppModel) renderSyndicationPostScreen() string {
+	if m.syndicationPost == nil {
+		return ""
+	}
+	m.syndicationPost.width = m.width
+	m.syndicationPost.height = m.height
+	return m.syndicationPost.View()
 }

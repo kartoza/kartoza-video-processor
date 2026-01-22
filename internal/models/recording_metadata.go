@@ -17,6 +17,9 @@ type RecordingMetadata struct {
 
 	// YouTube upload information
 	YouTube *YouTubeMetadata `json:"youtube,omitempty"`
+
+	// Syndication information (posts to other platforms)
+	Syndication *SyndicationMetadata `json:"syndication,omitempty"`
 }
 
 // YouTubeMetadata holds information about a video uploaded to YouTube
@@ -35,6 +38,63 @@ type YouTubeMetadata struct {
 // IsPublishedToYouTube returns true if the recording has been uploaded to YouTube
 func (m *RecordingMetadata) IsPublishedToYouTube() bool {
 	return m.YouTube != nil && m.YouTube.VideoID != ""
+}
+
+// SyndicationPost represents a single syndication post to a platform
+type SyndicationPost struct {
+	AccountID   string `json:"account_id"`
+	Platform    string `json:"platform"`
+	AccountName string `json:"account_name"`
+	PostID      string `json:"post_id,omitempty"`
+	PostURL     string `json:"post_url,omitempty"`
+	PostedAt    string `json:"posted_at"`
+	Success     bool   `json:"success"`
+	Error       string `json:"error,omitempty"`
+}
+
+// SyndicationMetadata holds information about syndication posts
+type SyndicationMetadata struct {
+	Posts []SyndicationPost `json:"posts,omitempty"`
+}
+
+// HasBeenSyndicated returns true if the recording has been syndicated to any platform
+func (m *RecordingMetadata) HasBeenSyndicated() bool {
+	return m.Syndication != nil && len(m.Syndication.Posts) > 0
+}
+
+// GetSuccessfulSyndications returns all successful syndication posts
+func (m *RecordingMetadata) GetSuccessfulSyndications() []SyndicationPost {
+	if m.Syndication == nil {
+		return nil
+	}
+	var successful []SyndicationPost
+	for _, post := range m.Syndication.Posts {
+		if post.Success {
+			successful = append(successful, post)
+		}
+	}
+	return successful
+}
+
+// HasSyndicatedTo returns true if the recording has been syndicated to the given platform
+func (m *RecordingMetadata) HasSyndicatedTo(platform string) bool {
+	if m.Syndication == nil {
+		return false
+	}
+	for _, post := range m.Syndication.Posts {
+		if post.Platform == platform && post.Success {
+			return true
+		}
+	}
+	return false
+}
+
+// AddSyndicationPost adds a syndication post record
+func (m *RecordingMetadata) AddSyndicationPost(post SyndicationPost) {
+	if m.Syndication == nil {
+		m.Syndication = &SyndicationMetadata{}
+	}
+	m.Syndication.Posts = append(m.Syndication.Posts, post)
 }
 
 // GenerateFolderName creates a folder name from the counter and title

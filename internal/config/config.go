@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-video-processor/internal/syndication"
 	"github.com/kartoza/kartoza-video-processor/internal/youtube"
 )
 
@@ -107,6 +108,9 @@ type Config struct {
 
 	// YouTube integration settings
 	YouTube youtube.Config `json:"youtube,omitempty"`
+
+	// Syndication settings for multi-platform posting
+	Syndication syndication.Config `json:"syndication,omitempty"`
 }
 
 // DefaultConfig returns the default configuration
@@ -116,6 +120,7 @@ func DefaultConfig() Config {
 		DefaultOptions:  models.DefaultRecordingOptions(),
 		AudioProcessing: models.DefaultAudioProcessingOptions(),
 		YouTube:         youtube.DefaultConfig(),
+		Syndication:     syndication.DefaultConfig(),
 	}
 }
 
