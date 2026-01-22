@@ -1392,10 +1392,22 @@ func (h *HistoryModel) renderDetailView() string {
 	if rec.Status == models.StatusFailed {
 		helpText = "o: Open Folder • e: Edit • r: Reprocess • v: View Error Details • Esc: Back"
 	} else if rec.Status == models.StatusCompleted {
+		// Build video playback options based on available files
+		var videoOptions string
+		hasVertical := rec.Files.VerticalFile != ""
+		hasMerged := rec.Files.MergedFile != ""
+		if hasVertical && hasMerged {
+			videoOptions = "v: Vertical • m: Merged"
+		} else if hasVertical {
+			videoOptions = "v: Vertical"
+		} else if hasMerged {
+			videoOptions = "v: Play • m: Merged"
+		}
+
 		if rec.Metadata.IsPublishedToYouTube() {
-			helpText = "v: Vertical • m: Merged • a: Audio • o: Folder • e: Edit • r: Reprocess • p: Privacy • x: Del YT • Esc"
+			helpText = videoOptions + " • a: Audio • o: Folder • e: Edit • r: Reprocess • p: Privacy • x: Del YT • Esc"
 		} else {
-			helpText = "v: Vertical • m: Merged • a: Audio • o: Folder • e: Edit • r: Reprocess • u: Upload • Esc"
+			helpText = videoOptions + " • a: Audio • o: Folder • e: Edit • r: Reprocess • u: Upload • Esc"
 		}
 	} else {
 		helpText = "o: Open Folder • e: Edit • r: Reprocess • Esc: Back"
@@ -1929,9 +1941,15 @@ func (h *HistoryModel) renderScrollableTable() string {
 		// Determine status icon and color
 		statusIcon, statusColor := getStatusDisplay(rec.Status)
 
-		// Add YouTube clapper icon if video has been uploaded
-		if rec.Metadata.YouTube != nil && rec.Metadata.YouTube.VideoID != "" {
+		// Add video indicator if a processed video exists
+		hasVideo := rec.Files.VerticalFile != "" || rec.Files.MergedFile != ""
+		if hasVideo {
 			statusIcon = statusIcon + "🎬"
+		}
+
+		// Add YouTube indicator if video has been uploaded
+		if rec.Metadata.YouTube != nil && rec.Metadata.YouTube.VideoID != "" {
+			statusIcon = statusIcon + "📺"
 		}
 
 		topic := truncateStr(rec.Metadata.Topic, 10)

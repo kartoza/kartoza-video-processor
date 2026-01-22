@@ -7,7 +7,10 @@
       "Bash(go build:*)",
       "Bash(go test:*)",
       "Bash(/home/timlinux/dev/go/kartoza-video-processor/PROMPT.log)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git tag:*)",
+      "Bash(ffprobe:*)"
     ],
     "deny": [],
     "ask": []

@@ -47,9 +47,12 @@ Shows the current processing status of each recording:
 | <span class="t-red">● Rec</span> | Recording | Currently being recorded |
 | <span class="t-orange">⏸ Pause</span> | Paused | Recording is paused |
 
-**YouTube Upload Indicator:**
+**Video Indicators:**
 
-A 🎬 (clapper) icon appears next to the status when the recording has been uploaded to YouTube. For example: <span class="t-green">✓ Done</span>🎬
+- 🎬 (clapper) appears when a processed video (vertical or merged) exists
+- 📺 (TV) appears when the recording has been uploaded to YouTube
+
+For example: <span class="t-green">✓ Done</span>🎬📺 shows a completed recording with video that's been uploaded to YouTube.
 
 ---
 
