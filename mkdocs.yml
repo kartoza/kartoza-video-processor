@@ -125,6 +125,7 @@ nav:
       - Options: screens/options.md
       - YouTube Setup: screens/youtube-setup.md
       - YouTube Upload: screens/youtube-upload.md
+      - Syndication Setup: screens/syndication-setup.md
     - Workflows:
       - Recording a Video: workflows/recording-workflow.md
       - Uploading to YouTube: workflows/youtube-workflow.md
