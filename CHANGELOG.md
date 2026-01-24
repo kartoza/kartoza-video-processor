@@ -5,6 +5,55 @@ All notable changes to Kartoza Video Processor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-01-24
+
+### Added
+
+#### System Tray Mode
+A new background system tray applet for quick recording access without opening the full TUI:
+
+- **New command**: `kartoza-video-processor systray`
+- **Left-click**: Start recording (when idle) or stop recording (when active)
+- **Double-click**: Pause/resume recording while active
+- **Right-click**: Context menu with Pause/Resume, Open TUI, Quit options
+- **State-specific icons**: Different icons for ready, recording, and paused states
+- **Processing animation**: Spinning icon while video is being processed
+- **Auto-launch TUI**: Opens TUI automatically after stopping to enter title/description
+- **Tooltip updates**: Shows recording duration and status in real-time
+
+Ideal for:
+- Quick, spontaneous recordings
+- Users who prefer desktop integration over terminal
+- Adding metadata after recording instead of before
+
+#### Terminal Recording Mode
+Record terminal sessions using asciinema with automatic video conversion:
+
+- **New command**: `kartoza-video-processor terminal`
+- Records terminal sessions as asciinema cast files
+- Automatic conversion to GIF (using `agg`) and MP4 (using `ffmpeg`)
+- Configurable options:
+  - `--title, -t`: Set recording title
+  - `--idle-limit`: Maximum idle time in seconds (default: 5)
+  - `--font-size`: Font size for video rendering (default: 16)
+  - `--convert`: Convert existing .cast file without recording
+- Works in terminal-only environments (no graphical display required)
+- New config section `terminal_recording` for persistent settings
+
+Ideal for:
+- CLI tutorials and demonstrations
+- Headless/SSH environments
+- Terminal-focused content creation
+
+#### New Dependencies
+- `fyne.io/systray` v1.12.0 - Cross-platform system tray support
+- Optional: `asciinema` and `agg` for terminal recording
+
+### Changed
+- Recording status now includes `needs_metadata` state for systray-initiated recordings
+- History screen shows "Edit" status for recordings awaiting metadata entry
+- Recordings from systray auto-open in edit mode when selected in history
+
 ## [0.6.1] - 2026-01-22
 
 ### Improved
@@ -117,6 +166,8 @@ Key syndication features:
 - Beautiful TUI interface
 - CLI mode for scripting
 
+[0.7.0]: https://github.com/kartoza/kartoza-video-processor/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/kartoza/kartoza-video-processor/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/kartoza/kartoza-video-processor/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kartoza/kartoza-video-processor/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/kartoza/kartoza-video-processor/compare/v0.4.0...v0.4.1
