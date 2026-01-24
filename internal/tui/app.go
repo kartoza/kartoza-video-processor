@@ -584,6 +584,45 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			waitForProgressUpdate(m.progressChan),
 		)
 
+	case recordingSavedNeedsProcessingMsg:
+		// Recording from systray was saved with metadata, now process it
+		if msg.recording == nil {
+			return m, nil
+		}
+
+		// Set status to processing
+		msg.recording.SetStatus(models.StatusProcessing)
+		_ = msg.recording.Save()
+
+		// Set up for processing
+		m.screen = ScreenRecording
+		m.state = stateProcessing
+		m.outputDir = msg.recording.Files.FolderPath
+		m.recordingInfo = msg.recording
+		m.processing.Reset()
+		m.processing.ConfigureSteps(
+			msg.recording.Settings.AudioEnabled,
+			msg.recording.Settings.ScreenEnabled,
+			msg.recording.Settings.WebcamEnabled,
+			msg.recording.Settings.VerticalEnabled,
+		)
+		// Skip the "Stopping recorders" step since recording was already stopped via systray
+		m.processing.SetStepByIndex(ProcessStepStopping, StepSkipped)
+		m.processing.Start()
+		m.processingFrame = 0
+
+		// Configure recorder with the recording info
+		m.recorder.SetRecordingInfo(msg.recording)
+
+		// Start processing pipeline directly
+		m.progressChan = make(chan recorder.ProgressUpdate, 100)
+		go m.recorder.ProcessWithProgress(m.progressChan)
+
+		return m, tea.Batch(
+			processingTickCmd(),
+			waitForProgressUpdate(m.progressChan),
+		)
+
 	case youtubePrivacyChangedMsg, youtubeVideoDeletedMsg:
 		// Forward YouTube action messages to history model
 		if m.screen == ScreenHistory && m.history != nil {

@@ -294,13 +294,23 @@ func (h *HistoryModel) updateListMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
 		}
 
 	case "enter", " ":
-		// Open detail view
+		// Open detail view (or edit mode if recording needs metadata)
 		if len(h.recordings) > 0 && h.cursor < len(h.recordings) {
 			rec := h.recordings[h.cursor]
 			h.selectedRecording = &rec
-			h.mode = HistoryDetailMode
 			h.editError = ""
 			h.editSuccess = ""
+
+			// If recording needs metadata, go directly to edit mode
+			if rec.Status == models.StatusNeedsMetadata {
+				h.mode = HistoryEditMode
+				h.initEditFields()
+				h.editFocusField = 0
+				h.editFields.title.Focus()
+				return h, textinput.Blink
+			}
+
+			h.mode = HistoryDetailMode
 		}
 
 	case "r":
@@ -907,6 +917,9 @@ func (h *HistoryModel) saveRecording() tea.Cmd {
 	h.isSaving = true
 	h.editError = ""
 
+	// Check if this recording needs processing (was created via systray)
+	needsProcessing := h.selectedRecording.Status == models.StatusNeedsMetadata
+
 	// Update metadata
 	h.selectedRecording.Metadata.Title = strings.TrimSpace(h.editFields.title.Value())
 	h.selectedRecording.Metadata.Description = strings.TrimSpace(h.editFields.description.Value())
@@ -918,6 +931,10 @@ func (h *HistoryModel) saveRecording() tea.Cmd {
 	rec := h.selectedRecording
 	return func() tea.Msg {
 		err := rec.Save()
+		if err == nil && needsProcessing {
+			// Return a message to trigger processing
+			return recordingSavedNeedsProcessingMsg{recording: rec}
+		}
 		return recordingSavedMsg{err: err}
 	}
 }
@@ -2091,6 +2108,8 @@ func getStatusDisplay(status string) (string, lipgloss.Color) {
 		return "● Rec", ColorRed
 	case models.StatusPaused:
 		return "⏸ Pause", ColorOrange
+	case models.StatusNeedsMetadata:
+		return "✎ Edit", ColorBlue
 	default:
 		return "? Unknown", ColorGray
 	}
@@ -2530,6 +2549,11 @@ type startYouTubeUploadMsg struct {
 }
 
 type startReprocessMsg struct {
+	recording *models.RecordingInfo
+}
+
+// recordingSavedNeedsProcessingMsg signals that a recording was saved and needs processing
+type recordingSavedNeedsProcessingMsg struct {
 	recording *models.RecordingInfo
 }
 

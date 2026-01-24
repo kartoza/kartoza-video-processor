@@ -62,6 +62,25 @@ type LogoSelection struct {
 	GifLoopMode GifLoopMode `json:"gif_loop_mode,omitempty"` // How to loop animated GIFs
 }
 
+// TerminalRecordingSettings holds settings for terminal (asciinema) recording
+type TerminalRecordingSettings struct {
+	FontSize      int     `json:"font_size,omitempty"`       // Font size for rendering (default: 16)
+	FontFamily    string  `json:"font_family,omitempty"`     // Font family for rendering
+	Theme         string  `json:"theme,omitempty"`           // Color theme (e.g., "monokai", "solarized-dark")
+	IdleTimeLimit float64 `json:"idle_time_limit,omitempty"` // Max idle time in seconds (default: 2)
+	FPSCap        int     `json:"fps_cap,omitempty"`         // FPS cap for rendering (default: 30)
+}
+
+// DefaultTerminalRecordingSettings returns sensible defaults
+func DefaultTerminalRecordingSettings() TerminalRecordingSettings {
+	return TerminalRecordingSettings{
+		FontSize:      16,
+		FontFamily:    "JetBrains Mono,Fira Code,monospace",
+		IdleTimeLimit: 2.0,
+		FPSCap:        30,
+	}
+}
+
 // RecordingPresets holds the user's preferred recording settings
 // These are saved and restored between sessions (excludes title, description, number)
 type RecordingPresets struct {
@@ -111,6 +130,9 @@ type Config struct {
 
 	// Syndication settings for multi-platform posting
 	Syndication syndication.Config `json:"syndication,omitempty"`
+
+	// Terminal recording settings (asciinema)
+	TerminalRecording TerminalRecordingSettings `json:"terminal_recording,omitempty"`
 }
 
 // DefaultConfig returns the default configuration
@@ -214,6 +236,15 @@ func GetNextRecordingNumber() (int, error) {
 // GetCurrentRecordingNumber returns the next recording number by scanning existing folders
 func GetCurrentRecordingNumber() int {
 	return ScanHighestRecordingNumber() + 1
+}
+
+// ReadPath reads a path from a file
+func ReadPath(pathFile string) string {
+	data, err := os.ReadFile(pathFile)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // ScanHighestRecordingNumber scans the output directory for existing recordings

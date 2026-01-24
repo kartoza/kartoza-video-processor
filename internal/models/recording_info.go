@@ -13,11 +13,12 @@ import (
 
 // Recording status constants
 const (
-	StatusRecording  = "recording"
-	StatusPaused     = "paused"
-	StatusProcessing = "processing"
-	StatusCompleted  = "completed"
-	StatusFailed     = "failed"
+	StatusRecording       = "recording"
+	StatusPaused          = "paused"
+	StatusProcessing      = "processing"
+	StatusCompleted       = "completed"
+	StatusFailed          = "failed"
+	StatusNeedsMetadata   = "needs_metadata" // Recording stopped via systray, needs title/description
 )
 
 // RecordingInfo contains all information about a recording

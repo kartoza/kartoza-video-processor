@@ -10,7 +10,8 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git tag:*)",
-      "Bash(ffprobe:*)"
+      "Bash(ffprobe:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []

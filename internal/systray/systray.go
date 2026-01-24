@@ -1,0 +1,733 @@
+package systray
+
+import (
+	"bytes"
+	_ "embed"
+	"fmt"
+	"image"
+	"image/png"
+	"math"
+	"os"
+	"os/exec"
+	"time"
+
+	"fyne.io/systray"
+	"github.com/kartoza/kartoza-video-processor/internal/config"
+	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-video-processor/internal/recorder"
+)
+
+// Embed the three state icons
+//
+//go:embed icon_ready.png
+var iconReadyData []byte
+
+//go:embed icon_recording.png
+var iconRecordingData []byte
+
+//go:embed icon_paused.png
+var iconPausedData []byte
+
+// TrayState represents the current state of the system tray
+type TrayState int
+
+const (
+	StateIdle TrayState = iota
+	StateRecording
+	StatePaused
+	StateProcessing
+)
+
+// RecordingInfo contains details about the current recording for tooltip display
+type RecordingInfo struct {
+	Monitor   string
+	StartTime time.Time
+	IsPaused  bool
+}
+
+// Manager handles the system tray icon and menu
+type Manager struct {
+	recorder *recorder.Recorder
+
+	// Menu items
+	mStartStop *systray.MenuItem
+	mPause     *systray.MenuItem
+	mStatus    *systray.MenuItem
+	mOpenTUI   *systray.MenuItem
+	mQuit      *systray.MenuItem
+
+	// Channels for communication
+	startChan chan struct{}
+	stopChan  chan struct{}
+	pauseChan chan struct{}
+	tuiChan   chan struct{}
+	quitChan  chan struct{}
+
+	// Current state
+	currentState TrayState
+
+	// Icons (resized for tray)
+	iconReady     []byte
+	iconRecording []byte
+	iconPaused    []byte
+
+	// Pre-rendered rotated versions of ready icon (for processing animation)
+	rotatedReadyIcons [][]byte
+
+	// Icon rotation for processing state
+	rotationTicker *time.Ticker
+	stopRotation   chan struct{}
+	isRotating     bool
+
+	// Status polling
+	statusTicker *time.Ticker
+	stopStatus   chan struct{}
+	lastStatus   models.RecordingStatus
+
+	// Recording info for tooltip
+	recordingInfo *RecordingInfo
+
+	// Double-click detection
+	lastClickTime time.Time
+}
+
+// New creates a new systray manager
+func New() *Manager {
+	m := &Manager{
+		recorder:     recorder.New(),
+		startChan:    make(chan struct{}, 1),
+		stopChan:     make(chan struct{}, 1),
+		pauseChan:    make(chan struct{}, 1),
+		tuiChan:      make(chan struct{}, 1),
+		quitChan:     make(chan struct{}, 1),
+		stopRotation: make(chan struct{}),
+		stopStatus:   make(chan struct{}),
+		currentState: StateIdle,
+	}
+	m.loadAndPrepareIcons()
+	return m
+}
+
+// loadAndPrepareIcons loads icons without resizing (let the system tray handle scaling)
+func (m *Manager) loadAndPrepareIcons() {
+	// Load the ready icon - use original size for better color fidelity
+	if img, err := png.Decode(bytes.NewReader(iconReadyData)); err == nil {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, img); err == nil {
+			m.iconReady = buf.Bytes()
+		}
+
+		// Pre-render 12 rotated versions of ready icon for processing animation
+		m.rotatedReadyIcons = make([][]byte, 12)
+		for i := 0; i < 12; i++ {
+			angle := float64(i) * 30.0 * math.Pi / 180.0
+			rotated := rotateImage(img, angle)
+			var rotBuf bytes.Buffer
+			if err := png.Encode(&rotBuf, rotated); err == nil {
+				m.rotatedReadyIcons[i] = rotBuf.Bytes()
+			}
+		}
+	}
+
+	// Load the recording icon
+	if img, err := png.Decode(bytes.NewReader(iconRecordingData)); err == nil {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, img); err == nil {
+			m.iconRecording = buf.Bytes()
+		}
+	}
+
+	// Load the paused icon
+	if img, err := png.Decode(bytes.NewReader(iconPausedData)); err == nil {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, img); err == nil {
+			m.iconPaused = buf.Bytes()
+		}
+	}
+}
+
+// rotateImage rotates an image by the given angle (in radians)
+func rotateImage(src image.Image, angle float64) image.Image {
+	bounds := src.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+
+	// Create a new RGBA image
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+
+	// Center of rotation
+	cx, cy := float64(w)/2, float64(h)/2
+
+	// Precompute sin and cos
+	sin, cos := math.Sin(-angle), math.Cos(-angle)
+
+	// For each pixel in the destination
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			// Translate to center
+			dx := float64(x) - cx
+			dy := float64(y) - cy
+
+			// Rotate (inverse rotation to find source pixel)
+			srcX := dx*cos - dy*sin + cx
+			srcY := dx*sin + dy*cos + cy
+
+			// Check bounds and copy pixel
+			sx, sy := int(srcX), int(srcY)
+			if sx >= 0 && sx < w && sy >= 0 && sy < h {
+				dst.Set(x, y, src.At(sx, sy))
+			}
+		}
+	}
+
+	return dst
+}
+
+// setIcon sets the appropriate icon based on current state
+func (m *Manager) setIcon(state TrayState) {
+	m.currentState = state
+
+	// Stop any existing rotation
+	if m.isRotating && state != StateProcessing {
+		m.stopIconRotation()
+	}
+
+	switch state {
+	case StateIdle:
+		if m.iconReady != nil {
+			systray.SetIcon(m.iconReady)
+		}
+	case StateRecording:
+		if m.iconRecording != nil {
+			systray.SetIcon(m.iconRecording)
+		}
+	case StatePaused:
+		if m.iconPaused != nil {
+			systray.SetIcon(m.iconPaused)
+		}
+	case StateProcessing:
+		// Start spinning the ready icon
+		m.startIconRotation()
+	}
+}
+
+// StartChan returns the channel that signals when to start recording
+func (m *Manager) StartChan() <-chan struct{} {
+	return m.startChan
+}
+
+// StopChan returns the channel that signals when to stop recording
+func (m *Manager) StopChan() <-chan struct{} {
+	return m.stopChan
+}
+
+// PauseChan returns the channel that signals when to pause/resume recording
+func (m *Manager) PauseChan() <-chan struct{} {
+	return m.pauseChan
+}
+
+// TUIChan returns the channel that signals when to open TUI
+func (m *Manager) TUIChan() <-chan struct{} {
+	return m.tuiChan
+}
+
+// QuitChan returns the channel that signals when to quit
+func (m *Manager) QuitChan() <-chan struct{} {
+	return m.quitChan
+}
+
+// OnReady is called when the systray is ready
+func (m *Manager) OnReady() {
+	// Set initial icon (ready/idle state)
+	m.setIcon(StateIdle)
+	systray.SetTitle("Kartoza Video")
+	systray.SetTooltip("Kartoza Video Processor - Click to start recording")
+
+	// Set up left-click handler with double-click detection
+	// Single click: start/stop recording
+	// Double click: pause/resume recording
+	systray.SetOnTapped(func() {
+		now := time.Now()
+		isDoubleClick := now.Sub(m.lastClickTime) < 400*time.Millisecond
+		m.lastClickTime = now
+
+		status := m.recorder.GetStatus()
+
+		if isDoubleClick && (status.IsRecording || status.IsPaused) {
+			// Double-click while recording or paused: toggle pause
+			select {
+			case m.pauseChan <- struct{}{}:
+			default:
+			}
+		} else if status.IsRecording {
+			// Single click while recording: stop and open TUI for metadata
+			select {
+			case m.stopChan <- struct{}{}:
+			default:
+			}
+		} else if status.IsPaused {
+			// Single click while paused: stop recording
+			select {
+			case m.stopChan <- struct{}{}:
+			default:
+			}
+		} else {
+			// Single click while idle: start recording
+			select {
+			case m.startChan <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	// Add menu items (shown on right-click)
+	m.mStartStop = systray.AddMenuItem("Start Recording", "Start a new recording")
+	m.mPause = systray.AddMenuItem("Pause", "Pause the recording")
+	m.mPause.Hide()
+	systray.AddSeparator()
+	m.mStatus = systray.AddMenuItem("Idle", "Current status")
+	m.mStatus.Disable()
+	systray.AddSeparator()
+	m.mOpenTUI = systray.AddMenuItem("Open TUI", "Open the full interface")
+	systray.AddSeparator()
+	m.mQuit = systray.AddMenuItem("Quit", "Quit the application")
+
+	// Handle menu clicks in a goroutine
+	go m.handleClicks()
+
+	// Start status polling
+	m.startStatusPolling()
+}
+
+// OnExit is called when the systray is exiting
+func (m *Manager) OnExit() {
+	m.stopIconRotation()
+	m.stopStatusPolling()
+}
+
+// handleClicks handles menu item clicks
+func (m *Manager) handleClicks() {
+	for {
+		select {
+		case <-m.mStartStop.ClickedCh:
+			status := m.recorder.GetStatus()
+			if status.IsRecording || status.IsPaused {
+				// Stop recording
+				select {
+				case m.stopChan <- struct{}{}:
+				default:
+				}
+			} else {
+				// Start recording
+				select {
+				case m.startChan <- struct{}{}:
+				default:
+				}
+			}
+		case <-m.mPause.ClickedCh:
+			select {
+			case m.pauseChan <- struct{}{}:
+			default:
+			}
+		case <-m.mOpenTUI.ClickedCh:
+			select {
+			case m.tuiChan <- struct{}{}:
+			default:
+			}
+		case <-m.mQuit.ClickedCh:
+			select {
+			case m.quitChan <- struct{}{}:
+			default:
+			}
+			return
+		}
+	}
+}
+
+// startStatusPolling starts polling for recording status changes
+func (m *Manager) startStatusPolling() {
+	m.statusTicker = time.NewTicker(1 * time.Second)
+	go func() {
+		// Initial update
+		m.updateStatus()
+
+		for {
+			select {
+			case <-m.statusTicker.C:
+				m.updateStatus()
+			case <-m.stopStatus:
+				return
+			}
+		}
+	}()
+}
+
+// stopStatusPolling stops the status polling
+func (m *Manager) stopStatusPolling() {
+	if m.statusTicker != nil {
+		m.statusTicker.Stop()
+		m.statusTicker = nil
+	}
+	select {
+	case m.stopStatus <- struct{}{}:
+	default:
+	}
+}
+
+// updateStatus updates the tray based on current recording status
+func (m *Manager) updateStatus() {
+	status := m.recorder.GetStatus()
+
+	// Check if status changed
+	statusChanged := status.IsRecording != m.lastStatus.IsRecording ||
+		status.IsPaused != m.lastStatus.IsPaused
+	m.lastStatus = status
+
+	if status.IsRecording {
+		// Recording active
+		if statusChanged {
+			m.SetRecordingActive(status.Monitor, status.StartTime)
+		} else {
+			// Just update tooltip with elapsed time
+			m.updateTooltip()
+		}
+	} else if status.IsPaused {
+		// Recording paused
+		if statusChanged {
+			m.SetRecordingPaused()
+		}
+	} else {
+		// Idle (but check if we're processing - don't change from processing to idle)
+		if statusChanged && m.currentState != StateProcessing {
+			m.SetIdle()
+		}
+	}
+}
+
+// SetRecordingActive updates the tray to show recording is active
+func (m *Manager) SetRecordingActive(monitor string, startTime time.Time) {
+	m.recordingInfo = &RecordingInfo{
+		Monitor:   monitor,
+		StartTime: startTime,
+		IsPaused:  false,
+	}
+
+	// Update menu
+	m.mStartStop.SetTitle("Stop Recording")
+	m.mStartStop.SetTooltip("Stop the current recording")
+	m.mPause.SetTitle("Pause")
+	m.mPause.SetTooltip("Pause the recording")
+	m.mPause.Show()
+
+	// Update status
+	elapsed := formatDuration(time.Since(startTime))
+	m.mStatus.SetTitle(fmt.Sprintf("Recording: %s", elapsed))
+
+	// Update tooltip
+	m.updateTooltip()
+
+	// Set recording icon (static, no rotation)
+	m.setIcon(StateRecording)
+}
+
+// SetRecordingPaused updates the tray to show recording is paused
+func (m *Manager) SetRecordingPaused() {
+	if m.recordingInfo != nil {
+		m.recordingInfo.IsPaused = true
+	}
+
+	// Update menu
+	m.mStartStop.SetTitle("Stop Recording")
+	m.mStartStop.SetTooltip("Stop and process the recording")
+	m.mPause.SetTitle("Resume")
+	m.mPause.SetTooltip("Resume the recording")
+	m.mPause.Show()
+
+	// Update status
+	m.mStatus.SetTitle("Paused")
+
+	// Update tooltip
+	systray.SetTooltip("Recording Paused - Click to resume")
+
+	// Set paused icon
+	m.setIcon(StatePaused)
+}
+
+// SetIdle updates the tray to show no recording is active
+func (m *Manager) SetIdle() {
+	m.recordingInfo = nil
+
+	// Update menu
+	m.mStartStop.SetTitle("Start Recording")
+	m.mStartStop.SetTooltip("Start a new recording")
+	m.mPause.Hide()
+
+	// Update status
+	m.mStatus.SetTitle("Idle")
+
+	// Update tooltip
+	systray.SetTooltip("Kartoza Video Processor - Click to start recording")
+
+	// Set ready/idle icon
+	m.setIcon(StateIdle)
+}
+
+// SetProcessing updates the tray to show processing is in progress
+func (m *Manager) SetProcessing() {
+	// Update menu
+	m.mStartStop.SetTitle("Start Recording")
+	m.mStartStop.SetTooltip("Start a new recording")
+	m.mPause.Hide()
+
+	// Update status
+	m.mStatus.SetTitle("Processing...")
+
+	// Update tooltip
+	systray.SetTooltip("Processing video - Please wait...")
+
+	// Set processing state (spinning ready icon)
+	m.setIcon(StateProcessing)
+}
+
+// updateTooltip updates the systray tooltip with current recording info
+func (m *Manager) updateTooltip() {
+	if m.recordingInfo == nil {
+		systray.SetTooltip("Kartoza Video Processor - Click to start recording")
+		return
+	}
+
+	elapsed := time.Since(m.recordingInfo.StartTime)
+	hours := int(elapsed.Hours())
+	minutes := int(elapsed.Minutes()) % 60
+	seconds := int(elapsed.Seconds()) % 60
+
+	tooltip := fmt.Sprintf("Recording on %s\nElapsed: %02d:%02d:%02d\nClick to stop",
+		m.recordingInfo.Monitor, hours, minutes, seconds)
+
+	systray.SetTooltip(tooltip)
+
+	// Also update the menu status item
+	m.mStatus.SetTitle(fmt.Sprintf("Recording: %02d:%02d:%02d", hours, minutes, seconds))
+}
+
+// startIconRotation starts the icon rotation animation (for processing state)
+func (m *Manager) startIconRotation() {
+	if m.isRotating || len(m.rotatedReadyIcons) == 0 {
+		return
+	}
+
+	m.isRotating = true
+	m.rotationTicker = time.NewTicker(100 * time.Millisecond)
+
+	go func() {
+		iconIndex := 0
+		for {
+			select {
+			case <-m.rotationTicker.C:
+				if iconIndex < len(m.rotatedReadyIcons) && m.rotatedReadyIcons[iconIndex] != nil {
+					systray.SetIcon(m.rotatedReadyIcons[iconIndex])
+				}
+				iconIndex = (iconIndex + 1) % len(m.rotatedReadyIcons)
+			case <-m.stopRotation:
+				return
+			}
+		}
+	}()
+}
+
+// stopIconRotation stops the icon rotation
+func (m *Manager) stopIconRotation() {
+	if !m.isRotating {
+		return
+	}
+
+	m.isRotating = false
+	if m.rotationTicker != nil {
+		m.rotationTicker.Stop()
+		m.rotationTicker = nil
+	}
+
+	select {
+	case m.stopRotation <- struct{}{}:
+	default:
+	}
+}
+
+// StartRecording starts a quick recording without metadata
+func (m *Manager) StartRecording() error {
+	if m.recorder.IsRecording() {
+		return fmt.Errorf("recording already in progress")
+	}
+
+	// Create output directory
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	baseDir := cfg.OutputDir
+	if baseDir == "" {
+		baseDir = config.GetDefaultVideosDir()
+	}
+
+	// Create a temporary folder name - will be renamed when user provides metadata
+	timestamp := time.Now().Format("20060102-150405")
+	tempFolderName := fmt.Sprintf("recording-%s", timestamp)
+	outputDir := fmt.Sprintf("%s/%s", baseDir, tempFolderName)
+
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Create minimal recording info
+	metadata := models.RecordingMetadata{
+		Title:       "Untitled Recording",
+		Description: "",
+		FolderName:  tempFolderName,
+	}
+
+	recordingInfo := models.NewRecordingInfo(metadata, "", "")
+	recordingInfo.Files.FolderPath = outputDir
+	recordingInfo.Settings.ScreenEnabled = cfg.RecordingPresets.RecordScreen
+	recordingInfo.Settings.AudioEnabled = cfg.RecordingPresets.RecordAudio
+	recordingInfo.Settings.WebcamEnabled = cfg.RecordingPresets.RecordWebcam
+	recordingInfo.Settings.VerticalEnabled = cfg.RecordingPresets.VerticalVideo
+	recordingInfo.Settings.LogosEnabled = cfg.RecordingPresets.AddLogos
+
+	// Save initial recording.json
+	if err := recordingInfo.Save(); err != nil {
+		return fmt.Errorf("failed to save recording info: %w", err)
+	}
+
+	// Start recording
+	opts := recorder.Options{
+		OutputDir:      outputDir,
+		NoAudio:        !cfg.RecordingPresets.RecordAudio,
+		NoWebcam:       !cfg.RecordingPresets.RecordWebcam,
+		NoScreen:       !cfg.RecordingPresets.RecordScreen,
+		CreateVertical: cfg.RecordingPresets.VerticalVideo,
+		RecordingInfo:  recordingInfo,
+	}
+
+	return m.recorder.StartWithOptions(opts)
+}
+
+// StopRecording stops the current recording and marks it as needing metadata
+func (m *Manager) StopRecording() error {
+	if !m.recorder.IsRecording() && !m.recorder.IsPaused() {
+		return fmt.Errorf("no recording in progress")
+	}
+
+	// Get output directory before stopping
+	outputDir := config.ReadPath(config.OutputDirFile)
+
+	// Stop recording without processing - we'll process after user provides metadata
+	if err := m.recorder.Stop(); err != nil {
+		return err
+	}
+
+	// Mark the recording as needing metadata
+	if outputDir != "" {
+		if info, err := models.LoadRecordingInfo(outputDir); err == nil {
+			info.SetStatus(models.StatusNeedsMetadata)
+			_ = info.Save()
+		}
+	}
+
+	return nil
+}
+
+// PauseRecording pauses or resumes the current recording
+func (m *Manager) PauseRecording() error {
+	status := m.recorder.GetStatus()
+	if status.IsPaused {
+		return m.recorder.Resume()
+	}
+	if status.IsRecording {
+		return m.recorder.Pause()
+	}
+	return fmt.Errorf("no recording to pause/resume")
+}
+
+// OpenTUI opens the TUI for metadata entry
+func (m *Manager) OpenTUI() error {
+	// Launch the TUI in a new terminal
+	// Try different terminal emulators
+	terminals := []struct {
+		cmd  string
+		args []string
+	}{
+		{"foot", []string{"--title=Kartoza Video Processor", "-e", "kartoza-video-processor"}},
+		{"kitty", []string{"--title=Kartoza Video Processor", "kartoza-video-processor"}},
+		{"alacritty", []string{"--title", "Kartoza Video Processor", "-e", "kartoza-video-processor"}},
+		{"gnome-terminal", []string{"--title=Kartoza Video Processor", "--", "kartoza-video-processor"}},
+		{"xterm", []string{"-T", "Kartoza Video Processor", "-e", "kartoza-video-processor"}},
+	}
+
+	for _, term := range terminals {
+		if _, err := exec.LookPath(term.cmd); err == nil {
+			cmd := exec.Command(term.cmd, term.args...)
+			cmd.Stdin = nil
+			cmd.Stdout = nil
+			cmd.Stderr = nil
+			return cmd.Start()
+		}
+	}
+
+	return fmt.Errorf("no supported terminal emulator found")
+}
+
+// formatDuration formats a duration as HH:MM:SS or MM:SS
+func formatDuration(d time.Duration) string {
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", hours, minutes, seconds)
+	}
+	return fmt.Sprintf("%02d:%02d", minutes, seconds)
+}
+
+// Run starts the systray application
+func Run() {
+	manager := New()
+	systray.Run(manager.OnReady, manager.OnExit)
+}
+
+// RunWithHandler starts the systray and handles events
+func RunWithHandler() {
+	manager := New()
+
+	// Start systray in a goroutine
+	go systray.Run(manager.OnReady, manager.OnExit)
+
+	// Handle events
+	for {
+		select {
+		case <-manager.StartChan():
+			if err := manager.StartRecording(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to start recording: %v\n", err)
+			}
+		case <-manager.StopChan():
+			if err := manager.StopRecording(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to stop recording: %v\n", err)
+			} else {
+				// Open TUI for metadata entry
+				if err := manager.OpenTUI(); err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to open TUI: %v\n", err)
+				}
+			}
+		case <-manager.PauseChan():
+			if err := manager.PauseRecording(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to pause/resume: %v\n", err)
+			}
+		case <-manager.TUIChan():
+			if err := manager.OpenTUI(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to open TUI: %v\n", err)
+			}
+		case <-manager.QuitChan():
+			systray.Quit()
+			return
+		}
+	}
+}

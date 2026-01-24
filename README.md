@@ -68,6 +68,55 @@ kartoza-video-processor
 
 Press `Space` or `Enter` to toggle recording.
 
+### System Tray Mode
+
+Run as a background system tray applet for quick recording access:
+
+```bash
+kartoza-video-processor systray
+```
+
+**Controls:**
+- **Left-click**: Toggle recording (start if idle, stop if recording)
+- **Right-click**: Open menu with Pause/Resume, Open TUI, Quit options
+
+**Workflow:**
+1. Left-click the tray icon to start recording immediately (no setup needed)
+2. The icon rotates while recording is active
+3. Right-click and select "Pause" to pause, or left-click to stop
+4. When you stop, the TUI opens automatically so you can add title and description
+5. After saving metadata, the video is processed automatically
+
+This mode is ideal for spontaneous recordings where you want to capture something quickly and add metadata afterwards.
+
+**Autostart (Hyprland):**
+```conf
+exec-once = kartoza-video-processor systray
+```
+
+### Terminal Recording Mode
+
+Record terminal sessions using asciinema (ideal for CLI tutorials or terminal-only environments):
+
+```bash
+kartoza-video-processor terminal
+kartoza-video-processor terminal --title "My CLI Tutorial"
+```
+
+This will:
+1. Start an asciinema recording of your terminal session
+2. When you exit (Ctrl+D or `exit`), convert the recording to GIF and MP4
+
+**Options:**
+- `--title, -t`: Set the recording title
+- `--idle-limit`: Maximum idle time in seconds (default: 5)
+- `--font-size`: Font size for video rendering (default: 16)
+- `--convert`: Convert an existing .cast file to video
+
+**Dependencies:**
+- `asciinema` - for recording terminal sessions
+- `agg` - for converting cast files to GIF
+
 ### CLI Mode
 
 ```bash
