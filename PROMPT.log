@@ -1098,3 +1098,5 @@ will the binaries with systray support for other platforms be built in ci?
 1. Linux-only CGO (chosen) - simplest
 2. Native runners per platform - more CI minutes
 3. Cross-compile toolchains (zig/osxcross/mingw) - complex
+2026-01-25 15:56:48 - please show the version number in the header bar
+2026-01-25 16:00:33 - in dev mode can it show the last released version + 1 + dev

@@ -34,6 +34,7 @@ type AppState struct {
 	Status           string // e.g., "Ready", "Processing", "Recording"
 	BlinkOn          bool   // For blinking recording indicator
 	YouTubeConnected bool   // Whether YouTube API is connected
+	Version          string // Application version
 }
 
 // Global app state - updated by the main app model
@@ -42,6 +43,7 @@ var GlobalAppState = &AppState{
 	TotalRecordings: 0,
 	Status:          "Ready",
 	BlinkOn:         true,
+	Version:         "0.7.4-dev",
 }
 
 // ========================================
@@ -81,8 +83,8 @@ func RenderHeader(pageTitle string) string {
 		Align(lipgloss.Center).
 		Width(HeaderWidth)
 
-	// Line 1: Application Name - Page Title
-	title := titleStyle.Render(fmt.Sprintf("Kartoza Video Processor - %s", pageTitle))
+	// Line 1: Application Name - Page Title - Version
+	title := titleStyle.Render(fmt.Sprintf("Kartoza Video Processor v%s - %s", GlobalAppState.Version, pageTitle))
 
 	// Line 2: Motto
 	motto := mottoStyle.Render("Serva Momentum")

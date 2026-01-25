@@ -5,5 +5,7 @@ import (
 )
 
 func runTUIApp(noSplash bool) error {
+	// Set the version in the global app state for header display
+	tui.GlobalAppState.Version = version
 	return tui.Run(noSplash)
 }
