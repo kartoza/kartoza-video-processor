@@ -21,8 +21,8 @@
           pymdown-extensions
         ]);
 
-        # Helper function for cross-compilation
-        mkPackage = { pkgs, system, GOOS, GOARCH }:
+        # Helper function for cross-compilation (CGO disabled - no systray support)
+        mkCrossPackage = { pkgs, system, GOOS, GOARCH }:
           pkgs.buildGoModule {
             pname = "kartoza-screencaster";
             inherit version;
@@ -82,43 +82,121 @@
             };
           };
 
+        # Native package with CGO enabled for systray support (Linux only)
+        mkNativePackage = { pkgs }:
+          pkgs.buildGoModule {
+            pname = "kartoza-screencaster";
+            inherit version;
+            src = ./.;
+
+            # Use proxy mode for dependencies
+            proxyVendor = true;
+            vendorHash = "sha256-hudvYKdRjWTftQvtX40meJalnHukYV7LSFdz8562wTM=";
+
+            # Required for systray (fyne.io/systray uses libayatana-appindicator)
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+            ];
+
+            buildInputs = with pkgs; [
+              # GTK and GLib for systray
+              gtk3
+              glib
+              # AppIndicator support
+              libayatana-appindicator
+              # X11 libs (needed by some systray backends)
+              xorg.libX11
+              xorg.libXcursor
+              xorg.libXrandr
+              xorg.libXinerama
+              xorg.libXi
+              xorg.libXxf86vm
+              # OpenGL (sometimes needed)
+              libGL
+            ];
+
+            # Enable CGO for systray support
+            preBuild = ''
+              export CGO_ENABLED=1
+            '';
+
+            ldflags = [
+              "-s"
+              "-w"
+              "-X main.version=${version}"
+            ];
+
+            tags = [ "release" ];
+
+            postInstall = ''
+              # Install desktop file
+              mkdir -p $out/share/applications
+              cat > $out/share/applications/kartoza-screencaster.desktop << EOF
+              [Desktop Entry]
+              Name=Kartoza Screencaster
+              Comment=Screen recording tool for Wayland
+              Exec=kartoza-screencaster
+              Icon=video-x-generic
+              Terminal=true
+              Type=Application
+              Categories=AudioVideo;Video;Recorder;
+              Keywords=screen;recording;video;wayland;
+              EOF
+            '';
+
+            meta = with pkgs.lib; {
+              description = "Screen recording tool for Wayland with audio processing and systray support";
+              homepage = "https://github.com/kartoza/kartoza-screencaster";
+              license = licenses.mit;
+              maintainers = [ ];
+              platforms = platforms.linux;
+            };
+          };
+
       in
       {
         packages = {
-          default = mkPackage {
-            inherit pkgs system;
-            GOOS = if pkgs.stdenv.isDarwin then "darwin" else if pkgs.stdenv.isLinux then "linux" else "linux";
-            GOARCH = if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
-          };
+          # Default package uses native CGO build with systray support on Linux
+          default = if pkgs.stdenv.isLinux then
+            mkNativePackage { inherit pkgs; }
+          else
+            mkCrossPackage {
+              inherit pkgs system;
+              GOOS = if pkgs.stdenv.isDarwin then "darwin" else "linux";
+              GOARCH = if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
+            };
 
           kartoza-screencaster = self.packages.${system}.default;
 
-          # Cross-compiled packages
-          linux-amd64 = mkPackage {
+          # Native Linux package with CGO/systray support
+          linux-native = mkNativePackage { inherit pkgs; };
+
+          # Cross-compiled packages (no systray support)
+          linux-amd64 = mkCrossPackage {
             inherit pkgs system;
             GOOS = "linux";
             GOARCH = "amd64";
           };
 
-          linux-arm64 = mkPackage {
+          linux-arm64 = mkCrossPackage {
             inherit pkgs system;
             GOOS = "linux";
             GOARCH = "arm64";
           };
 
-          darwin-amd64 = mkPackage {
+          darwin-amd64 = mkCrossPackage {
             inherit pkgs system;
             GOOS = "darwin";
             GOARCH = "amd64";
           };
 
-          darwin-arm64 = mkPackage {
+          darwin-arm64 = mkCrossPackage {
             inherit pkgs system;
             GOOS = "darwin";
             GOARCH = "arm64";
           };
 
-          windows-amd64 = mkPackage {
+          windows-amd64 = mkCrossPackage {
             inherit pkgs system;
             GOOS = "windows";
             GOARCH = "amd64";
@@ -153,6 +231,18 @@
             gnumake
             gcc
             pkg-config
+
+            # CGO dependencies for systray
+            gtk3
+            glib
+            libayatana-appindicator
+            xorg.libX11
+            xorg.libXcursor
+            xorg.libXrandr
+            xorg.libXinerama
+            xorg.libXi
+            xorg.libXxf86vm
+            libGL
 
             # CLI utilities
             ripgrep
@@ -193,6 +283,9 @@
             export GOMODCACHE="$PWD/.go/pkg/mod"
             export PATH="$GOPATH/bin:$PATH"
 
+            # Enable CGO for systray support in dev shell
+            export CGO_ENABLED=1
+
             # Helpful aliases
             alias gor='go run .'
             alias got='go test -v ./...'
@@ -223,6 +316,8 @@
             echo "  make test     - Run tests"
             echo "  make lint     - Run linter"
             echo "  make release  - Build all platforms"
+            echo ""
+            echo "CGO is enabled for systray support."
             echo ""
           '';
         };

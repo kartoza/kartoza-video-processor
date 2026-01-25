@@ -1076,3 +1076,4 @@ make sure all binaries are built and there is a proper changelog
 this project repo is poorly named - please rename this folder and the gh repo to kartoza-screencaster and the application shortcut names etc
 lets commit and push these changes then update ../nix-config to poiunt the flake input to the new repo url
 make a new release with all packages and push to github
+verify that the cgo bindings are working for systray support - i am getting errors when I try to use this flake from /home/dev/nix/nix-config
