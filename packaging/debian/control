@@ -1,15 +1,15 @@
-Source: kartoza-video-processor
+Source: kartoza-screencaster
 Section: video
 Priority: optional
 Maintainer: Tim Sutton <tim@kartoza.com>
 Build-Depends: debhelper-compat (= 13), golang-go (>= 1.21)
 Standards-Version: 4.6.2
-Homepage: https://github.com/kartoza/kartoza-video-processor
-Vcs-Browser: https://github.com/kartoza/kartoza-video-processor
-Vcs-Git: https://github.com/kartoza/kartoza-video-processor.git
+Homepage: https://github.com/kartoza/kartoza-screencaster
+Vcs-Browser: https://github.com/kartoza/kartoza-screencaster
+Vcs-Git: https://github.com/kartoza/kartoza-screencaster.git
 Rules-Requires-Root: no
 
-Package: kartoza-video-processor
+Package: kartoza-screencaster
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, wl-screenrec, ffmpeg, pipewire, libnotify-bin
 Recommends: hyprland | sway

@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/kartoza/kartoza-video-processor/internal/config"
-	"github.com/kartoza/kartoza-video-processor/internal/models"
-	"github.com/kartoza/kartoza-video-processor/internal/monitor"
-	"github.com/kartoza/kartoza-video-processor/internal/recorder"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/monitor"
+	"github.com/kartoza/kartoza-screencaster/internal/recorder"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +36,7 @@ The recording will capture:
   - Webcam video if available (unless --no-webcam is set)
 
 The recording will be saved to a folder with format: NNN-YYYY-MM-DD-HHMMSS
-Use 'kartoza-video-processor stop' to stop recording and process files.`,
+Use 'kartoza-screencaster stop' to stop recording and process files.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rec := recorder.New()
 
@@ -122,7 +122,7 @@ Use 'kartoza-video-processor stop' to stop recording and process files.`,
 			return err
 		}
 
-		fmt.Println("Recording started. Use 'kartoza-video-processor stop' to stop.")
+		fmt.Println("Recording started. Use 'kartoza-screencaster stop' to stop.")
 		return nil
 	},
 }

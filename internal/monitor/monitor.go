@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kartoza/kartoza-video-processor/internal/deps"
-	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/deps"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
 )
 
 // ListMonitors returns all available monitors

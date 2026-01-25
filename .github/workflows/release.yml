@@ -50,37 +50,37 @@ jobs:
           LDFLAGS="-s -w -X main.version=${VERSION}"
 
           echo "Building linux-amd64..."
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-linux-amd64 .
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-linux-amd64 .
 
           echo "Building linux-arm64..."
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-linux-arm64 .
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-linux-arm64 .
 
           echo "Building darwin-amd64..."
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-darwin-amd64 .
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-darwin-amd64 .
 
           echo "Building darwin-arm64..."
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-darwin-arm64 .
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-darwin-arm64 .
 
           echo "Building windows-amd64..."
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-video-processor-windows-amd64.exe .
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-windows-amd64.exe .
 
       - name: Create tarballs
         run: |
           cd release
 
-          tar -czf kartoza-video-processor-linux-amd64.tar.gz kartoza-video-processor-linux-amd64
-          tar -czf kartoza-video-processor-linux-arm64.tar.gz kartoza-video-processor-linux-arm64
-          tar -czf kartoza-video-processor-darwin-amd64.tar.gz kartoza-video-processor-darwin-amd64
-          tar -czf kartoza-video-processor-darwin-arm64.tar.gz kartoza-video-processor-darwin-arm64
-          tar -czf kartoza-video-processor-windows-amd64.tar.gz kartoza-video-processor-windows-amd64.exe
+          tar -czf kartoza-screencaster-linux-amd64.tar.gz kartoza-screencaster-linux-amd64
+          tar -czf kartoza-screencaster-linux-arm64.tar.gz kartoza-screencaster-linux-arm64
+          tar -czf kartoza-screencaster-darwin-amd64.tar.gz kartoza-screencaster-darwin-amd64
+          tar -czf kartoza-screencaster-darwin-arm64.tar.gz kartoza-screencaster-darwin-arm64
+          tar -czf kartoza-screencaster-windows-amd64.tar.gz kartoza-screencaster-windows-amd64.exe
 
           # Generate checksums
           sha256sum *.tar.gz > checksums.txt
 
           # Clean up raw binaries (not the tarballs!)
-          rm -f kartoza-video-processor-linux-amd64 kartoza-video-processor-linux-arm64
-          rm -f kartoza-video-processor-darwin-amd64 kartoza-video-processor-darwin-arm64
-          rm -f kartoza-video-processor-windows-amd64.exe
+          rm -f kartoza-screencaster-linux-amd64 kartoza-screencaster-linux-arm64
+          rm -f kartoza-screencaster-darwin-amd64 kartoza-screencaster-darwin-arm64
+          rm -f kartoza-screencaster-windows-amd64.exe
 
       - name: Upload release assets
         if: github.event_name == 'release'
@@ -127,19 +127,19 @@ jobs:
           sudo apt-get install -y dpkg-dev
 
           # Build binary
-          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-video-processor .
+          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-screencaster .
 
           # Create package structure
           mkdir -p dpkg/DEBIAN
           mkdir -p dpkg/usr/bin
           mkdir -p dpkg/usr/share/applications
-          mkdir -p dpkg/usr/share/doc/kartoza-video-processor
+          mkdir -p dpkg/usr/share/doc/kartoza-screencaster
 
-          cp kartoza-video-processor dpkg/usr/bin/
+          cp kartoza-screencaster dpkg/usr/bin/
 
           # Create control file with dependencies
           cat > dpkg/DEBIAN/control << EOF
-          Package: kartoza-video-processor
+          Package: kartoza-screencaster
           Version: ${{ steps.version.outputs.version }}
           Section: video
           Priority: optional
@@ -148,7 +148,7 @@ jobs:
           Recommends: wl-clipboard, libnotify-bin
           Suggests: v4l-utils
           Maintainer: Tim Sutton <tim@kartoza.com>
-          Homepage: https://github.com/kartoza/kartoza-video-processor
+          Homepage: https://github.com/kartoza/kartoza-screencaster
           Description: Screen recording tool for Wayland/X11
            A TUI-based screen recording tool with support for:
            - Screen recording (Wayland via wl-screenrec, X11 via ffmpeg)
@@ -160,11 +160,11 @@ jobs:
           EOF
 
           # Create desktop file
-          cat > dpkg/usr/share/applications/kartoza-video-processor.desktop << 'EOF'
+          cat > dpkg/usr/share/applications/kartoza-screencaster.desktop << 'EOF'
           [Desktop Entry]
           Name=Kartoza Video Processor
           Comment=Screen recording tool for Wayland/X11
-          Exec=kartoza-video-processor
+          Exec=kartoza-screencaster
           Icon=video-x-generic
           Terminal=true
           Type=Application
@@ -173,11 +173,11 @@ jobs:
           EOF
 
           # Create copyright file
-          cat > dpkg/usr/share/doc/kartoza-video-processor/copyright << 'EOF'
+          cat > dpkg/usr/share/doc/kartoza-screencaster/copyright << 'EOF'
           Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-          Upstream-Name: kartoza-video-processor
+          Upstream-Name: kartoza-screencaster
           Upstream-Contact: Tim Sutton <tim@kartoza.com>
-          Source: https://github.com/kartoza/kartoza-video-processor
+          Source: https://github.com/kartoza/kartoza-screencaster
 
           Files: *
           Copyright: 2024 Kartoza (Pty) Ltd
@@ -185,7 +185,7 @@ jobs:
           EOF
 
           # Build package
-          dpkg-deb --build dpkg kartoza-video-processor_${{ steps.version.outputs.version }}_amd64.deb
+          dpkg-deb --build dpkg kartoza-screencaster_${{ steps.version.outputs.version }}_amd64.deb
 
       - name: Upload Debian package
         uses: softprops/action-gh-release@v2
@@ -222,7 +222,7 @@ jobs:
           sudo apt-get install -y rpm
 
           # Build binary
-          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-video-processor .
+          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-screencaster .
 
           # Create RPM build structure
           mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
@@ -231,14 +231,14 @@ jobs:
           CHANGELOG_DATE=$(date '+%a %b %d %Y')
 
           # Create spec file with install section that copies files
-          cat > rpmbuild/SPECS/kartoza-video-processor.spec << EOF
-          Name:           kartoza-video-processor
+          cat > rpmbuild/SPECS/kartoza-screencaster.spec << EOF
+          Name:           kartoza-screencaster
           Version:        ${{ steps.version.outputs.version }}
           Release:        1%{?dist}
           Summary:        Screen recording tool for Wayland/X11
 
           License:        MIT
-          URL:            https://github.com/kartoza/kartoza-video-processor
+          URL:            https://github.com/kartoza/kartoza-screencaster
 
           Requires:       ffmpeg
           Requires:       pipewire
@@ -257,12 +257,12 @@ jobs:
           %install
           mkdir -p %{buildroot}/usr/bin
           mkdir -p %{buildroot}/usr/share/applications
-          cp $(pwd)/kartoza-video-processor %{buildroot}/usr/bin/
-          cat > %{buildroot}/usr/share/applications/kartoza-video-processor.desktop << 'DESKTOP'
+          cp $(pwd)/kartoza-screencaster %{buildroot}/usr/bin/
+          cat > %{buildroot}/usr/share/applications/kartoza-screencaster.desktop << 'DESKTOP'
           [Desktop Entry]
           Name=Kartoza Video Processor
           Comment=Screen recording tool for Wayland/X11
-          Exec=kartoza-video-processor
+          Exec=kartoza-screencaster
           Icon=video-x-generic
           Terminal=true
           Type=Application
@@ -271,8 +271,8 @@ jobs:
           DESKTOP
 
           %files
-          %attr(755, root, root) /usr/bin/kartoza-video-processor
-          /usr/share/applications/kartoza-video-processor.desktop
+          %attr(755, root, root) /usr/bin/kartoza-screencaster
+          /usr/share/applications/kartoza-screencaster.desktop
 
           %changelog
           * ${CHANGELOG_DATE} Tim Sutton <tim@kartoza.com> - ${{ steps.version.outputs.version }}-1
@@ -282,7 +282,7 @@ jobs:
           # Build RPM
           rpmbuild --define "_topdir $(pwd)/rpmbuild" \
                    --define "_rpmdir $(pwd)" \
-                   -bb rpmbuild/SPECS/kartoza-video-processor.spec
+                   -bb rpmbuild/SPECS/kartoza-screencaster.spec
 
           # Move RPM to current directory
           mv x86_64/*.rpm .

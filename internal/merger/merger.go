@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kartoza/kartoza-video-processor/internal/audio"
-	"github.com/kartoza/kartoza-video-processor/internal/config"
-	"github.com/kartoza/kartoza-video-processor/internal/models"
-	"github.com/kartoza/kartoza-video-processor/internal/notify"
-	"github.com/kartoza/kartoza-video-processor/internal/webcam"
+	"github.com/kartoza/kartoza-screencaster/internal/audio"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/notify"
+	"github.com/kartoza/kartoza-screencaster/internal/webcam"
 )
 
 // ProcessingStep represents a step in the processing pipeline

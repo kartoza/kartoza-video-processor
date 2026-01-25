@@ -1,8 +1,8 @@
-site_name: Kartoza Video Processor
+site_name: Kartoza Screencaster
 site_description: A beautiful TUI application for screen recording, video processing, and YouTube uploads
 site_author: Kartoza
-repo_url: https://github.com/kartoza/kartoza-video-processor
-repo_name: kartoza/kartoza-video-processor
+repo_url: https://github.com/kartoza/kartoza-screencaster
+repo_name: kartoza/kartoza-screencaster
 
 theme:
   name: material
@@ -54,7 +54,7 @@ theme:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/kartoza/kartoza-video-processor
+      link: https://github.com/kartoza/kartoza-screencaster
   generator: false
 
 extra_css:
@@ -89,7 +89,7 @@ markdown_extensions:
   - pymdownx.magiclink:
       repo_url_shorthand: true
       user: kartoza
-      repo: kartoza-video-processor
+      repo: kartoza-screencaster
   - pymdownx.mark
   - pymdownx.smartsymbols
   - pymdownx.snippets

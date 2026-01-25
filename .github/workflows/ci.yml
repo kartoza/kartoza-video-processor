@@ -104,13 +104,13 @@ jobs:
           CGO_ENABLED: 0
         run: |
           if [ "${{ matrix.os }}" = "windows" ]; then
-            go build -o kartoza-video-processor.exe .
+            go build -o kartoza-screencaster.exe .
           else
-            go build -o kartoza-video-processor .
+            go build -o kartoza-screencaster .
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kartoza-video-processor-${{ matrix.os }}-${{ matrix.arch }}
-          path: kartoza-video-processor*
+          name: kartoza-screencaster-${{ matrix.os }}-${{ matrix.arch }}
+          path: kartoza-screencaster*

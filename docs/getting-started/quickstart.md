@@ -4,7 +4,7 @@ Get up and running with your first screen recording in just a few minutes.
 
 ## Starting the Application
 
-Launch Kartoza Video Processor from your terminal:
+Launch Kartoza Screencaster from your terminal:
 
 ```bash
 kvp

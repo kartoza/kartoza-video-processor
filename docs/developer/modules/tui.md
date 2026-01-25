@@ -247,7 +247,7 @@ package main
 
 import (
     tea "github.com/charmbracelet/bubbletea"
-    "github.com/kartoza/kartoza-video-processor/internal/tui"
+    "github.com/kartoza/kartoza-screencaster/internal/tui"
 )
 
 func main() {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kartoza/kartoza-video-processor/internal/models"
-	"github.com/kartoza/kartoza-video-processor/internal/recorder"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/recorder"
 	"github.com/spf13/cobra"
 )
 
@@ -42,10 +42,10 @@ For waybar integration, use the --waybar flag to get JSON output suitable for wa
 Example waybar configuration:
 {
     "custom/recorder": {
-        "exec": "kartoza-video-processor status --waybar",
+        "exec": "kartoza-screencaster status --waybar",
         "return-type": "json",
         "interval": 2,
-        "on-click": "kartoza-video-processor toggle"
+        "on-click": "kartoza-screencaster toggle"
     }
 }`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -87,8 +87,8 @@ Example waybar configuration:
 			fmt.Printf("Recording: PAUSED\n")
 			fmt.Printf("Duration:  %s (before pause)\n", duration)
 			fmt.Printf("Parts:     %d recorded\n", status.CurrentPart)
-			fmt.Println("\nUse 'kartoza-video-processor resume' to continue recording.")
-			fmt.Println("Use 'kartoza-video-processor stop' to finish and process.")
+			fmt.Println("\nUse 'kartoza-screencaster resume' to continue recording.")
+			fmt.Println("Use 'kartoza-screencaster stop' to finish and process.")
 		} else {
 			fmt.Println("Recording: INACTIVE")
 		}

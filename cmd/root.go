@@ -20,9 +20,9 @@ func SetVersion(v string) {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "kartoza-video-processor",
+	Use:   "kartoza-screencaster",
 	Short: "Screen recording and video processing tool for Wayland",
-	Long: `Kartoza Video Processor is a screen recording tool for Wayland compositors.
+	Long: `Kartoza Screencaster is a screen recording tool for Wayland compositors.
 
 It supports:
   - Multi-monitor screen recording with automatic cursor detection
@@ -50,7 +50,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Enable debug mode")
-	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "Data directory (default: ~/.config/kartoza-video-processor)")
+	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "Data directory (default: ~/.config/kartoza-screencaster)")
 	rootCmd.PersistentFlags().BoolVar(&noSplash, "nosplash", false, "Skip splash screens on startup and exit")
 
 	// Add subcommands

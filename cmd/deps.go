@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kartoza/kartoza-video-processor/internal/deps"
+	"github.com/kartoza/kartoza-screencaster/internal/deps"
 	"github.com/spf13/cobra"
 )
 

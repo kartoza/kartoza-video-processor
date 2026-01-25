@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/kartoza/kartoza-video-processor/internal/recorder"
+	"github.com/kartoza/kartoza-screencaster/internal/recorder"
 	"github.com/spf13/cobra"
 )
 

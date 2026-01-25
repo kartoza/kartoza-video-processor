@@ -9,18 +9,18 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kartoza/kartoza-video-processor/internal/config"
-	"github.com/kartoza/kartoza-video-processor/internal/syndication"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/syndication"
 
 	// Import providers to register them
-	_ "github.com/kartoza/kartoza-video-processor/internal/syndication/providers/bluesky"
-	_ "github.com/kartoza/kartoza-video-processor/internal/syndication/providers/googlechat"
-	_ "github.com/kartoza/kartoza-video-processor/internal/syndication/providers/linkedin"
-	_ "github.com/kartoza/kartoza-video-processor/internal/syndication/providers/mastodon"
-	_ "github.com/kartoza/kartoza-video-processor/internal/syndication/providers/ntfy"
-	_ "github.com/kartoza/kartoza-video-processor/internal/syndication/providers/signal"
-	_ "github.com/kartoza/kartoza-video-processor/internal/syndication/providers/telegram"
-	_ "github.com/kartoza/kartoza-video-processor/internal/syndication/providers/wordpress"
+	_ "github.com/kartoza/kartoza-screencaster/internal/syndication/providers/bluesky"
+	_ "github.com/kartoza/kartoza-screencaster/internal/syndication/providers/googlechat"
+	_ "github.com/kartoza/kartoza-screencaster/internal/syndication/providers/linkedin"
+	_ "github.com/kartoza/kartoza-screencaster/internal/syndication/providers/mastodon"
+	_ "github.com/kartoza/kartoza-screencaster/internal/syndication/providers/ntfy"
+	_ "github.com/kartoza/kartoza-screencaster/internal/syndication/providers/signal"
+	_ "github.com/kartoza/kartoza-screencaster/internal/syndication/providers/telegram"
+	_ "github.com/kartoza/kartoza-screencaster/internal/syndication/providers/wordpress"
 )
 
 // SyndicationSetupStep represents the current step in the setup

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/kartoza/kartoza-video-processor/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
 )
 
 const (

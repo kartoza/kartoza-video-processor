@@ -1,6 +1,6 @@
 # Main Menu
 
-The Main Menu is the starting point of Kartoza Video Processor. From here, you can access all major features of the application.
+The Main Menu is the starting point of Kartoza Screencaster. From here, you can access all major features of the application.
 
 ## Screen Preview
 
@@ -11,7 +11,7 @@ The Main Menu is the starting point of Kartoza Video Processor. From here, you c
 <div class="terminal-button yellow"></div>
 <div class="terminal-button green"></div>
 </div>
-<div class="terminal-title">Kartoza Video Processor - Main Menu</div>
+<div class="terminal-title">Kartoza Screencaster - Main Menu</div>
 </div>
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 <span class="t-header">                    Main Menu</span>

@@ -304,7 +304,7 @@ func (c *Client) GetChannelInfo() (*ChannelInfo, error) {
 Tokens are stored per-account in separate files:
 
 ```
-~/.config/kartoza-video-processor/
+~/.config/kartoza-screencaster/
 ├── youtube_token.json           # Legacy/default account token
 └── youtube_token_acc_*.json     # Additional account tokens
 ```

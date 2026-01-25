@@ -1,5 +1,5 @@
 {
-  description = "Kartoza Video Processor - Screen recording tool for Wayland";
+  description = "Kartoza Screencaster - Screen recording tool for Wayland";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -24,7 +24,7 @@
         # Helper function for cross-compilation
         mkPackage = { pkgs, system, GOOS, GOARCH }:
           pkgs.buildGoModule {
-            pname = "kartoza-video-processor";
+            pname = "kartoza-screencaster";
             inherit version;
             src = ./.;
 
@@ -45,25 +45,25 @@
             postInstall = ''
               cd $out/bin
               if [ "${GOOS}" = "windows" ]; then
-                mv kartoza-video-processor kartoza-video-processor.exe
+                mv kartoza-screencaster kartoza-screencaster.exe
               fi
 
               # Create release tarball
               mkdir -p $out/release
               if [ "${GOOS}" = "windows" ]; then
-                tar -czf $out/release/kartoza-video-processor-${GOOS}-${GOARCH}.tar.gz kartoza-video-processor.exe
+                tar -czf $out/release/kartoza-screencaster-${GOOS}-${GOARCH}.tar.gz kartoza-screencaster.exe
               else
-                tar -czf $out/release/kartoza-video-processor-${GOOS}-${GOARCH}.tar.gz kartoza-video-processor
+                tar -czf $out/release/kartoza-screencaster-${GOOS}-${GOARCH}.tar.gz kartoza-screencaster
               fi
 
               # Install desktop file (Linux only)
               if [ "${GOOS}" = "linux" ]; then
                 mkdir -p $out/share/applications
-                cat > $out/share/applications/kartoza-video-processor.desktop << EOF
+                cat > $out/share/applications/kartoza-screencaster.desktop << EOF
               [Desktop Entry]
-              Name=Kartoza Video Processor
+              Name=Kartoza Screencaster
               Comment=Screen recording tool for Wayland
-              Exec=kartoza-video-processor
+              Exec=kartoza-screencaster
               Icon=video-x-generic
               Terminal=true
               Type=Application
@@ -75,7 +75,7 @@
 
             meta = with pkgs.lib; {
               description = "Screen recording tool for Wayland with audio processing";
-              homepage = "https://github.com/kartoza/kartoza-video-processor";
+              homepage = "https://github.com/kartoza/kartoza-screencaster";
               license = licenses.mit;
               maintainers = [ ];
               platforms = platforms.unix ++ platforms.windows;
@@ -91,7 +91,7 @@
             GOARCH = if pkgs.stdenv.hostPlatform.isAarch64 then "arm64" else "amd64";
           };
 
-          kartoza-video-processor = self.packages.${system}.default;
+          kartoza-screencaster = self.packages.${system}.default;
 
           # Cross-compiled packages
           linux-amd64 = mkPackage {
@@ -126,7 +126,7 @@
 
           # All releases combined
           all-releases = pkgs.symlinkJoin {
-            name = "kartoza-video-processor-all-releases";
+            name = "kartoza-screencaster-all-releases";
             paths = [
               self.packages.${system}.linux-amd64
               self.packages.${system}.linux-arm64
@@ -196,7 +196,7 @@
             # Helpful aliases
             alias gor='go run .'
             alias got='go test -v ./...'
-            alias gob='go build -o bin/kartoza-video-processor .'
+            alias gob='go build -o bin/kartoza-screencaster .'
             alias gom='go mod tidy'
             alias gol='golangci-lint run'
 
@@ -205,7 +205,7 @@
             alias docs-build='mkdocs build'
 
             echo ""
-            echo "🎬 Kartoza Video Processor Development Environment"
+            echo "🎬 Kartoza Screencaster Development Environment"
             echo ""
             echo "Available commands:"
             echo "  gor  - Run the application"
@@ -230,13 +230,13 @@
         apps = {
           default = {
             type = "app";
-            program = "${self.packages.${system}.default}/bin/kartoza-video-processor";
+            program = "${self.packages.${system}.default}/bin/kartoza-screencaster";
           };
 
           setup = {
             type = "app";
             program = toString (pkgs.writeShellScript "setup" ''
-              echo "Initializing kartoza-video-processor..."
+              echo "Initializing kartoza-screencaster..."
               go mod download
               go mod tidy
               echo "Setup complete!"

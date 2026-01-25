@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/kartoza/kartoza-video-processor/internal/syndication"
+	"github.com/kartoza/kartoza-screencaster/internal/syndication"
 )
 
 const (

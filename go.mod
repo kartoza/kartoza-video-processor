@@ -1,4 +1,4 @@
-module github.com/kartoza/kartoza-video-processor
+module github.com/kartoza/kartoza-screencaster
 
 go 1.24.2
 

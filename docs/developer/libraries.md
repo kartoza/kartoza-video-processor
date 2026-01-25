@@ -1,6 +1,6 @@
 # Libraries
 
-This document describes the third-party libraries used in Kartoza Video Processor and the rationale for their selection.
+This document describes the third-party libraries used in Kartoza Screencaster and the rationale for their selection.
 
 ## Core Libraries
 
@@ -165,7 +165,7 @@ CLI application framework.
 ```go
 var rootCmd = &cobra.Command{
     Use:   "kvp",
-    Short: "Kartoza Video Processor",
+    Short: "Kartoza Screencaster",
     Run:   runApp,
 }
 ```
@@ -196,7 +196,7 @@ Testing toolkit with assertions.
 
 ```mermaid
 graph TD
-    App[Kartoza Video Processor]
+    App[Kartoza Screencaster]
 
     subgraph "UI Layer"
         BT[bubbletea]
@@ -228,7 +228,7 @@ graph TD
 All dependencies are managed through Go modules:
 
 ```go
-module github.com/kartoza/kartoza-video-processor
+module github.com/kartoza/kartoza-screencaster
 
 go 1.21
 

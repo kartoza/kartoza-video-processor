@@ -348,7 +348,7 @@ When uploading videos, if multiple accounts are configured:
 OAuth tokens are stored securely in:
 
 ```
-~/.config/kartoza-video-processor/
+~/.config/kartoza-screencaster/
 ├── config.json           # Configuration including credentials
 ├── youtube_token.json    # Token for legacy/default account
 └── youtube_token_acc_*.json  # Tokens for additional accounts

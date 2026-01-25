@@ -1,10 +1,10 @@
-Name:           kartoza-video-processor
+Name:           kartoza-screencaster
 Version:        0.1.0
 Release:        1%{?dist}
 Summary:        Screen recording tool for Wayland
 
 License:        MIT
-URL:            https://github.com/kartoza/kartoza-video-processor
+URL:            https://github.com/kartoza/kartoza-screencaster
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  golang >= 1.21

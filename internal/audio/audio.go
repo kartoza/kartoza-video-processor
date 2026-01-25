@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"regexp"
 
-	"github.com/kartoza/kartoza-video-processor/internal/models"
-	"github.com/kartoza/kartoza-video-processor/internal/notify"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/notify"
 )
 
 // Note: Recorder is defined in platform-specific files:

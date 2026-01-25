@@ -1,6 +1,6 @@
 # Development Setup
 
-This guide covers setting up a development environment for Kartoza Video Processor.
+This guide covers setting up a development environment for Kartoza Screencaster.
 
 ## Prerequisites
 
@@ -28,8 +28,8 @@ The project includes a Nix flake for reproducible development:
 
 ```bash
 # Clone the repository
-git clone https://github.com/kartoza/kartoza-video-processor.git
-cd kartoza-video-processor
+git clone https://github.com/kartoza/kartoza-screencaster.git
+cd kartoza-screencaster
 
 # Enter development shell
 nix develop
@@ -91,8 +91,8 @@ go build ./cmd/kvp
 
 ```bash
 # Clone repository
-git clone https://github.com/kartoza/kartoza-video-processor.git
-cd kartoza-video-processor
+git clone https://github.com/kartoza/kartoza-screencaster.git
+cd kartoza-screencaster
 
 # Download dependencies
 go mod download
@@ -107,7 +107,7 @@ go build -o kvp ./cmd/kvp
 ## Project Structure
 
 ```
-kartoza-video-processor/
+kartoza-screencaster/
 ├── cmd/
 │   └── kvp/              # Main application entry
 │       └── main.go

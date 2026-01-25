@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/kartoza/kartoza-video-processor/internal/recorder"
+	"github.com/kartoza/kartoza-screencaster/internal/recorder"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ recording. All parts will be concatenated when the recording is stopped.`,
 
 		status := rec.GetStatus()
 		fmt.Printf("Recording resumed at part %d.\n", status.CurrentPart)
-		fmt.Println("Use 'kartoza-video-processor pause' to pause or 'stop' to finish.")
+		fmt.Println("Use 'kartoza-screencaster pause' to pause or 'stop' to finish.")
 
 		return nil
 	},

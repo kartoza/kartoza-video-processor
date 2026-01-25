@@ -1,6 +1,6 @@
 package main
 
-import "github.com/kartoza/kartoza-video-processor/cmd"
+import "github.com/kartoza/kartoza-screencaster/cmd"
 
 // Version is set via ldflags during build
 var version = "dev"

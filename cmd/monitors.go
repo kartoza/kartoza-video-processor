@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/kartoza/kartoza-video-processor/internal/monitor"
+	"github.com/kartoza/kartoza-screencaster/internal/monitor"
 	"github.com/spf13/cobra"
 )
 

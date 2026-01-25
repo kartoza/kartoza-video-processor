@@ -140,7 +140,7 @@ func GetCurrentRecordingNumber() int
 ### Configuration
 
 ```
-~/.config/kartoza-video-processor/config.json
+~/.config/kartoza-screencaster/config.json
 ```
 
 ### PID Files (Runtime)
@@ -294,7 +294,7 @@ func getConfigPath() string {
         home, _ := os.UserHomeDir()
         configDir = filepath.Join(home, ".config")
     }
-    return filepath.Join(configDir, "kartoza-video-processor", "config.json")
+    return filepath.Join(configDir, "kartoza-screencaster", "config.json")
 }
 
 func GetDefaultVideosDir() string {
@@ -328,7 +328,7 @@ func TestSave_CreatesDirectory(t *testing.T) {
     err := Save(cfg)
 
     assert.NoError(t, err)
-    assert.FileExists(t, filepath.Join(tmpDir, "kartoza-video-processor", "config.json"))
+    assert.FileExists(t, filepath.Join(tmpDir, "kartoza-screencaster", "config.json"))
 }
 ```
 

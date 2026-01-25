@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kartoza/kartoza-video-processor/internal/config"
-	"github.com/kartoza/kartoza-video-processor/internal/models"
-	"github.com/kartoza/kartoza-video-processor/internal/notify"
-	"github.com/kartoza/kartoza-video-processor/internal/terminal"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/notify"
+	"github.com/kartoza/kartoza-screencaster/internal/terminal"
 	"github.com/spf13/cobra"
 )
 
@@ -31,8 +31,8 @@ then converts it to GIF and MP4 formats when you stop recording.
 Press Ctrl+D or type 'exit' to stop the recording.
 
 Example:
-  kartoza-video-processor terminal
-  kartoza-video-processor terminal --title "My CLI Tutorial"`,
+  kartoza-screencaster terminal
+  kartoza-screencaster terminal --title "My CLI Tutorial"`,
 	Run: runTerminalRecording,
 }
 

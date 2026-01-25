@@ -1,11 +1,11 @@
-app-id: com.kartoza.VideoProcessor
+app-id: com.kartoza.Screencaster
 runtime: org.freedesktop.Platform
 runtime-version: '23.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.golang
 
-command: kartoza-video-processor
+command: kartoza-screencaster
 
 finish-args:
   - --share=ipc
@@ -18,18 +18,18 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications
 
 modules:
-  - name: kartoza-video-processor
+  - name: kartoza-screencaster
     buildsystem: simple
     build-options:
       append-path: /usr/lib/sdk/golang/bin
       env:
-        GOPATH: /run/build/kartoza-video-processor/go
-        GOCACHE: /run/build/kartoza-video-processor/.cache
+        GOPATH: /run/build/kartoza-screencaster/go
+        GOCACHE: /run/build/kartoza-screencaster/.cache
         CGO_ENABLED: '0'
     build-commands:
-      - go build -ldflags "-s -w -X main.version=0.1.0" -o kartoza-video-processor .
-      - install -Dm755 kartoza-video-processor ${FLATPAK_DEST}/bin/kartoza-video-processor
-      - install -Dm644 resources/kartoza-video-processor.desktop ${FLATPAK_DEST}/share/applications/com.kartoza.VideoProcessor.desktop
+      - go build -ldflags "-s -w -X main.version=0.1.0" -o kartoza-screencaster .
+      - install -Dm755 kartoza-screencaster ${FLATPAK_DEST}/bin/kartoza-screencaster
+      - install -Dm644 resources/kartoza-screencaster.desktop ${FLATPAK_DEST}/share/applications/com.kartoza.Screencaster.desktop
     sources:
       - type: dir
         path: ../..

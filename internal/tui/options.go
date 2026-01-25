@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/kartoza/kartoza-video-processor/internal/config"
-	"github.com/kartoza/kartoza-video-processor/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
 )
 
 // fileEntry represents a file or directory in the browser

@@ -1,7 +1,7 @@
-# Kartoza Video Processor Makefile
+# Kartoza Screencaster Makefile
 # ================================
 
-BINARY_NAME := kartoza-video-processor
+BINARY_NAME := kartoza-screencaster
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
@@ -164,7 +164,7 @@ info:
 
 # Show help
 help:
-	@echo "Kartoza Video Processor - Makefile"
+	@echo "Kartoza Screencaster - Makefile"
 	@echo ""
 	@echo "Build targets:"
 	@echo "  all          Build and test (default)"

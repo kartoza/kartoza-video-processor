@@ -1,4 +1,4 @@
-# Kartoza Video Processor
+# Kartoza Screencaster
 
 A screen recording tool for Wayland compositors with multi-monitor support, audio processing, and webcam integration.
 
@@ -26,8 +26,8 @@ A screen recording tool for Wayland compositors with multi-monitor support, audi
 
 ```bash
 # Clone the repository
-git clone https://github.com/kartoza/kartoza-video-processor.git
-cd kartoza-video-processor
+git clone https://github.com/kartoza/kartoza-screencaster.git
+cd kartoza-screencaster
 
 # Build
 make build
@@ -40,10 +40,10 @@ sudo make install
 
 ```bash
 # Run directly
-nix run github:kartoza/kartoza-video-processor
+nix run github:kartoza/kartoza-screencaster
 
 # Install to profile
-nix profile install github:kartoza/kartoza-video-processor
+nix profile install github:kartoza/kartoza-screencaster
 ```
 
 ### Development
@@ -63,7 +63,7 @@ direnv allow
 Launch the interactive terminal interface:
 
 ```bash
-kartoza-video-processor
+kartoza-screencaster
 ```
 
 Press `Space` or `Enter` to toggle recording.
@@ -73,7 +73,7 @@ Press `Space` or `Enter` to toggle recording.
 Run as a background system tray applet for quick recording access:
 
 ```bash
-kartoza-video-processor systray
+kartoza-screencaster systray
 ```
 
 **Controls:**
@@ -91,7 +91,7 @@ This mode is ideal for spontaneous recordings where you want to capture somethin
 
 **Autostart (Hyprland):**
 ```conf
-exec-once = kartoza-video-processor systray
+exec-once = kartoza-screencaster systray
 ```
 
 ### Terminal Recording Mode
@@ -99,8 +99,8 @@ exec-once = kartoza-video-processor systray
 Record terminal sessions using asciinema (ideal for CLI tutorials or terminal-only environments):
 
 ```bash
-kartoza-video-processor terminal
-kartoza-video-processor terminal --title "My CLI Tutorial"
+kartoza-screencaster terminal
+kartoza-screencaster terminal --title "My CLI Tutorial"
 ```
 
 This will:
@@ -121,22 +121,22 @@ This will:
 
 ```bash
 # Toggle recording
-kartoza-video-processor toggle
+kartoza-screencaster toggle
 
 # Start recording
-kartoza-video-processor start
+kartoza-screencaster start
 
 # Start with options
-kartoza-video-processor start --monitor DP-1 --no-webcam --hw-accel
+kartoza-screencaster start --monitor DP-1 --no-webcam --hw-accel
 
 # Stop recording
-kartoza-video-processor stop
+kartoza-screencaster stop
 
 # Check status
-kartoza-video-processor status
+kartoza-screencaster status
 
 # List monitors
-kartoza-video-processor monitors
+kartoza-screencaster monitors
 ```
 
 ### CLI Options
@@ -175,7 +175,7 @@ The tool automatically processes audio with:
 
 ## Configuration
 
-Configuration is stored in `~/.config/kartoza-video-processor/config.json`:
+Configuration is stored in `~/.config/kartoza-screencaster/config.json`:
 
 ```json
 {
@@ -210,7 +210,7 @@ Add to your Hyprland config:
 
 ```conf
 # Toggle screen recording
-bind = $mainMod, R, exec, kartoza-video-processor toggle
+bind = $mainMod, R, exec, kartoza-screencaster toggle
 ```
 
 ## Building

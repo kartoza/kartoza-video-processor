@@ -90,8 +90,8 @@ Mastodon is a federated social network. You can connect to any Mastodon instance
 2. Go to **Settings** → **Development** → **New Application**
    - Direct URL: `https://YOUR_INSTANCE/settings/applications`
 3. Fill in the application details:
-   - **Application name**: `Kartoza Video Processor`
-   - **Application website**: `https://github.com/kartoza/kartoza-video-processor` (optional)
+   - **Application name**: `Kartoza Screencaster`
+   - **Application website**: `https://github.com/kartoza/kartoza-screencaster` (optional)
    - **Redirect URI**: `urn:ietf:wg:oauth:2.0:oob`
    - **Scopes**: Select the following:
      - [x] `read` - Read account information
@@ -138,7 +138,7 @@ Bluesky uses the AT Protocol for decentralized social networking.
 2. Click your avatar → **Settings**
 3. Navigate to **App Passwords** (under Advanced)
 4. Click **Add App Password**
-5. Enter a name: `Kartoza Video Processor`
+5. Enter a name: `Kartoza Screencaster`
 6. Click **Create App Password**
 7. **Copy the password immediately** - it won't be shown again!
 
@@ -179,7 +179,7 @@ LinkedIn requires OAuth2 authentication with a registered application.
 1. Go to [LinkedIn Developer Portal](https://www.linkedin.com/developers/)
 2. Click **Create App**
 3. Fill in the app details:
-   - **App name**: `Kartoza Video Processor`
+   - **App name**: `Kartoza Screencaster`
    - **LinkedIn Page**: Select your company page (required)
    - **Privacy policy URL**: Can use your website
    - **App logo**: Upload any square image
@@ -439,7 +439,7 @@ Google Chat uses incoming webhooks for posting to spaces.
 2. Open the space where you want to post
 3. Click the space name at the top → **Apps & integrations**
 4. Click **+ Add webhooks**
-5. Enter a name: `Kartoza Video Processor`
+5. Enter a name: `Kartoza Screencaster`
 6. Optionally add an avatar URL
 7. Click **Save**
 8. **Copy the webhook URL**
@@ -487,7 +487,7 @@ Application passwords are enabled by default on WordPress 5.6+. If disabled:
 1. Log into your WordPress admin dashboard
 2. Go to **Users** → **Profile** (or click your username)
 3. Scroll down to **Application Passwords**
-4. Enter a name: `Kartoza Video Processor`
+4. Enter a name: `Kartoza Screencaster`
 5. Click **Add New Application Password**
 6. **Copy the password immediately** - it won't be shown again!
 
@@ -521,7 +521,7 @@ Application passwords are enabled by default on WordPress 5.6+. If disabled:
 All syndication settings are stored locally:
 
 ```
-~/.config/kartoza-video-processor/
+~/.config/kartoza-screencaster/
 ├── config.json                          # Main config with account settings
 ├── syndication_token_synd_xxxxx.json    # OAuth tokens (Mastodon, LinkedIn)
 └── syndication_session_synd_xxxxx.json  # Bluesky sessions

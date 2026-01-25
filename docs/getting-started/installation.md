@@ -1,6 +1,6 @@
 # Installation
 
-This guide covers installing Kartoza Video Processor on different operating systems.
+This guide covers installing Kartoza Screencaster on different operating systems.
 
 ## Prerequisites
 
@@ -27,10 +27,10 @@ If you have Nix installed with flakes enabled:
 
 ```bash
 # Run directly without installing
-nix run github:kartoza/kartoza-video-processor
+nix run github:kartoza/kartoza-screencaster
 
 # Or install to your profile
-nix profile install github:kartoza/kartoza-video-processor
+nix profile install github:kartoza/kartoza-screencaster
 ```
 
 ### From Source
@@ -39,8 +39,8 @@ Clone and build the project:
 
 ```bash
 # Clone the repository
-git clone https://github.com/kartoza/kartoza-video-processor.git
-cd kartoza-video-processor
+git clone https://github.com/kartoza/kartoza-screencaster.git
+cd kartoza-screencaster
 
 # Build the application
 go build -o kvp ./cmd/kvp
@@ -52,12 +52,12 @@ go build -o kvp ./cmd/kvp
 ### Using Go Install
 
 ```bash
-go install github.com/kartoza/kartoza-video-processor/cmd/kvp@latest
+go install github.com/kartoza/kartoza-screencaster/cmd/kvp@latest
 ```
 
 ### Pre-built Binaries
 
-Download pre-built binaries from the [Releases page](https://github.com/kartoza/kartoza-video-processor/releases).
+Download pre-built binaries from the [Releases page](https://github.com/kartoza/kartoza-screencaster/releases).
 
 Available binaries:
 

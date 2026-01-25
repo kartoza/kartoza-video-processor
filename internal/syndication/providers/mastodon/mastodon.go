@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kartoza/kartoza-video-processor/internal/syndication"
+	"github.com/kartoza/kartoza-screencaster/internal/syndication"
 )
 
 const (

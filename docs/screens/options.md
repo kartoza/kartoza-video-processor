@@ -179,7 +179,7 @@ Saves all configuration changes to disk.
 **Configuration File Location:**
 
 ```
-~/.config/kartoza-video-processor/config.json
+~/.config/kartoza-screencaster/config.json
 ```
 
 ## Keyboard Shortcuts

@@ -1,4 +1,4 @@
-name: kartoza-video-processor
+name: kartoza-screencaster
 version: '0.1.0'
 summary: Screen recording tool for Wayland
 description: |
@@ -21,7 +21,7 @@ architectures:
   - build-on: arm64
 
 parts:
-  kartoza-video-processor:
+  kartoza-screencaster:
     plugin: go
     source: .
     build-snaps:
@@ -29,10 +29,10 @@ parts:
     build-environment:
       - CGO_ENABLED: 0
     override-build: |
-      go build -ldflags "-s -w -X main.version=${SNAPCRAFT_PROJECT_VERSION}" -o ${SNAPCRAFT_PART_INSTALL}/bin/kartoza-video-processor .
+      go build -ldflags "-s -w -X main.version=${SNAPCRAFT_PROJECT_VERSION}" -o ${SNAPCRAFT_PART_INSTALL}/bin/kartoza-screencaster .
 
 apps:
-  kartoza-video-processor:
-    command: bin/kartoza-video-processor
+  kartoza-screencaster:
+    command: bin/kartoza-screencaster
     environment:
       HOME: $SNAP_USER_DATA

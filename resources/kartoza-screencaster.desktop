@@ -1,8 +1,8 @@
 [Desktop Entry]
-Name=Kartoza Video Processor
+Name=Kartoza Screencaster
 Comment=Screen recording tool for Wayland
 GenericName=Screen Recorder
-Exec=kartoza-video-processor
+Exec=kartoza-screencaster
 Icon=video-x-generic
 Terminal=true
 Type=Application

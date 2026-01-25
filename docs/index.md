@@ -1,11 +1,11 @@
-# Kartoza Video Processor
+# Kartoza Screencaster
 
 <div class="hero" markdown>
-# Kartoza Video Processor
+# Kartoza Screencaster
 **A beautiful terminal-based screen recording application with professional video processing and YouTube integration.**
 </div>
 
-Welcome to the official documentation for **Kartoza Video Processor** - a powerful, elegant TUI (Terminal User Interface) application designed for creating professional screen recordings, processing videos with logos and effects, and seamlessly uploading to YouTube.
+Welcome to the official documentation for **Kartoza Screencaster** - a powerful, elegant TUI (Terminal User Interface) application designed for creating professional screen recordings, processing videos with logos and effects, and seamlessly uploading to YouTube.
 
 ## Features at a Glance
 
@@ -54,7 +54,7 @@ Here's what the main menu looks like:
 <div class="terminal-button yellow"></div>
 <div class="terminal-button green"></div>
 </div>
-<div class="terminal-title">Kartoza Video Processor</div>
+<div class="terminal-title">Kartoza Screencaster</div>
 </div>
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
 <span class="t-header">                    Main Menu</span>
@@ -71,7 +71,7 @@ Here's what the main menu looks like:
 
 ## Getting Started
 
-1. **[Installation](getting-started/installation.md)** - Install Kartoza Video Processor on your system
+1. **[Installation](getting-started/installation.md)** - Install Kartoza Screencaster on your system
 2. **[Quick Start](getting-started/quickstart.md)** - Create your first recording in minutes
 
 ## User Guide
@@ -116,8 +116,8 @@ For contributors and developers:
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/kartoza/kartoza-video-processor/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/kartoza/kartoza-video-processor/discussions)
+- **Issues**: [GitHub Issues](https://github.com/kartoza/kartoza-screencaster/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/kartoza/kartoza-screencaster/discussions)
 
 ---
 

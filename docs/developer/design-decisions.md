@@ -1,6 +1,6 @@
 # Design Decisions
 
-This document explains the key design decisions made in Kartoza Video Processor and the reasoning behind them.
+This document explains the key design decisions made in Kartoza Screencaster and the reasoning behind them.
 
 ## Terminal User Interface
 
@@ -182,7 +182,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 **Paths:**
 
 ```
-~/.config/kartoza-video-processor/config.json
+~/.config/kartoza-screencaster/config.json
 ~/Videos/Screencasts/
 ```
 

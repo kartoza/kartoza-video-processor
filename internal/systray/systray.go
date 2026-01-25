@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"fyne.io/systray"
-	"github.com/kartoza/kartoza-video-processor/internal/config"
-	"github.com/kartoza/kartoza-video-processor/internal/models"
-	"github.com/kartoza/kartoza-video-processor/internal/recorder"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/recorder"
 )
 
 // Embed the three state icons
@@ -656,11 +656,11 @@ func (m *Manager) OpenTUI() error {
 		cmd  string
 		args []string
 	}{
-		{"foot", []string{"--title=Kartoza Video Processor", "-e", "kartoza-video-processor"}},
-		{"kitty", []string{"--title=Kartoza Video Processor", "kartoza-video-processor"}},
-		{"alacritty", []string{"--title", "Kartoza Video Processor", "-e", "kartoza-video-processor"}},
-		{"gnome-terminal", []string{"--title=Kartoza Video Processor", "--", "kartoza-video-processor"}},
-		{"xterm", []string{"-T", "Kartoza Video Processor", "-e", "kartoza-video-processor"}},
+		{"foot", []string{"--title=Kartoza Screencaster", "-e", "kartoza-screencaster"}},
+		{"kitty", []string{"--title=Kartoza Screencaster", "kartoza-screencaster"}},
+		{"alacritty", []string{"--title", "Kartoza Screencaster", "-e", "kartoza-screencaster"}},
+		{"gnome-terminal", []string{"--title=Kartoza Screencaster", "--", "kartoza-screencaster"}},
+		{"xterm", []string{"-T", "Kartoza Screencaster", "-e", "kartoza-screencaster"}},
 	}
 
 	for _, term := range terminals {

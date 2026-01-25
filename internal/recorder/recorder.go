@@ -12,14 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kartoza/kartoza-video-processor/internal/audio"
-	"github.com/kartoza/kartoza-video-processor/internal/config"
-	"github.com/kartoza/kartoza-video-processor/internal/deps"
-	"github.com/kartoza/kartoza-video-processor/internal/merger"
-	"github.com/kartoza/kartoza-video-processor/internal/models"
-	"github.com/kartoza/kartoza-video-processor/internal/monitor"
-	"github.com/kartoza/kartoza-video-processor/internal/notify"
-	"github.com/kartoza/kartoza-video-processor/internal/webcam"
+	"github.com/kartoza/kartoza-screencaster/internal/audio"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/deps"
+	"github.com/kartoza/kartoza-screencaster/internal/merger"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/monitor"
+	"github.com/kartoza/kartoza-screencaster/internal/notify"
+	"github.com/kartoza/kartoza-screencaster/internal/webcam"
 )
 
 // Options for starting a recording

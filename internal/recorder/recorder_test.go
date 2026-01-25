@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kartoza/kartoza-video-processor/internal/config"
+	"github.com/kartoza/kartoza-screencaster/internal/config"
 )
 
 func TestNew(t *testing.T) {

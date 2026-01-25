@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the high-level architecture of Kartoza Video Processor, including system design, component interactions, and data flow.
+This document describes the high-level architecture of Kartoza Screencaster, including system design, component interactions, and data flow.
 
 ## System Overview
 
@@ -158,7 +158,7 @@ sequenceDiagram
 #### Configuration Loading
 
 ```
-~/.config/kartoza-video-processor/config.json
+~/.config/kartoza-screencaster/config.json
     ↓
 config.Load()
     ↓

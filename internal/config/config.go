@@ -5,14 +5,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kartoza/kartoza-video-processor/internal/models"
-	"github.com/kartoza/kartoza-video-processor/internal/syndication"
-	"github.com/kartoza/kartoza-video-processor/internal/youtube"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
+	"github.com/kartoza/kartoza-screencaster/internal/syndication"
+	"github.com/kartoza/kartoza-screencaster/internal/youtube"
 )
 
 const (
 	// DefaultConfigDir is the default configuration directory
-	DefaultConfigDir = ".config/kartoza-video-processor"
+	DefaultConfigDir = ".config/kartoza-screencaster"
 	// DefaultVideosDir is the default output directory for recordings
 	DefaultVideosDir = "Videos/Screencasts"
 	// ConfigFileName is the name of the configuration file

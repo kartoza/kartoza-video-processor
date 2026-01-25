@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/kartoza/kartoza-video-processor/internal/systray"
+	"github.com/kartoza/kartoza-screencaster/internal/systray"
 	"github.com/spf13/cobra"
 )
 

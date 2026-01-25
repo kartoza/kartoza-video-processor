@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kartoza/kartoza-video-processor/internal/syndication"
+	"github.com/kartoza/kartoza-screencaster/internal/syndication"
 )
 
 // Provider implements syndication.Provider for WordPress
