@@ -587,13 +587,21 @@ func (m *Manager) StartRecording() error {
 		FolderName:  tempFolderName,
 	}
 
+	// Get recording presets - use defaults if user hasn't saved any yet
+	presets := cfg.RecordingPresets
+	presetsExist := presets.RecordAudio || presets.RecordWebcam ||
+		presets.RecordScreen || presets.VerticalVideo || presets.AddLogos
+	if !presetsExist {
+		presets = config.DefaultRecordingPresets()
+	}
+
 	recordingInfo := models.NewRecordingInfo(metadata, "", "")
 	recordingInfo.Files.FolderPath = outputDir
-	recordingInfo.Settings.ScreenEnabled = cfg.RecordingPresets.RecordScreen
-	recordingInfo.Settings.AudioEnabled = cfg.RecordingPresets.RecordAudio
-	recordingInfo.Settings.WebcamEnabled = cfg.RecordingPresets.RecordWebcam
-	recordingInfo.Settings.VerticalEnabled = cfg.RecordingPresets.VerticalVideo
-	recordingInfo.Settings.LogosEnabled = cfg.RecordingPresets.AddLogos
+	recordingInfo.Settings.ScreenEnabled = presets.RecordScreen
+	recordingInfo.Settings.AudioEnabled = presets.RecordAudio
+	recordingInfo.Settings.WebcamEnabled = presets.RecordWebcam
+	recordingInfo.Settings.VerticalEnabled = presets.VerticalVideo
+	recordingInfo.Settings.LogosEnabled = presets.AddLogos
 
 	// Save initial recording.json
 	if err := recordingInfo.Save(); err != nil {
@@ -603,10 +611,10 @@ func (m *Manager) StartRecording() error {
 	// Start recording
 	opts := recorder.Options{
 		OutputDir:      outputDir,
-		NoAudio:        !cfg.RecordingPresets.RecordAudio,
-		NoWebcam:       !cfg.RecordingPresets.RecordWebcam,
-		NoScreen:       !cfg.RecordingPresets.RecordScreen,
-		CreateVertical: cfg.RecordingPresets.VerticalVideo,
+		NoAudio:        !presets.RecordAudio,
+		NoWebcam:       !presets.RecordWebcam,
+		NoScreen:       !presets.RecordScreen,
+		CreateVertical: presets.VerticalVideo,
 		RecordingInfo:  recordingInfo,
 	}
 

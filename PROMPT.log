@@ -1102,3 +1102,17 @@ will the binaries with systray support for other platforms be built in ci?
 2026-01-25 16:00:33 - in dev mode can it show the last released version + 1 + dev
 2026-01-25 16:23:25 - the .desktop provided in packages and by this nix flake should a) use resources/icon_ready.svg for the application icon and b) should launch it with the systray subcommand so it drops into the tray
 2026-01-25 17:20:04 - make a release
+---
+Date: 2026-01-25T20:38:11+00:00
+Prompt: if the user clicks record on the systray, it should start the video with a default video title and default to video, webcam and audio inputs if the user has never used the app before.
+
+I am unable to persistently set the resource folder for media in the settings area and the screen layout for doing that is broken - it should be responsively filling the screen and the navigation hints should be at the very bottom of hte screen
+---
+---
+Date: 2026-01-25T20:50:04+00:00
+Prompt: when I set the media folder I see the green message saying it is set but if I leave options and then return, it is unset
+---
+---
+Date: 2026-01-25T20:54:52+00:00
+Prompt: if the directory list is very long it goes under the bottom of the footer area it seems and the content is not visible.
+---

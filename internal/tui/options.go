@@ -25,7 +25,8 @@ type fileEntry struct {
 type OptionsField int
 
 const (
-	OptionsFieldTopicList OptionsField = iota
+	OptionsFieldOutputDirectory OptionsField = iota
+	OptionsFieldTopicList
 	OptionsFieldAddTopic
 	OptionsFieldRemoveTopic
 	OptionsFieldDefaultPresenter
@@ -41,6 +42,14 @@ type FileBrowserField int
 const (
 	FileBrowserFieldList FileBrowserField = iota
 	FileBrowserFieldPathInput
+)
+
+// BrowserTarget indicates what the file browser is selecting
+type BrowserTarget int
+
+const (
+	BrowserTargetLogo BrowserTarget = iota
+	BrowserTargetOutput
 )
 
 // OptionsModel handles the options screen
@@ -62,12 +71,16 @@ type OptionsModel struct {
 	newTopicInput  textinput.Model
 	presenterInput textinput.Model
 
+	// Output directory path (media folder)
+	outputDirectory string
+
 	// Logo directory path
 	logoDirectory string
 
-	// Custom file browser (for selecting logo directory)
+	// Custom file browser (for selecting logo directory or output directory)
 	showFileBrowser      bool
 	selectingDirectory   bool // true when selecting directory, not file
+	browserTarget        BrowserTarget
 	browserCurrentDir    string
 	browserEntries       []fileEntry
 	browserSelected      int
@@ -111,20 +124,27 @@ func NewOptionsModel() *OptionsModel {
 	pathInput.CharLimit = 500
 	pathInput.Width = 50
 
-	// Start in home directory or logo directory if set
+	// Start in home directory or output directory if set
 	home, _ := os.UserHomeDir()
 	browserDir := home
-	if cfg.LogoDirectory != "" {
-		browserDir = cfg.LogoDirectory
+	if cfg.OutputDir != "" {
+		browserDir = cfg.OutputDir
+	}
+
+	// Get output directory - use config value or default
+	outputDir := cfg.OutputDir
+	if outputDir == "" {
+		outputDir = config.GetDefaultVideosDir()
 	}
 
 	return &OptionsModel{
 		config:             cfg,
 		topics:             topics,
 		selectedTopic:      0,
-		focusedField:       OptionsFieldTopicList,
+		focusedField:       OptionsFieldOutputDirectory,
 		newTopicInput:      newTopicInput,
 		presenterInput:     presenterInput,
+		outputDirectory:    outputDir,
 		logoDirectory:      cfg.LogoDirectory,
 		showFileBrowser:    false,
 		selectingDirectory: false,
@@ -184,10 +204,24 @@ func (m *OptionsModel) loadBrowserEntries() {
 }
 
 // openDirectoryBrowser opens the file browser for selecting a directory
-func (m *OptionsModel) openDirectoryBrowser() {
+func (m *OptionsModel) openDirectoryBrowser(target BrowserTarget) {
 	m.showFileBrowser = true
 	m.selectingDirectory = true
+	m.browserTarget = target
 	m.browserField = FileBrowserFieldList
+
+	// Start in the appropriate directory based on target
+	switch target {
+	case BrowserTargetOutput:
+		if m.outputDirectory != "" {
+			m.browserCurrentDir = m.outputDirectory
+		}
+	case BrowserTargetLogo:
+		if m.logoDirectory != "" {
+			m.browserCurrentDir = m.logoDirectory
+		}
+	}
+
 	m.browserPathInput.SetValue(m.browserCurrentDir)
 	m.browserPathInput.Blur()
 	m.loadBrowserEntries()
@@ -264,6 +298,9 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 
 		case "enter", " ":
 			switch m.focusedField {
+			case OptionsFieldOutputDirectory:
+				m.openDirectoryBrowser(BrowserTargetOutput)
+				return m, nil
 			case OptionsFieldAddTopic:
 				m.addTopic()
 				return m, nil
@@ -271,7 +308,7 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 				m.removeTopic()
 				return m, nil
 			case OptionsFieldLogoDirectory:
-				m.openDirectoryBrowser()
+				m.openDirectoryBrowser(BrowserTargetLogo)
 				return m, nil
 			case OptionsFieldYouTubeSetup:
 				return m, func() tea.Msg { return goToYouTubeSetupMsg{} }
@@ -286,10 +323,25 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 			}
 
 		case "c":
-			// Clear logo directory if on that field
+			// Clear directory if on appropriate field and save immediately
+			if m.focusedField == OptionsFieldOutputDirectory {
+				m.outputDirectory = config.GetDefaultVideosDir()
+				m.config.OutputDir = m.outputDirectory
+				if err := config.Save(m.config); err != nil {
+					m.message = "Error saving: " + err.Error()
+				} else {
+					m.message = "Output directory reset to default and saved"
+				}
+				return m, nil
+			}
 			if m.focusedField == OptionsFieldLogoDirectory {
 				m.logoDirectory = ""
-				m.message = "Logo directory cleared"
+				m.config.LogoDirectory = ""
+				if err := config.Save(m.config); err != nil {
+					m.message = "Error saving: " + err.Error()
+				} else {
+					m.message = "Logo directory cleared and saved"
+				}
 				return m, nil
 			}
 
@@ -402,6 +454,7 @@ func (m *OptionsModel) removeTopic() {
 func (m *OptionsModel) save() {
 	m.config.Topics = m.topics
 	m.config.DefaultPresenter = strings.TrimSpace(m.presenterInput.Value())
+	m.config.OutputDir = m.outputDirectory
 	m.config.LogoDirectory = m.logoDirectory
 
 	if err := config.Save(m.config); err != nil {
@@ -457,6 +510,21 @@ func (m *OptionsModel) View() string {
 	inactiveButtonStyle := buttonStyle.
 		Background(ColorGray).
 		Foreground(ColorWhite)
+
+	// Media Folder Section (Output Directory)
+	mediaSection := sectionStyle.Render("Media Folder")
+	outputLabel := labelStyle.Render("Save to: ")
+	if m.focusedField == OptionsFieldOutputDirectory {
+		outputLabel = labelActiveStyle.Render("Save to: ")
+	}
+	var outputValue string
+	if m.focusedField == OptionsFieldOutputDirectory {
+		outputValue = valueActiveStyle.Render(m.outputDirectory)
+	} else {
+		outputValue = valueStyle.Render(m.outputDirectory)
+	}
+	outputRow := lipgloss.JoinHorizontal(lipgloss.Center, outputLabel, outputValue)
+	outputHint := hintStyle.Render("                    press enter to browse, c to reset")
 
 	// Topic Management Section
 	topicSection := sectionStyle.Render("Topics")
@@ -613,8 +681,11 @@ func (m *OptionsModel) View() string {
 			Render(m.message)
 	}
 
-	// Build the view
+	// Build the view - return just the content (header/footer added by app.go)
 	return lipgloss.JoinVertical(lipgloss.Left,
+		mediaSection,
+		outputRow,
+		outputHint,
 		topicSection,
 		topicRow,
 		addTopicRow,
@@ -712,8 +783,24 @@ func (m *OptionsModel) updateFileBrowser(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 		case "s":
 			// Select current directory (when selecting directory)
 			if m.selectingDirectory {
-				m.logoDirectory = m.browserCurrentDir
-				m.message = "Logo directory set: " + m.browserCurrentDir
+				switch m.browserTarget {
+				case BrowserTargetOutput:
+					m.outputDirectory = m.browserCurrentDir
+					m.config.OutputDir = m.browserCurrentDir
+					if err := config.Save(m.config); err != nil {
+						m.message = "Error saving: " + err.Error()
+					} else {
+						m.message = "Output directory saved: " + m.browserCurrentDir
+					}
+				case BrowserTargetLogo:
+					m.logoDirectory = m.browserCurrentDir
+					m.config.LogoDirectory = m.browserCurrentDir
+					if err := config.Save(m.config); err != nil {
+						m.message = "Error saving: " + err.Error()
+					} else {
+						m.message = "Logo directory saved: " + m.browserCurrentDir
+					}
+				}
 				m.closeFileBrowser()
 			}
 			return m, nil
@@ -749,8 +836,16 @@ func (m *OptionsModel) updateFileBrowser(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 
 // renderFileBrowser renders the custom file browser
 func (m *OptionsModel) renderFileBrowser() string {
-	// Page title
-	pageTitle := "Select Logo Directory"
+	// Page title based on target
+	var pageTitle string
+	switch m.browserTarget {
+	case BrowserTargetOutput:
+		pageTitle = "Select Media Folder"
+	case BrowserTargetLogo:
+		pageTitle = "Select Logo Directory"
+	default:
+		pageTitle = "Select Directory"
+	}
 
 	header := RenderHeader(pageTitle)
 
@@ -784,26 +879,58 @@ func (m *OptionsModel) renderFileBrowser() string {
 	dirLabel := labelStyle.Render("In: ")
 	dirRow := lipgloss.JoinHorizontal(lipgloss.Center, dirLabel, lipgloss.NewStyle().Foreground(ColorGray).Render(m.browserCurrentDir))
 
-	// File list
-	visibleHeight := m.height - 14 // Account for header, footer, path input, etc
-	if visibleHeight < 5 {
-		visibleHeight = 5
+	// File list - calculate available height more precisely
+	// Header: ~6 lines, path row: 1, dir row: 1, empty line: 1, footer: 2, margins: 3
+	visibleHeight := m.height - 14
+	if visibleHeight < 3 {
+		visibleHeight = 3
+	}
+
+	// Ensure scroll position keeps selected item visible
+	if m.browserSelected < m.browserScrollTop {
+		m.browserScrollTop = m.browserSelected
+	} else if m.browserSelected >= m.browserScrollTop+visibleHeight {
+		m.browserScrollTop = m.browserSelected - visibleHeight + 1
+	}
+
+	// Clamp scroll position
+	if m.browserScrollTop < 0 {
+		m.browserScrollTop = 0
+	}
+	maxScroll := len(m.browserEntries) - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.browserScrollTop > maxScroll {
+		m.browserScrollTop = maxScroll
 	}
 
 	var fileLines []string
-	for i := m.browserScrollTop; i < len(m.browserEntries) && i < m.browserScrollTop+visibleHeight; i++ {
+	endIdx := m.browserScrollTop + visibleHeight
+	if endIdx > len(m.browserEntries) {
+		endIdx = len(m.browserEntries)
+	}
+
+	for i := m.browserScrollTop; i < endIdx; i++ {
 		entry := m.browserEntries[i]
 		var line string
 		if entry.isDir {
-			line = dirStyle.Render("📁 " + entry.name)
-		}
-
-		if i == m.browserSelected && m.browserField == FileBrowserFieldList {
-			line = selectedStyle.Render("▶ 📁 " + entry.name)
+			if i == m.browserSelected && m.browserField == FileBrowserFieldList {
+				line = selectedStyle.Render("▶ 📁 " + entry.name)
+			} else {
+				line = dirStyle.Render("  📁 " + entry.name)
+			}
 		}
 		if line != "" {
 			fileLines = append(fileLines, line)
 		}
+	}
+
+	// Add scroll indicators if needed
+	scrollInfo := ""
+	if len(m.browserEntries) > visibleHeight {
+		scrollInfo = lipgloss.NewStyle().Foreground(ColorGray).Render(
+			fmt.Sprintf(" [%d-%d of %d]", m.browserScrollTop+1, endIdx, len(m.browserEntries)))
 	}
 
 	fileList := lipgloss.JoinVertical(lipgloss.Left, fileLines...)
@@ -811,10 +938,10 @@ func (m *OptionsModel) renderFileBrowser() string {
 		fileList = lipgloss.NewStyle().Foreground(ColorGray).Italic(true).Render("(no subdirectories)")
 	}
 
-	// Content
+	// Content - use a fixed height box for the file list to prevent overflow
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		pathRow,
-		dirRow,
+		dirRow+scrollInfo,
 		"",
 		fileList,
 	)

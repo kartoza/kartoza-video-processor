@@ -1,6 +1,6 @@
 # Options
 
-The Options screen allows you to configure application-wide settings including topics, default presenter, logo directory, and YouTube integration.
+The Options screen allows you to configure application-wide settings including media folder (output directory), topics, default presenter, logo directory, YouTube integration, and syndication.
 
 ## Screen Preview
 
@@ -15,6 +15,10 @@ The Options screen allows you to configure application-wide settings including t
 </div>
 <div class="terminal-content"><span class="t-header">━━━━━━━━━━━━━━━━━━ Options ━━━━━━━━━━━━━━━━━━</span>
 
+<span class="t-header">Media Folder</span>
+<span class="t-blue">Save to:</span>           <span class="t-cyan">/home/user/Videos/Screencasts</span>
+                    <span class="t-gray">press enter to browse, c to reset</span>
+
 <span class="t-header">Topics</span>
 <span class="t-selected"><span class="t-orange">→</span> <span class="t-white">QGIS sketches</span></span>
   <span class="t-blue">GIS development tutorials</span>
@@ -24,25 +28,53 @@ The Options screen allows you to configure application-wide settings including t
 <span class="t-gray">New topic:</span> <span class="t-white">█</span>
 <span class="t-gray">[ Add ] [ Remove Selected ]</span>
 
-<span class="t-header">Defaults</span>
-<span class="t-blue">Default Presenter:</span> <span class="t-white">Tim Sketcher</span>
+<span class="t-header">Presenter</span>
+<span class="t-blue">Default:</span>           <span class="t-white">Tim Sketcher</span>
 
-<span class="t-header">Paths</span>
-<span class="t-blue">Logo Directory:</span>    <span class="t-cyan">/home/user/Pictures/logos</span>
-                    <span class="t-gray">[ Browse... ]</span>
+<span class="t-header">Logos</span>
+<span class="t-blue">Directory:</span>         <span class="t-cyan">/home/user/Pictures/logos</span>
+                    <span class="t-gray">logos selected per-recording</span>
 
-<span class="t-header">Integrations</span>
-<span class="t-blue">YouTube:</span>           <span class="t-green">● Connected</span>
-                    <span class="t-gray">[ Configure YouTube ]</span>
+<span class="t-header">YouTube</span>
+<span class="t-blue">Status:</span>            <span class="t-green">Connected</span>
+
+<span class="t-header">Syndication</span>
+<span class="t-blue">Accounts:</span>          <span class="t-green">2 enabled of 3</span>
 
   <span class="t-green">[ Save ]</span>
 
 <span class="t-gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
-<span class="t-gray">tab: next • shift+tab: prev • enter: select • esc: cancel</span>
+<span class="t-gray">tab/↓: next • shift+tab/↑: prev • enter: select • esc: back</span>
 </div>
 </div>
 
 ## Configuration Sections
+
+### Media Folder
+
+<span class="t-blue">**Save to:**</span> *Path / File Browser*
+
+Specifies the root directory where all recordings will be saved. Each recording creates a subfolder within this directory.
+
+**Default Location:**
+
+```
+~/Videos/Screencasts
+```
+
+**Changing the Media Folder:**
+
+1. Navigate to the "Save to" field
+2. Press ++enter++ to open the directory browser
+3. Navigate to your desired folder
+4. Press ++s++ to select the current directory
+5. Save your settings
+
+**Reset to Default:**
+
+Press ++c++ while on this field to reset to the default location.
+
+---
 
 ### Topics Management
 
@@ -186,22 +218,25 @@ Saves all configuration changes to disk.
 
 | Key | Action |
 |-----|--------|
-| ++tab++ | Next field |
-| ++shift+tab++ | Previous field |
-| ++up++ / ++down++ | Navigate lists |
-| ++enter++ | Select / Confirm |
+| ++tab++ / ++down++ | Next field |
+| ++shift+tab++ / ++up++ | Previous field |
+| ++j++ / ++k++ | Navigate topic list |
+| ++enter++ / ++space++ | Select / Confirm / Browse |
+| ++c++ | Clear/reset directory (on media folder or logo directory) |
+| ++d++ / ++delete++ / ++backspace++ | Remove selected topic |
 | ++esc++ | Cancel / Back |
 
 ## Field Navigation Order
 
-1. Topic list
-2. Add topic input
-3. Add button
+1. Media folder (output directory)
+2. Topic list
+3. Add topic input
 4. Remove button
 5. Default presenter input
 6. Logo directory browse
-7. YouTube configure
-8. Save button
+7. YouTube setup
+8. Syndication setup
+9. Save button
 
 ## Configuration File
 
@@ -209,19 +244,28 @@ Settings are stored in JSON format:
 
 ```json
 {
+  "output_dir": "/home/user/Videos/Screencasts",
   "topics": [
-    {"name": "QGIS sketches", "color": "#FF9500"},
-    {"name": "GIS development tutorials", "color": "#0066CC"},
-    {"name": "Open source workflows", "color": "#00CC66"},
-    {"name": "General tutorials", "color": "#9966FF"}
+    {"id": "qgis-sketches", "name": "QGIS sketches"},
+    {"id": "gis-dev", "name": "GIS development tutorials"},
+    {"id": "open-source", "name": "Open source workflows"},
+    {"id": "general", "name": "General tutorials"}
   ],
   "default_presenter": "Tim Sketcher",
   "logo_directory": "/home/user/Pictures/logos",
+  "recording_presets": {
+    "record_audio": true,
+    "record_webcam": true,
+    "record_screen": true,
+    "vertical_video": true,
+    "add_logos": true
+  },
   "youtube": {
     "client_id": "...",
-    "client_secret": "...",
-    "access_token": "...",
-    "refresh_token": "..."
+    "client_secret": "..."
+  },
+  "syndication": {
+    "accounts": []
   }
 }
 ```
