@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"syscall"
 
 	"github.com/kartoza/kartoza-screencaster/internal/config"
 )
@@ -111,8 +110,8 @@ func (r *Recorder) Start(opts RecorderOptions) error {
 	r.cmd.Stdout = os.Stdout
 	r.cmd.Stderr = os.Stderr
 
-	// Start in a new process group so we can signal it
-	r.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Set platform-specific process attributes
+	setSysProcAttr(r.cmd)
 
 	if err := r.cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start asciinema: %w", err)
@@ -133,11 +132,8 @@ func (r *Recorder) Stop() error {
 		return nil
 	}
 
-	// Send SIGTERM to stop asciinema gracefully
-	if err := r.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		// If SIGTERM fails, try SIGINT (Ctrl+C)
-		r.cmd.Process.Signal(syscall.SIGINT)
-	}
+	// Stop process using platform-specific method
+	stopProcess(r.cmd)
 
 	// Wait for process to finish
 	r.cmd.Wait()
