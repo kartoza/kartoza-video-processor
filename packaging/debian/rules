@@ -14,6 +14,7 @@ override_dh_auto_build:
 override_dh_auto_install:
 	install -D -m 0755 kartoza-screencaster debian/kartoza-screencaster/usr/bin/kartoza-screencaster
 	install -D -m 0644 resources/kartoza-screencaster.desktop debian/kartoza-screencaster/usr/share/applications/kartoza-screencaster.desktop
+	install -D -m 0644 resources/icon_ready.svg debian/kartoza-screencaster/usr/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
 
 override_dh_auto_test:
 	go test -v ./...

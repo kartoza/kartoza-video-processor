@@ -36,12 +36,14 @@ go build -ldflags "-s -w -X main.version=%{version}" -o %{name} .
 %install
 install -D -m 0755 %{name} %{buildroot}%{_bindir}/%{name}
 install -D -m 0644 resources/%{name}.desktop %{buildroot}%{_datadir}/applications/%{name}.desktop
+install -D -m 0644 resources/icon_ready.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %files
 %license LICENSE
 %doc README.md
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop
+%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
 * Sat Jan 18 2026 Tim Sutton <tim@kartoza.com> - 0.1.0-1

@@ -56,20 +56,14 @@
                 tar -czf $out/release/kartoza-screencaster-${GOOS}-${GOARCH}.tar.gz kartoza-screencaster
               fi
 
-              # Install desktop file (Linux only)
+              # Install desktop file and icon (Linux only)
               if [ "${GOOS}" = "linux" ]; then
                 mkdir -p $out/share/applications
-                cat > $out/share/applications/kartoza-screencaster.desktop << EOF
-              [Desktop Entry]
-              Name=Kartoza Screencaster
-              Comment=Screen recording tool for Wayland
-              Exec=kartoza-screencaster
-              Icon=video-x-generic
-              Terminal=true
-              Type=Application
-              Categories=AudioVideo;Video;Recorder;
-              Keywords=screen;recording;video;wayland;
-              EOF
+                cp ${./resources/kartoza-screencaster.desktop} $out/share/applications/kartoza-screencaster.desktop
+
+                # Install icon to hicolor theme
+                mkdir -p $out/share/icons/hicolor/scalable/apps
+                cp ${./resources/icon_ready.svg} $out/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
               fi
             '';
 
@@ -131,17 +125,11 @@
             postInstall = ''
               # Install desktop file
               mkdir -p $out/share/applications
-              cat > $out/share/applications/kartoza-screencaster.desktop << EOF
-              [Desktop Entry]
-              Name=Kartoza Screencaster
-              Comment=Screen recording tool for Wayland
-              Exec=kartoza-screencaster
-              Icon=video-x-generic
-              Terminal=true
-              Type=Application
-              Categories=AudioVideo;Video;Recorder;
-              Keywords=screen;recording;video;wayland;
-              EOF
+              cp ${./resources/kartoza-screencaster.desktop} $out/share/applications/kartoza-screencaster.desktop
+
+              # Install icon to hicolor theme
+              mkdir -p $out/share/icons/hicolor/scalable/apps
+              cp ${./resources/icon_ready.svg} $out/share/icons/hicolor/scalable/apps/kartoza-screencaster.svg
             '';
 
             meta = with pkgs.lib; {

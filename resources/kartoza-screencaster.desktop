@@ -2,9 +2,9 @@
 Name=Kartoza Screencaster
 Comment=Screen recording tool for Wayland
 GenericName=Screen Recorder
-Exec=kartoza-screencaster
-Icon=video-x-generic
-Terminal=true
+Exec=kartoza-screencaster systray
+Icon=kartoza-screencaster
+Terminal=false
 Type=Application
 Categories=AudioVideo;Video;Recorder;
 Keywords=screen;recording;video;wayland;hyprland;capture;

@@ -1100,3 +1100,4 @@ will the binaries with systray support for other platforms be built in ci?
 3. Cross-compile toolchains (zig/osxcross/mingw) - complex
 2026-01-25 15:56:48 - please show the version number in the header bar
 2026-01-25 16:00:33 - in dev mode can it show the last released version + 1 + dev
+2026-01-25 16:23:25 - the .desktop provided in packages and by this nix flake should a) use resources/icon_ready.svg for the application icon and b) should launch it with the systray subcommand so it drops into the tray
