@@ -5,6 +5,32 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-01-25
+
+### Fixed
+
+#### System Tray CGO Support
+- **Linux amd64 now has full systray support** - Binary built with CGO enabled
+- Fixed flake.nix to properly enable CGO for native Linux builds
+- Added GTK3, glib, and libayatana-appindicator as build dependencies
+- Split package builders: `mkNativePackage` (CGO) and `mkCrossPackage` (no CGO)
+
+#### Build System Improvements
+- Added `proxyVendor` and proper `vendorHash` for reproducible Nix builds
+- CI now installs CGO dependencies for Linux systray builds
+- Debian package includes runtime deps: `libgtk-3-0`, `libayatana-appindicator3-1`
+- RPM package includes runtime deps: `gtk3`, `libayatana-appindicator-gtk3`
+
+### Platform Notes
+| Platform | Systray Support | Notes |
+|----------|----------------|-------|
+| Linux amd64 | ✅ Full | CGO enabled, requires GTK3/AppIndicator |
+| Linux arm64 | ❌ TUI only | CGO cross-compile not supported |
+| macOS | ❌ TUI only | CGO cross-compile not supported |
+| Windows | ❌ TUI only | CGO cross-compile not supported |
+
+**Note**: All platforms support the full TUI interface. Systray mode (`kartoza-screencaster systray`) requires CGO which is only available on Linux amd64 builds.
+
 ## [0.7.1] - 2026-01-25
 
 ### Changed
@@ -172,6 +198,7 @@ Key syndication features:
 - Beautiful TUI interface
 - CLI mode for scripting
 
+[0.7.2]: https://github.com/kartoza/kartoza-screencaster/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/kartoza/kartoza-screencaster/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/kartoza/kartoza-screencaster/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/kartoza/kartoza-screencaster/compare/v0.6.0...v0.6.1
