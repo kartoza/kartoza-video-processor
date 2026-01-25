@@ -1116,3 +1116,65 @@ Prompt: when I set the media folder I see the green message saying it is set but
 Date: 2026-01-25T20:54:52+00:00
 Prompt: if the directory list is very long it goes under the bottom of the footer area it seems and the content is not visible.
 ---
+---
+Date: 2026-01-25T21:22:40+00:00
+Prompt: now can you look why we have two different ux for processing a video - one on the video creation page and one in the history item page. the history item page looks a lot nicer but it misses all the details from the recoding creation page.
+
+i would like you to start by using the same ux paradigm the recording detail view has for the recording preparation screen
+---
+---
+Date: 2026-01-25T21:39:11+00:00
+Prompt: can we not have a DRY implementation that uses the same form for the recording setup as for the edited history item. I like the changes you made for the recording setup screen, just lets loose the blue backgrounds behind the headings
+
+the yellow description: label for the description input is redundant since it is the only widget and the heading describes what the widget is for. rather let the widget take up more space and get rid of the label
+---
+---
+Date: 2026-01-25T21:59:25+00:00
+Prompt: It looks great now but I want teh SAME FORM to be used when we open the history edit item form and not this one (showing the old boxed style edit form)
+---
+---
+Date: 2026-01-25T22:15:00+00:00
+Prompt: it literally needs to be the same code that renders both
+
+**Summary:** Created shared RecordingForm component for DRY form rendering:
+
+1. **Created `internal/tui/recording_form.go`:**
+   - `RecordingForm` struct with Config (mode, read-only info, topics, monitors, logos, callbacks) and State (inputs, selections, toggles)
+   - `RecordingFormMode`: FormModeNewRecording and FormModeEditExisting
+   - `RecordingFormField` enum for all form fields (Title, Number, Topic, RecordAudio, RecordWebcam, RecordScreen, Monitor, VerticalVideo, AddLogos, Logos, TitleColor, GifLoopMode, Presenter, Description, Confirm)
+   - `NewRecordingForm()` factory with proper initialization based on mode
+   - `Update()` method handling both input mode (typing) and navigation mode
+   - `View()` renders identical form for both new recording and edit modes
+   - Mode-specific sections: New recording shows recording sources and output options; Edit shows read-only folder/date/duration info
+   - Helper render methods: toggles, selectors, confirm buttons, monitor selector, logo selector, color selector
+   - Getters and setters for all form values
+   - Spell checking integration for title and description fields
+
+2. **Updated `internal/tui/recording_setup.go`:**
+   - Completely refactored to use shared `RecordingForm` component
+   - Removed duplicate text inputs, toggles, and rendering code
+   - `RecordingSetupModel` now contains `form *RecordingForm`
+   - `View()` simply calls `m.form.View()` wrapped in LayoutWithHeaderFooter
+   - All getters (GetMetadata, GetRecordingOptions, GetLogoSelection, etc.) now read from `m.form.State`
+   - Logo loading and path resolution remain in RecordingSetupModel
+
+3. **Updated `internal/tui/history.go`:**
+   - Replaced old editFields/editFocusField/editTopicIndex with `editForm *RecordingForm`
+   - Updated `initEditForm()` to create shared form in FormModeEditExisting
+   - Updated `updateEditMode()` to delegate to form's Update()
+   - Updated `renderEditView()` to call `h.editForm.View()` wrapped in LayoutWithHeaderFooter
+   - Updated `saveRecording()` to use form's getters for metadata
+
+4. **Updated `internal/tui/app.go`:**
+   - Fixed references to recording setup fields (now via `m.recordingSetup.form.State.*`)
+   - Updated monitor selection, recording options, and preset access
+
+5. **Benefits:**
+   - SAME visual rendering code for both new recording setup and history edit forms
+   - Both screens now have spell checking on title and description
+   - Consistent UX across both screens
+   - Centralized form logic reduces maintenance burden
+   - Mode-aware rendering shows appropriate sections based on context
+
+Build successful.
+---

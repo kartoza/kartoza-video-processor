@@ -11,13 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-screencaster/internal/config"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
-	"github.com/kartoza/kartoza-screencaster/internal/spellcheck"
+	"github.com/kartoza/kartoza-screencaster/internal/monitor"
 	"github.com/kartoza/kartoza-screencaster/internal/youtube"
 )
 
@@ -52,17 +51,9 @@ type HistoryModel struct {
 
 	// Detail/Edit view state
 	selectedRecording *models.RecordingInfo
-	editFields        struct {
-		title       textinput.Model
-		description textarea.Model
-		presenter   textinput.Model
-	}
-	editTopicIndex int
-	topics         []models.Topic
-	editFocusField int
-	editError      string
-	editSuccess    string
-	isSaving       bool
+	editForm          *RecordingForm
+	topics            []models.Topic
+	isSaving          bool
 
 	// State
 	err     error
@@ -81,33 +72,10 @@ type HistoryModel struct {
 
 	// Error detail view scroll position
 	errorViewScrollOffset int
-
-	// Spell checking
-	spellChecker      *spellcheck.SpellChecker
-	editTitleIssues   []spellcheck.Issue
-	editDescIssues    []spellcheck.Issue
 }
 
 // NewHistoryModel creates a new history model
 func NewHistoryModel() *HistoryModel {
-	// Initialize edit fields
-	titleInput := textinput.New()
-	titleInput.Placeholder = "Recording title..."
-	titleInput.CharLimit = 100
-	titleInput.Width = 40
-
-	descInput := textarea.New()
-	descInput.Placeholder = "Description..."
-	descInput.CharLimit = 2000
-	descInput.SetWidth(40)
-	descInput.SetHeight(3)
-	descInput.ShowLineNumbers = false
-
-	presenterInput := textinput.New()
-	presenterInput.Placeholder = "Presenter name..."
-	presenterInput.CharLimit = 100
-	presenterInput.Width = 40
-
 	// Load topics
 	cfg, _ := config.Load()
 	topics := cfg.Topics
@@ -121,12 +89,7 @@ func NewHistoryModel() *HistoryModel {
 		mode:                  HistoryListMode,
 		topics:                topics,
 		youtubePrivacyOptions: []string{"unlisted", "private", "public"},
-		spellChecker:          spellcheck.NewSpellChecker(),
 	}
-
-	h.editFields.title = titleInput
-	h.editFields.description = descInput
-	h.editFields.presenter = presenterInput
 
 	return h
 }
@@ -186,10 +149,17 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 
 	case recordingSavedMsg:
 		h.isSaving = false
+		if h.editForm != nil {
+			h.editForm.State.IsSaving = false
+		}
 		if msg.err != nil {
-			h.editError = msg.err.Error()
+			if h.editForm != nil {
+				h.editForm.State.ErrorMsg = msg.err.Error()
+			}
 		} else {
-			h.editSuccess = "Recording saved successfully!"
+			if h.editForm != nil {
+				h.editForm.State.SuccessMsg = "Recording saved successfully!"
+			}
 			// Update local copy
 			if h.selectedRecording != nil {
 				for i := range h.recordings {
@@ -298,15 +268,11 @@ func (h *HistoryModel) updateListMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
 		if len(h.recordings) > 0 && h.cursor < len(h.recordings) {
 			rec := h.recordings[h.cursor]
 			h.selectedRecording = &rec
-			h.editError = ""
-			h.editSuccess = ""
 
 			// If recording needs metadata, go directly to edit mode
 			if rec.Status == models.StatusNeedsMetadata {
 				h.mode = HistoryEditMode
-				h.initEditFields()
-				h.editFocusField = 0
-				h.editFields.title.Focus()
+				h.initEditForm()
 				return h, textinput.Blink
 			}
 
@@ -389,8 +355,7 @@ func (h *HistoryModel) updateDetailMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd)
 		// Go back to list
 		h.mode = HistoryListMode
 		h.selectedRecording = nil
-		h.editError = ""
-		h.editSuccess = ""
+		h.editForm = nil
 		h.youtubeActionError = ""
 		h.youtubeActionSuccess = ""
 
@@ -398,9 +363,7 @@ func (h *HistoryModel) updateDetailMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd)
 		// Enter edit mode
 		if h.selectedRecording != nil {
 			h.mode = HistoryEditMode
-			h.initEditFields()
-			h.editFocusField = 0
-			h.editFields.title.Focus()
+			h.initEditForm()
 			return h, textinput.Blink
 		}
 
@@ -525,51 +488,24 @@ func (h *HistoryModel) updateDetailMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd)
 
 // updateEditMode handles input in edit mode
 func (h *HistoryModel) updateEditMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
-	var cmd tea.Cmd
+	if h.editForm == nil {
+		return h, nil
+	}
 
 	switch msg.String() {
 	case "ctrl+c":
 		return h, tea.Quit
 
 	case "esc":
+		// If in input mode, let the form handle it first
+		if h.editForm.State.InputMode {
+			h.editForm, _ = h.editForm.Update(msg)
+			return h, nil
+		}
 		// Go back to detail view
 		h.mode = HistoryDetailMode
-		h.editError = ""
-		h.editSuccess = ""
-
-	case "tab", "down":
-		// Move to next field
-		h.blurAllEditFields()
-		h.editFocusField = (h.editFocusField + 1) % 4
-		h.focusEditField()
-		return h, textinput.Blink
-
-	case "shift+tab", "up":
-		// Move to previous field
-		h.blurAllEditFields()
-		h.editFocusField = (h.editFocusField + 3) % 4
-		h.focusEditField()
-		return h, textinput.Blink
-
-	case "left", "h":
-		if h.editFocusField == 2 { // Topic field
-			h.editTopicIndex--
-			if h.editTopicIndex < 0 {
-				h.editTopicIndex = len(h.topics) - 1
-			}
-			return h, nil
-		}
-		// Fall through to let input handle it
-
-	case "right", "l":
-		if h.editFocusField == 2 { // Topic field
-			h.editTopicIndex++
-			if h.editTopicIndex >= len(h.topics) {
-				h.editTopicIndex = 0
-			}
-			return h, nil
-		}
-		// Fall through to let input handle it
+		h.editForm = nil
+		return h, nil
 
 	case "ctrl+s":
 		// Save changes
@@ -577,33 +513,11 @@ func (h *HistoryModel) updateEditMode(msg tea.KeyMsg) (*HistoryModel, tea.Cmd) {
 			return h, h.saveRecording()
 		}
 		return h, nil
-
-	case "enter":
-		// In description, allow newlines; otherwise move to next field
-		if h.editFocusField == 1 { // Description field
-			h.editFields.description, cmd = h.editFields.description.Update(msg)
-			return h, cmd
-		}
-		// Move to next field
-		h.blurAllEditFields()
-		h.editFocusField = (h.editFocusField + 1) % 4
-		h.focusEditField()
-		return h, textinput.Blink
 	}
 
-	// Update focused field
-	switch h.editFocusField {
-	case 0:
-		h.editFields.title, cmd = h.editFields.title.Update(msg)
-		// Update spell check for title
-		h.editTitleIssues = h.spellChecker.Check(h.editFields.title.Value())
-	case 1:
-		h.editFields.description, cmd = h.editFields.description.Update(msg)
-		// Update spell check for description
-		h.editDescIssues = h.spellChecker.Check(h.editFields.description.Value())
-	case 3:
-		h.editFields.presenter, cmd = h.editFields.presenter.Update(msg)
-	}
+	// Delegate all other input to the form
+	var cmd tea.Cmd
+	h.editForm, cmd = h.editForm.Update(msg)
 	return h, cmd
 }
 
@@ -857,76 +771,120 @@ type videoOpenedMsg struct{}
 // folderOpenedMsg indicates file manager was launched
 type folderOpenedMsg struct{}
 
-// initEditFields populates edit fields from selected recording
-func (h *HistoryModel) initEditFields() {
+// initEditForm creates and populates the edit form from selected recording
+func (h *HistoryModel) initEditForm() {
 	if h.selectedRecording == nil {
 		return
 	}
 
-	h.editFields.title.SetValue(h.selectedRecording.Metadata.Title)
-	h.editFields.description.SetValue(h.selectedRecording.Metadata.Description)
-	h.editFields.presenter.SetValue(h.selectedRecording.Metadata.Presenter)
+	rec := h.selectedRecording
+	cfg, _ := config.Load()
 
-	// Find matching topic
-	h.editTopicIndex = 0
-	for i, topic := range h.topics {
-		if topic.Name == h.selectedRecording.Metadata.Topic {
-			h.editTopicIndex = i
-			break
+	// Load available monitors
+	monitors, _ := monitor.ListMonitors()
+
+	// Load available logos
+	var logos []string
+	if cfg.LogoDirectory != "" {
+		if entries, err := os.ReadDir(cfg.LogoDirectory); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				ext := strings.ToLower(filepath.Ext(entry.Name()))
+				if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" {
+					logos = append(logos, entry.Name())
+				}
+			}
 		}
 	}
 
-	// Run initial spell check on title and description
-	h.updateEditSpellCheck()
-}
+	// Create the shared form in edit mode
+	h.editForm = NewRecordingForm(&RecordingFormConfig{
+		Mode:       FormModeEditExisting,
+		FolderName: rec.Metadata.FolderName,
+		Date:       rec.StartTime.Format("2006-01-02"),
+		Duration:   models.FormatDuration(rec.Duration),
+		Topics:     h.topics,
+		Monitors:   monitors,
+		Logos:      logos,
+		OnConfirm:  nil, // Will be handled by ctrl+s
+		OnCancel:   nil, // Will be handled by esc
+	})
 
-// updateEditSpellCheck runs spell check on the title and description fields
-func (h *HistoryModel) updateEditSpellCheck() {
-	if h.spellChecker == nil {
-		return
+	// Populate with existing values
+	h.editForm.SetTitle(rec.Metadata.Title)
+	h.editForm.SetDescription(rec.Metadata.Description)
+	h.editForm.SetPresenter(rec.Metadata.Presenter)
+	h.editForm.SetSelectedTopic(rec.Metadata.Topic)
+
+	// Set recording settings from existing recording
+	h.editForm.State.RecordAudio = rec.Settings.AudioEnabled
+	h.editForm.State.RecordWebcam = rec.Settings.WebcamEnabled
+	h.editForm.State.RecordScreen = rec.Settings.ScreenEnabled
+	h.editForm.State.VerticalVideo = rec.Settings.VerticalEnabled
+	h.editForm.State.AddLogos = rec.Settings.LogosEnabled
+
+	// Set logo indices from existing settings
+	if rec.Settings.LogosEnabled && cfg.LogoDirectory != "" {
+		h.editForm.State.SelectedLeftIdx = findLogoIndex(logos, rec.Settings.LeftLogo)
+		h.editForm.State.SelectedRightIdx = findLogoIndex(logos, rec.Settings.RightLogo)
+		h.editForm.State.SelectedBottomIdx = findLogoIndex(logos, rec.Settings.BottomLogo)
+
+		// Set color index
+		for i, c := range config.TitleColors {
+			if c == rec.Settings.TitleColor {
+				h.editForm.State.SelectedColorIdx = i
+				break
+			}
+		}
+
+		// Set GIF loop mode index
+		for i, mode := range config.GifLoopModes {
+			if string(mode) == rec.Settings.GifLoopMode {
+				h.editForm.State.SelectedGifLoopIdx = i
+				break
+			}
+		}
 	}
-	h.editTitleIssues = h.spellChecker.Check(h.editFields.title.Value())
-	h.editDescIssues = h.spellChecker.Check(h.editFields.description.Value())
+
+	// Focus the title field
+	h.editForm.Focus()
 }
 
-// blurAllEditFields removes focus from all edit fields
-func (h *HistoryModel) blurAllEditFields() {
-	h.editFields.title.Blur()
-	h.editFields.description.Blur()
-	h.editFields.presenter.Blur()
-}
-
-// focusEditField focuses the current edit field
-func (h *HistoryModel) focusEditField() {
-	switch h.editFocusField {
-	case 0:
-		h.editFields.title.Focus()
-	case 1:
-		h.editFields.description.Focus()
-	case 3:
-		h.editFields.presenter.Focus()
+// findLogoIndex finds the index of a logo in the logos slice (1-based, 0 = none)
+func findLogoIndex(logos []string, logoPath string) int {
+	if logoPath == "" {
+		return 0
 	}
+	name := filepath.Base(logoPath)
+	for i, logo := range logos {
+		if logo == name {
+			return i + 1 // +1 because 0 is "(none)"
+		}
+	}
+	return 0
 }
 
 // saveRecording saves the edited recording
 func (h *HistoryModel) saveRecording() tea.Cmd {
-	if h.selectedRecording == nil {
+	if h.selectedRecording == nil || h.editForm == nil {
 		return nil
 	}
 
 	h.isSaving = true
-	h.editError = ""
+	h.editForm.State.IsSaving = true
+	h.editForm.State.ErrorMsg = ""
+	h.editForm.State.SuccessMsg = ""
 
 	// Check if this recording needs processing (was created via systray)
 	needsProcessing := h.selectedRecording.Status == models.StatusNeedsMetadata
 
-	// Update metadata
-	h.selectedRecording.Metadata.Title = strings.TrimSpace(h.editFields.title.Value())
-	h.selectedRecording.Metadata.Description = strings.TrimSpace(h.editFields.description.Value())
-	h.selectedRecording.Metadata.Presenter = strings.TrimSpace(h.editFields.presenter.Value())
-	if h.editTopicIndex >= 0 && h.editTopicIndex < len(h.topics) {
-		h.selectedRecording.Metadata.Topic = h.topics[h.editTopicIndex].Name
-	}
+	// Update metadata from form
+	h.selectedRecording.Metadata.Title = h.editForm.GetTitle()
+	h.selectedRecording.Metadata.Description = h.editForm.GetDescription()
+	h.selectedRecording.Metadata.Presenter = h.editForm.GetPresenter()
+	h.selectedRecording.Metadata.Topic = h.editForm.GetSelectedTopic().Name
 
 	rec := h.selectedRecording
 	return func() tea.Msg {
@@ -1374,14 +1332,18 @@ func (h *HistoryModel) renderDetailView() string {
 	}
 
 	// Success/Error messages
-	if h.editSuccess != "" || h.youtubeActionSuccess != "" {
+	editSuccess := ""
+	if h.editForm != nil {
+		editSuccess = h.editForm.State.SuccessMsg
+	}
+	if editSuccess != "" || h.youtubeActionSuccess != "" {
 		successStyle := lipgloss.NewStyle().
 			Foreground(ColorGreen).
 			Bold(true).
 			Align(lipgloss.Center).
 			Width(62)
 		rows = append(rows, "")
-		msg := h.editSuccess
+		msg := editSuccess
 		if h.youtubeActionSuccess != "" {
 			msg = h.youtubeActionSuccess
 		}
@@ -1599,247 +1561,17 @@ func (h *HistoryModel) renderDeleteConfirmView() string {
 }
 
 // renderEditView renders the edit view for a selected recording
+// Uses the shared RecordingForm component
 func (h *HistoryModel) renderEditView() string {
-	if h.selectedRecording == nil {
+	if h.selectedRecording == nil || h.editForm == nil {
 		return "No recording selected"
 	}
 
-	rec := h.selectedRecording
 	header := RenderHeader("Edit Recording")
+	content := h.editForm.View()
+	footer := RenderHelpFooter("tab/↓: next • shift+tab/↑: prev • enter: edit field • ←/→: topic • ctrl+s: save • esc: cancel", h.width)
 
-	// Styles
-	labelStyle := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Width(14).
-		Align(lipgloss.Right)
-
-	focusedLabelStyle := lipgloss.NewStyle().
-		Foreground(ColorOrange).
-		Bold(true).
-		Width(14).
-		Align(lipgloss.Right)
-
-	infoStyle := lipgloss.NewStyle().
-		Foreground(ColorBlue).
-		Bold(true)
-
-	containerStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorOrange).
-		Padding(1, 3).
-		Width(70)
-
-	dividerStyle := lipgloss.NewStyle().
-		Foreground(ColorGray)
-
-	inputBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorGray).
-		Padding(0, 1).
-		Width(44)
-
-	focusedInputBoxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorOrange).
-		Padding(0, 1).
-		Width(44)
-
-	// Build edit form
-	var rows []string
-
-	// Folder (read-only)
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		labelStyle.Render("Folder:"),
-		"  ",
-		infoStyle.Render(rec.Metadata.FolderName),
-	))
-
-	// Date (read-only)
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		labelStyle.Render("Date:"),
-		"  ",
-		infoStyle.Render(rec.StartTime.Format("2006-01-02")),
-	))
-
-	// Duration (read-only)
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		labelStyle.Render("Duration:"),
-		"  ",
-		infoStyle.Render(models.FormatDuration(rec.Duration)),
-	))
-
-	// Divider
-	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
-	rows = append(rows, "")
-
-	// Spell check warning style
-	warningStyle := lipgloss.NewStyle().
-		Foreground(ColorOrange).
-		MarginLeft(16)
-
-	// Editable fields
-	// Title
-	titleLabel := labelStyle.Render("Title:")
-	titleBoxStyle := inputBoxStyle
-	if h.editFocusField == 0 {
-		titleLabel = focusedLabelStyle.Render("Title:")
-		titleBoxStyle = focusedInputBoxStyle
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		titleLabel,
-		"  ",
-		titleBoxStyle.Render(h.editFields.title.View()),
-	))
-
-	// Title spell check warnings
-	if len(h.editTitleIssues) > 0 {
-		titleWarning := spellcheck.FormatIssues(h.editTitleIssues)
-		if titleWarning != "" {
-			rows = append(rows, warningStyle.Render("⚠ "+titleWarning))
-		}
-	}
-
-	// Description
-	descLabel := labelStyle.Render("Description:")
-	descBoxStyle := inputBoxStyle.Height(5)
-	if h.editFocusField == 1 {
-		descLabel = focusedLabelStyle.Render("Description:")
-		descBoxStyle = focusedInputBoxStyle.Height(5)
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		descLabel,
-		"  ",
-		descBoxStyle.Render(h.editFields.description.View()),
-	))
-
-	// Description spell check warnings (limit to 3)
-	if len(h.editDescIssues) > 0 {
-		maxIssues := 3
-		issuesToShow := h.editDescIssues
-		extraCount := 0
-		if len(issuesToShow) > maxIssues {
-			extraCount = len(issuesToShow) - maxIssues
-			issuesToShow = issuesToShow[:maxIssues]
-		}
-		descWarning := spellcheck.FormatIssues(issuesToShow)
-		if descWarning != "" {
-			if extraCount > 0 {
-				descWarning += fmt.Sprintf(" ... and %d more issues", extraCount)
-			}
-			rows = append(rows, warningStyle.Render("⚠ "+descWarning))
-		}
-	}
-
-	// Topic
-	topicLabel := labelStyle.Render("Topic:")
-	if h.editFocusField == 2 {
-		topicLabel = focusedLabelStyle.Render("Topic:")
-	}
-	var topicOptions []string
-	for i, topic := range h.topics {
-		topicStyle := lipgloss.NewStyle().
-			Padding(0, 1).
-			Margin(0, 1)
-
-		if i == h.editTopicIndex {
-			if h.editFocusField == 2 {
-				topicStyle = topicStyle.
-					Background(ColorOrange).
-					Foreground(lipgloss.Color("#000000")).
-					Bold(true)
-			} else {
-				topicStyle = topicStyle.
-					Background(ColorGray).
-					Foreground(ColorWhite)
-			}
-		} else {
-			topicStyle = topicStyle.
-				Foreground(ColorGray)
-		}
-		topicOptions = append(topicOptions, topicStyle.Render(topic.Name))
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		topicLabel,
-		"  ",
-		lipgloss.JoinHorizontal(lipgloss.Center, topicOptions...),
-	))
-
-	// Presenter
-	presenterLabel := labelStyle.Render("Presenter:")
-	presenterBoxStyle := inputBoxStyle
-	if h.editFocusField == 3 {
-		presenterLabel = focusedLabelStyle.Render("Presenter:")
-		presenterBoxStyle = focusedInputBoxStyle
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		presenterLabel,
-		"  ",
-		presenterBoxStyle.Render(h.editFields.presenter.View()),
-	))
-
-	// Error/Success messages
-	if h.editError != "" {
-		errorStyle := lipgloss.NewStyle().
-			Foreground(ColorRed).
-			Bold(true).
-			Align(lipgloss.Center).
-			Width(62)
-		rows = append(rows, "")
-		rows = append(rows, errorStyle.Render("Error: "+h.editError))
-	}
-
-	if h.editSuccess != "" {
-		successStyle := lipgloss.NewStyle().
-			Foreground(ColorGreen).
-			Bold(true).
-			Align(lipgloss.Center).
-			Width(62)
-		rows = append(rows, "")
-		rows = append(rows, successStyle.Render(h.editSuccess))
-	}
-
-	if h.isSaving {
-		savingStyle := lipgloss.NewStyle().
-			Foreground(ColorOrange).
-			Bold(true).
-			Align(lipgloss.Center).
-			Width(62)
-		rows = append(rows, "")
-		rows = append(rows, savingStyle.Render("Saving..."))
-	}
-
-	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
-
-	// Help text
-	helpStyle := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Italic(true)
-
-	mainSection := lipgloss.JoinVertical(
-		lipgloss.Center,
-		header,
-		"",
-		content,
-	)
-
-	centeredMain := lipgloss.Place(
-		h.width,
-		h.height-2,
-		lipgloss.Center,
-		lipgloss.Top,
-		mainSection,
-	)
-
-	helpFooter := lipgloss.NewStyle().
-		Width(h.width).
-		Align(lipgloss.Center)
-
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		centeredMain,
-		helpFooter.Render(helpStyle.Render("Tab: Next • ←/→: Topic • Ctrl+S: Save • Esc: Cancel")),
-	)
+	return LayoutWithHeaderFooter(header, content, footer, h.width, h.height)
 }
 
 // renderScrollBar renders a visual scroll indicator

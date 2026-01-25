@@ -11,7 +11,8 @@
       "Bash(git commit:*)",
       "Bash(git tag:*)",
       "Bash(ffprobe:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(/home/timlinux/dev/go/kartoza-screencaster/PROMPT.log)"
     ],
     "deny": [],
     "ask": []

@@ -990,8 +990,8 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 
 		// Get monitor info for recording
 		monitorName, _ := monitor.GetMouseMonitor()
-		if m.recordingSetup != nil && m.recordingSetup.selectedMonitor >= 0 && m.recordingSetup.selectedMonitor < len(m.recordingSetup.monitors) {
-			monitorName = m.recordingSetup.monitors[m.recordingSetup.selectedMonitor].Name
+		if m.recordingSetup != nil && m.recordingSetup.form != nil && m.recordingSetup.form.State.SelectedMonitor >= 0 && m.recordingSetup.form.State.SelectedMonitor < len(m.recordingSetup.monitors) {
+			monitorName = m.recordingSetup.monitors[m.recordingSetup.form.State.SelectedMonitor].Name
 		}
 		monitorResolution := ""
 		for _, mon := range m.monitors {
@@ -1006,14 +1006,14 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 		m.recordingInfo.Files.FolderPath = m.outputDir
 
 		// Set recording settings from setup form
-		if m.recordingSetup != nil {
+		if m.recordingSetup != nil && m.recordingSetup.form != nil {
 			logoSelection := m.recordingSetup.GetLogoSelection()
 
-			m.recordingInfo.Settings.ScreenEnabled = m.recordingSetup.recordScreen
-			m.recordingInfo.Settings.AudioEnabled = m.recordingSetup.recordAudio
-			m.recordingInfo.Settings.WebcamEnabled = m.recordingSetup.recordWebcam
-			m.recordingInfo.Settings.VerticalEnabled = m.recordingSetup.verticalVideo && m.recordingSetup.recordWebcam && m.recordingSetup.recordScreen
-			m.recordingInfo.Settings.LogosEnabled = m.recordingSetup.addLogos
+			m.recordingInfo.Settings.ScreenEnabled = m.recordingSetup.form.State.RecordScreen
+			m.recordingInfo.Settings.AudioEnabled = m.recordingSetup.form.State.RecordAudio
+			m.recordingInfo.Settings.WebcamEnabled = m.recordingSetup.form.State.RecordWebcam
+			m.recordingInfo.Settings.VerticalEnabled = m.recordingSetup.form.State.VerticalVideo && m.recordingSetup.form.State.RecordWebcam && m.recordingSetup.form.State.RecordScreen
+			m.recordingInfo.Settings.LogosEnabled = m.recordingSetup.form.State.AddLogos
 
 			// Logo details
 			m.recordingInfo.Settings.LeftLogo = logoSelection.LeftLogo
@@ -1037,14 +1037,14 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 			Monitor:        monitorName,
 			Metadata:       &m.metadata,
 			RecordingInfo:  m.recordingInfo,
-			CreateVertical: m.recordingSetup != nil && m.recordingSetup.verticalVideo,
+			CreateVertical: m.recordingSetup != nil && m.recordingSetup.form != nil && m.recordingSetup.form.State.VerticalVideo,
 		}
 
 		// Set audio/webcam/screen options from setup
-		if m.recordingSetup != nil {
-			opts.NoAudio = !m.recordingSetup.recordAudio
-			opts.NoWebcam = !m.recordingSetup.recordWebcam
-			opts.NoScreen = !m.recordingSetup.recordScreen
+		if m.recordingSetup != nil && m.recordingSetup.form != nil {
+			opts.NoAudio = !m.recordingSetup.form.State.RecordAudio
+			opts.NoWebcam = !m.recordingSetup.form.State.RecordWebcam
+			opts.NoScreen = !m.recordingSetup.form.State.RecordScreen
 			// Set logo selection and save for future recordings
 			opts.LogoSelection = m.recordingSetup.GetLogoSelection()
 			_ = m.recordingSetup.SaveLogoSelection() // Save for next time
@@ -1451,13 +1451,10 @@ func (m AppModel) renderCountdownView() string {
 func (m AppModel) renderRecordingSetupScreen() string {
 	header := RenderHeader("New Recording")
 
-	// Render the setup form
-	content := lipgloss.NewStyle().
-		Width(HeaderWidth).
-		Align(lipgloss.Center).
-		Render(m.recordingSetup.View())
+	// Render the setup form (already wrapped in container)
+	content := m.recordingSetup.View()
 
-	footer := RenderHelpFooter("tab/↓: next • shift+tab/↑: prev • ←/→: select topic • enter: confirm • esc: back", m.width)
+	footer := RenderHelpFooter("tab/↓: next • shift+tab/↑: prev • ←/→: select • enter: confirm • esc: back", m.width)
 
 	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
 }

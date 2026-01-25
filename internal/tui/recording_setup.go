@@ -1,42 +1,16 @@
 package tui
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-screencaster/internal/config"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/monitor"
-	"github.com/kartoza/kartoza-screencaster/internal/spellcheck"
-)
-
-// Field indices for navigation
-const (
-	fieldTitle = iota
-	fieldNumber
-	fieldTopic
-	fieldRecordAudio
-	fieldRecordWebcam
-	fieldRecordScreen
-	fieldMonitor
-	fieldVerticalVideo
-	fieldAddLogos
-	fieldLeftLogo
-	fieldRightLogo
-	fieldBottomLogo
-	fieldTitleColor
-	fieldGifLoopMode
-	fieldDescription
-	fieldConfirm
-	fieldCount
 )
 
 // RecordingSetupModel handles the recording setup form
@@ -44,57 +18,20 @@ type RecordingSetupModel struct {
 	width  int
 	height int
 
-	focusedField int
-	inputMode    bool // When true, text input captures all keys; tab exits
-	config       *config.Config
+	config *config.Config
+	form   *RecordingForm
 
-	// Text inputs
-	titleInput  textinput.Model
-	numberInput textinput.Model
-	descInput   textarea.Model
+	// Logo directory and available logos (needed for logo path resolution)
+	logoDirectory  string
+	availableLogos []string
 
-	// Options (bool toggles)
-	recordAudio   bool
-	recordWebcam  bool
-	recordScreen  bool
-	verticalVideo bool
-	addLogos      bool
-
-	// Logo selection
-	logoDirectory     string   // Directory containing logos
-	availableLogos    []string // List of logo files in the directory
-	leftLogo          string   // Selected left logo path
-	rightLogo         string   // Selected right logo path
-	bottomLogo          string            // Selected bottom logo path
-	selectedLeftIdx     int               // Index in availableLogos for left
-	selectedRightIdx    int               // Index in availableLogos for right
-	selectedBottomIdx   int               // Index in availableLogos for bottom
-	titleColor          string            // Selected title text color
-	selectedColorIdx    int               // Index in TitleColors
-	gifLoopMode         config.GifLoopMode // How to loop animated GIFs
-	selectedGifLoopIdx  int               // Index in GifLoopModes
-
-	// Screen selection
-	monitors        []models.Monitor
-	selectedMonitor int
-
-	// Available topics
-	topics        []models.Topic
-	selectedTopic int
-
-	// Confirm selection (true = Go Live, false = Cancel)
-	confirmSelected bool
-
-	// Spell checking
-	spellChecker *spellcheck.SpellChecker
-	titleIssues  []spellcheck.Issue
-	descIssues   []spellcheck.Issue
+	// Monitors for screen recording
+	monitors []models.Monitor
 }
 
 // NewRecordingSetupModel creates a new recording setup model
 func NewRecordingSetupModel() *RecordingSetupModel {
 	cfg, _ := config.Load()
-	recordingNumber := config.GetCurrentRecordingNumber()
 
 	topics := cfg.Topics
 	if len(topics) == 0 {
@@ -104,102 +41,44 @@ func NewRecordingSetupModel() *RecordingSetupModel {
 	// Get available monitors
 	monitors, _ := monitor.ListMonitors()
 
-	// Create text inputs
-	titleInput := textinput.New()
-	titleInput.Placeholder = "Enter recording title..."
-	titleInput.CharLimit = 100
-	titleInput.Width = 30
-	titleInput.Focus()
-
-	numberInput := textinput.New()
-	numberInput.Placeholder = "001"
-	numberInput.CharLimit = 10
-	numberInput.Width = 30
-	numberInput.SetValue(fmt.Sprintf("%03d", recordingNumber))
-
-	descInput := textarea.New()
-	descInput.Placeholder = "Enter description..."
-	descInput.CharLimit = 2000
-	descInput.SetWidth(35)
-	descInput.SetHeight(4)
-	descInput.ShowLineNumbers = false
-
-	// Determine title color - use last used or default
-	titleColor := cfg.LastUsedLogos.TitleColor
-	if titleColor == "" {
-		titleColor = config.DefaultTitleColor
-	}
-	// Find index of title color
-	colorIdx := 0
-	for i, c := range config.TitleColors {
-		if c == titleColor {
-			colorIdx = i
-			break
-		}
-	}
-
-	// Determine GIF loop mode - use last used or default to continuous
-	gifLoopMode := cfg.LastUsedLogos.GifLoopMode
-	if gifLoopMode == "" {
-		gifLoopMode = config.GifLoopContinuous
-	}
-	// Find index of GIF loop mode
-	gifLoopIdx := 0
-	for i, mode := range config.GifLoopModes {
-		if mode == gifLoopMode {
-			gifLoopIdx = i
-			break
-		}
-	}
-
-	// Load recording presets (use defaults if not set)
-	presets := cfg.RecordingPresets
-	// Check if presets have been saved before (if all bools are false, use defaults)
-	presetsExist := presets.RecordAudio || presets.RecordWebcam || presets.RecordScreen || presets.VerticalVideo || presets.AddLogos
-	if !presetsExist {
-		presets = config.DefaultRecordingPresets()
-	}
-
-	// Find topic index from saved preset
-	selectedTopicIdx := 0
-	if presets.Topic != "" {
-		for i, t := range topics {
-			if t.Name == presets.Topic {
-				selectedTopicIdx = i
-				break
-			}
-		}
-	}
-
 	m := &RecordingSetupModel{
-		config:             cfg,
-		focusedField:       fieldTitle,
-		titleInput:         titleInput,
-		numberInput:        numberInput,
-		descInput:          descInput,
-		recordAudio:        presets.RecordAudio,
-		recordWebcam:       presets.RecordWebcam,
-		recordScreen:       presets.RecordScreen,
-		verticalVideo:      presets.VerticalVideo,
-		addLogos:           presets.AddLogos,
-		monitors:           monitors,
-		selectedMonitor:    0,
-		topics:             topics,
-		selectedTopic:      selectedTopicIdx,
-		confirmSelected:    true, // Default to "Go Live"
-		logoDirectory:      cfg.LogoDirectory,
-		leftLogo:           cfg.LastUsedLogos.LeftLogo,
-		rightLogo:          cfg.LastUsedLogos.RightLogo,
-		bottomLogo:         cfg.LastUsedLogos.BottomLogo,
-		titleColor:         titleColor,
-		selectedColorIdx:   colorIdx,
-		gifLoopMode:        gifLoopMode,
-		selectedGifLoopIdx: gifLoopIdx,
-		spellChecker:       spellcheck.NewSpellChecker(),
+		config:        cfg,
+		logoDirectory: cfg.LogoDirectory,
+		monitors:      monitors,
 	}
 
 	// Load available logos from directory
 	m.loadAvailableLogos()
+
+	// Create the shared form
+	m.form = NewRecordingForm(&RecordingFormConfig{
+		Mode:     FormModeNewRecording,
+		Topics:   topics,
+		Monitors: monitors,
+		Logos:    m.availableLogos[1:], // Skip the "(none)" entry, form handles that
+		OnConfirm: func() {
+			// Will be handled by the parent via message
+		},
+		OnCancel: func() {
+			// Will be handled by the parent via message
+		},
+	})
+
+	// Set logo indices from last used
+	m.setLogoIndicesFromConfig()
+
+	// Set topic from presets
+	presets := cfg.RecordingPresets
+	presetsExist := presets.RecordAudio || presets.RecordWebcam || presets.RecordScreen || presets.VerticalVideo || presets.AddLogos
+	if !presetsExist {
+		presets = config.DefaultRecordingPresets()
+	}
+	if presets.Topic != "" {
+		m.form.SetSelectedTopic(presets.Topic)
+	}
+
+	// Focus the title field
+	m.form.Focus()
 
 	return m
 }
@@ -230,11 +109,46 @@ func (m *RecordingSetupModel) loadAvailableLogos() {
 
 	sort.Strings(logos)
 	m.availableLogos = append(m.availableLogos, logos...)
+}
+
+// setLogoIndicesFromConfig sets the logo indices from the last used config
+func (m *RecordingSetupModel) setLogoIndicesFromConfig() {
+	if m.form == nil {
+		return
+	}
 
 	// Find indices for current selections
-	m.selectedLeftIdx = m.findLogoIndex(m.leftLogo)
-	m.selectedRightIdx = m.findLogoIndex(m.rightLogo)
-	m.selectedBottomIdx = m.findLogoIndex(m.bottomLogo)
+	leftIdx := m.findLogoIndex(m.config.LastUsedLogos.LeftLogo)
+	rightIdx := m.findLogoIndex(m.config.LastUsedLogos.RightLogo)
+	bottomIdx := m.findLogoIndex(m.config.LastUsedLogos.BottomLogo)
+
+	m.form.State.SelectedLeftIdx = leftIdx
+	m.form.State.SelectedRightIdx = rightIdx
+	m.form.State.SelectedBottomIdx = bottomIdx
+
+	// Set color index
+	titleColor := m.config.LastUsedLogos.TitleColor
+	if titleColor == "" {
+		titleColor = config.DefaultTitleColor
+	}
+	for i, c := range config.TitleColors {
+		if c == titleColor {
+			m.form.State.SelectedColorIdx = i
+			break
+		}
+	}
+
+	// Set GIF loop mode index
+	gifLoopMode := m.config.LastUsedLogos.GifLoopMode
+	if gifLoopMode == "" {
+		gifLoopMode = config.GifLoopContinuous
+	}
+	for i, mode := range config.GifLoopModes {
+		if mode == gifLoopMode {
+			m.form.State.SelectedGifLoopIdx = i
+			break
+		}
+	}
 }
 
 // findLogoIndex finds the index of a logo path in availableLogos
@@ -260,11 +174,7 @@ func (m *RecordingSetupModel) getLogoPath(idx int) string {
 }
 
 func (m *RecordingSetupModel) Init() tea.Cmd {
-	return textinput.Blink
-}
-
-func (m *RecordingSetupModel) isTextField() bool {
-	return m.focusedField == fieldTitle || m.focusedField == fieldNumber || m.focusedField == fieldDescription
+	return nil
 }
 
 func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd) {
@@ -274,382 +184,58 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.form.SetSize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
-		// In input mode, only tab/shift+tab/esc exit; all other keys go to text input
-		if m.inputMode {
+		// Check for confirm/cancel actions
+		if m.form.State.FocusedField == FormFieldConfirm && !m.form.State.InputMode {
 			switch msg.String() {
-			case "tab":
-				m.inputMode = false
-				m.nextField()
-				return m, nil
-			case "shift+tab":
-				m.inputMode = false
-				m.prevField()
-				return m, nil
-			case "esc":
-				// Escape exits input mode but stays on current field
-				m.inputMode = false
-				return m, nil
-			case "enter":
-				// For single-line inputs, enter exits input mode
-				// For textarea (description), enter adds a newline
-				if m.focusedField == fieldDescription {
-					m.descInput, cmd = m.descInput.Update(msg)
-					return m, cmd
+			case "enter", " ":
+				if m.form.State.ConfirmSelected {
+					// Go Live selected
+					if m.Validate() {
+						return m, func() tea.Msg { return recordingSetupCompleteMsg{} }
+					}
+				} else {
+					// Cancel selected
+					return m, func() tea.Msg { return backToMenuMsg{} }
 				}
-				m.inputMode = false
-				m.nextField()
 				return m, nil
-			default:
-				// Pass all other keys to the text input
-				switch m.focusedField {
-				case fieldTitle:
-					m.titleInput, cmd = m.titleInput.Update(msg)
-					m.titleIssues = m.spellChecker.Check(m.titleInput.Value())
-				case fieldNumber:
-					m.numberInput, cmd = m.numberInput.Update(msg)
-				case fieldDescription:
-					m.descInput, cmd = m.descInput.Update(msg)
-					m.descIssues = m.spellChecker.Check(m.descInput.Value())
-				}
-				return m, cmd
 			}
 		}
 
-		// Navigation mode
-		switch msg.String() {
-		case "tab", "down", "j":
-			m.nextField()
-			return m, nil
-		case "shift+tab", "up", "k":
-			m.prevField()
-			return m, nil
-		case "left", "h":
-			m.handleLeft()
-			return m, nil
-		case "right", "l":
-			m.handleRight()
-			return m, nil
-		case " ":
-			// Space toggles boolean fields or activates confirm button
-			if m.focusedField == fieldConfirm {
-				if m.confirmSelected {
-					// Go Live selected
-					if m.Validate() {
-						return m, func() tea.Msg { return recordingSetupCompleteMsg{} }
-					}
-				} else {
-					// Cancel selected
-					return m, func() tea.Msg { return backToMenuMsg{} }
-				}
-				return m, nil
-			}
-			if m.handleToggle() {
-				return m, nil
-			}
-		case "enter":
-			// On text fields, enter activates input mode
-			if m.isTextField() {
-				m.inputMode = true
-				return m, nil
-			}
-			if m.focusedField == fieldConfirm {
-				if m.confirmSelected {
-					// Go Live selected
-					if m.Validate() {
-						return m, func() tea.Msg { return recordingSetupCompleteMsg{} }
-					}
-				} else {
-					// Cancel selected
-					return m, func() tea.Msg { return backToMenuMsg{} }
-				}
-				return m, nil
-			}
-			// Enter moves to next field for other fields
-			m.nextField()
-			return m, nil
-		default:
-			// If on a text field and user types a printable character, enter input mode
-			if m.isTextField() && len(msg.String()) == 1 {
-				m.inputMode = true
-				// Pass the key to the text input
-				switch m.focusedField {
-				case fieldTitle:
-					m.titleInput, cmd = m.titleInput.Update(msg)
-					m.titleIssues = m.spellChecker.Check(m.titleInput.Value())
-				case fieldNumber:
-					m.numberInput, cmd = m.numberInput.Update(msg)
-				case fieldDescription:
-					m.descInput, cmd = m.descInput.Update(msg)
-					m.descIssues = m.spellChecker.Check(m.descInput.Value())
-				}
-				return m, cmd
-			}
-		}
+		// Delegate to form
+		m.form, cmd = m.form.Update(msg)
+		return m, cmd
 	}
 
 	return m, cmd
 }
 
-// isBottomLogoGif returns true if the bottom logo is a GIF file
-func (m *RecordingSetupModel) isBottomLogoGif() bool {
-	if m.bottomLogo == "" {
-		return false
-	}
-	ext := strings.ToLower(filepath.Ext(m.bottomLogo))
-	return ext == ".gif"
-}
-
-func (m *RecordingSetupModel) nextField() {
-	m.blurAll()
-	m.focusedField++
-
-	// Skip fields based on conditions
-	for {
-		skip := false
-		if m.focusedField == fieldMonitor && !m.recordScreen {
-			skip = true
-		}
-		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo || m.focusedField == fieldTitleColor) && !m.addLogos {
-			skip = true
-		}
-		// Skip GIF loop mode if logos not enabled or bottom logo is not a GIF
-		if m.focusedField == fieldGifLoopMode && (!m.addLogos || !m.isBottomLogoGif()) {
-			skip = true
-		}
-		if !skip {
-			break
-		}
-		m.focusedField++
-		if m.focusedField >= fieldCount {
-			m.focusedField = fieldTitle
-			break
-		}
-	}
-
-	if m.focusedField >= fieldCount {
-		m.focusedField = fieldTitle
-	}
-	m.focusCurrent()
-}
-
-func (m *RecordingSetupModel) prevField() {
-	m.blurAll()
-	m.focusedField--
-
-	// Skip fields based on conditions
-	for {
-		skip := false
-		if m.focusedField == fieldMonitor && !m.recordScreen {
-			skip = true
-		}
-		if (m.focusedField == fieldLeftLogo || m.focusedField == fieldRightLogo || m.focusedField == fieldBottomLogo || m.focusedField == fieldTitleColor) && !m.addLogos {
-			skip = true
-		}
-		// Skip GIF loop mode if logos not enabled or bottom logo is not a GIF
-		if m.focusedField == fieldGifLoopMode && (!m.addLogos || !m.isBottomLogoGif()) {
-			skip = true
-		}
-		if !skip {
-			break
-		}
-		m.focusedField--
-		if m.focusedField < fieldTitle {
-			m.focusedField = fieldConfirm
-			break
-		}
-	}
-
-	if m.focusedField < fieldTitle {
-		m.focusedField = fieldConfirm
-	}
-	m.focusCurrent()
-}
-
-func (m *RecordingSetupModel) blurAll() {
-	m.titleInput.Blur()
-	m.numberInput.Blur()
-	m.descInput.Blur()
-	m.inputMode = false
-}
-
-func (m *RecordingSetupModel) focusCurrent() {
-	switch m.focusedField {
-	case fieldTitle:
-		m.titleInput.Focus()
-	case fieldNumber:
-		m.numberInput.Focus()
-	case fieldDescription:
-		m.descInput.Focus()
-	}
-}
-
-func (m *RecordingSetupModel) handleLeft() {
-	switch m.focusedField {
-	case fieldTopic:
-		m.selectedTopic--
-		if m.selectedTopic < 0 {
-			m.selectedTopic = len(m.topics) - 1
-		}
-	case fieldMonitor:
-		m.selectedMonitor--
-		if m.selectedMonitor < 0 {
-			m.selectedMonitor = len(m.monitors) - 1
-		}
-	case fieldLeftLogo:
-		m.selectedLeftIdx--
-		if m.selectedLeftIdx < 0 {
-			m.selectedLeftIdx = len(m.availableLogos) - 1
-		}
-		m.leftLogo = m.getLogoPath(m.selectedLeftIdx)
-	case fieldRightLogo:
-		m.selectedRightIdx--
-		if m.selectedRightIdx < 0 {
-			m.selectedRightIdx = len(m.availableLogos) - 1
-		}
-		m.rightLogo = m.getLogoPath(m.selectedRightIdx)
-	case fieldBottomLogo:
-		m.selectedBottomIdx--
-		if m.selectedBottomIdx < 0 {
-			m.selectedBottomIdx = len(m.availableLogos) - 1
-		}
-		m.bottomLogo = m.getLogoPath(m.selectedBottomIdx)
-	case fieldTitleColor:
-		m.selectedColorIdx--
-		if m.selectedColorIdx < 0 {
-			m.selectedColorIdx = len(config.TitleColors) - 1
-		}
-		m.titleColor = config.TitleColors[m.selectedColorIdx]
-	case fieldGifLoopMode:
-		m.selectedGifLoopIdx--
-		if m.selectedGifLoopIdx < 0 {
-			m.selectedGifLoopIdx = len(config.GifLoopModes) - 1
-		}
-		m.gifLoopMode = config.GifLoopModes[m.selectedGifLoopIdx]
-	case fieldRecordAudio, fieldRecordWebcam, fieldRecordScreen, fieldVerticalVideo, fieldAddLogos:
-		m.handleToggle()
-	case fieldConfirm:
-		m.confirmSelected = !m.confirmSelected
-	}
-}
-
-func (m *RecordingSetupModel) handleRight() {
-	switch m.focusedField {
-	case fieldTopic:
-		m.selectedTopic++
-		if m.selectedTopic >= len(m.topics) {
-			m.selectedTopic = 0
-		}
-	case fieldMonitor:
-		m.selectedMonitor++
-		if m.selectedMonitor >= len(m.monitors) {
-			m.selectedMonitor = 0
-		}
-	case fieldLeftLogo:
-		m.selectedLeftIdx++
-		if m.selectedLeftIdx >= len(m.availableLogos) {
-			m.selectedLeftIdx = 0
-		}
-		m.leftLogo = m.getLogoPath(m.selectedLeftIdx)
-	case fieldRightLogo:
-		m.selectedRightIdx++
-		if m.selectedRightIdx >= len(m.availableLogos) {
-			m.selectedRightIdx = 0
-		}
-		m.rightLogo = m.getLogoPath(m.selectedRightIdx)
-	case fieldBottomLogo:
-		m.selectedBottomIdx++
-		if m.selectedBottomIdx >= len(m.availableLogos) {
-			m.selectedBottomIdx = 0
-		}
-		m.bottomLogo = m.getLogoPath(m.selectedBottomIdx)
-	case fieldTitleColor:
-		m.selectedColorIdx++
-		if m.selectedColorIdx >= len(config.TitleColors) {
-			m.selectedColorIdx = 0
-		}
-		m.titleColor = config.TitleColors[m.selectedColorIdx]
-	case fieldGifLoopMode:
-		m.selectedGifLoopIdx++
-		if m.selectedGifLoopIdx >= len(config.GifLoopModes) {
-			m.selectedGifLoopIdx = 0
-		}
-		m.gifLoopMode = config.GifLoopModes[m.selectedGifLoopIdx]
-	case fieldRecordAudio, fieldRecordWebcam, fieldRecordScreen, fieldVerticalVideo, fieldAddLogos:
-		m.handleToggle()
-	case fieldConfirm:
-		m.confirmSelected = !m.confirmSelected
-	}
-}
-
-func (m *RecordingSetupModel) handleToggle() bool {
-	switch m.focusedField {
-	case fieldRecordAudio:
-		m.recordAudio = !m.recordAudio
-		return true
-	case fieldRecordWebcam:
-		m.recordWebcam = !m.recordWebcam
-		// Disable vertical video if neither webcam nor screen is enabled
-		if !m.recordWebcam && !m.recordScreen {
-			m.verticalVideo = false
-		}
-		return true
-	case fieldRecordScreen:
-		m.recordScreen = !m.recordScreen
-		// Disable vertical video if neither webcam nor screen is enabled
-		if !m.recordWebcam && !m.recordScreen {
-			m.verticalVideo = false
-		}
-		return true
-	case fieldVerticalVideo:
-		// Only allow toggle if webcam or screen is enabled
-		if m.recordWebcam || m.recordScreen {
-			m.verticalVideo = !m.verticalVideo
-		}
-		return true
-	case fieldAddLogos:
-		m.addLogos = !m.addLogos
-		return true
-	}
-	return false
-}
-
-func (m *RecordingSetupModel) canEnableVerticalVideo() bool {
-	return m.recordWebcam || m.recordScreen
-}
-
 func (m *RecordingSetupModel) Validate() bool {
 	// Title is required
-	if strings.TrimSpace(m.titleInput.Value()) == "" {
+	if m.form.GetTitle() == "" {
 		return false
 	}
 	// At least one recording source must be enabled
-	if !m.recordAudio && !m.recordWebcam && !m.recordScreen {
+	if !m.form.State.RecordAudio && !m.form.State.RecordWebcam && !m.form.State.RecordScreen {
 		return false
 	}
 	return true
 }
 
-func (m *RecordingSetupModel) hasRecordingSource() bool {
-	return m.recordAudio || m.recordWebcam || m.recordScreen
-}
-
 func (m *RecordingSetupModel) GetMetadata() models.RecordingMetadata {
-	topic := ""
-	if m.selectedTopic >= 0 && m.selectedTopic < len(m.topics) {
-		topic = m.topics[m.selectedTopic].Name
-	}
+	topic := m.form.GetSelectedTopic().Name
 
 	recordingNumber := 1
-	if num, err := strconv.Atoi(strings.TrimSpace(m.numberInput.Value())); err == nil && num > 0 {
+	if num, err := strconv.Atoi(m.form.GetNumber()); err == nil && num > 0 {
 		recordingNumber = num
 	}
 
 	metadata := models.RecordingMetadata{
 		Number:      recordingNumber,
-		Title:       strings.TrimSpace(m.titleInput.Value()),
-		Description: strings.TrimSpace(m.descInput.Value()),
+		Title:       m.form.GetTitle(),
+		Description: m.form.GetDescription(),
 		Topic:       topic,
 		Presenter:   m.config.DefaultPresenter,
 	}
@@ -660,30 +246,30 @@ func (m *RecordingSetupModel) GetMetadata() models.RecordingMetadata {
 
 func (m *RecordingSetupModel) GetRecordingOptions() models.RecordingOptions {
 	monitorName := ""
-	if m.recordScreen && m.selectedMonitor >= 0 && m.selectedMonitor < len(m.monitors) {
-		monitorName = m.monitors[m.selectedMonitor].Name
+	if m.form.State.RecordScreen && m.form.State.SelectedMonitor >= 0 && m.form.State.SelectedMonitor < len(m.monitors) {
+		monitorName = m.monitors[m.form.State.SelectedMonitor].Name
 	}
 
 	return models.RecordingOptions{
 		Monitor:        monitorName,
-		NoAudio:        !m.recordAudio,
-		NoWebcam:       !m.recordWebcam,
-		NoScreen:       !m.recordScreen,
-		CreateVertical: m.verticalVideo && m.recordWebcam && m.recordScreen,
+		NoAudio:        !m.form.State.RecordAudio,
+		NoWebcam:       !m.form.State.RecordWebcam,
+		NoScreen:       !m.form.State.RecordScreen,
+		CreateVertical: m.form.State.VerticalVideo && m.form.State.RecordWebcam && m.form.State.RecordScreen,
 	}
 }
 
 // GetLogoSelection returns the selected logos
 func (m *RecordingSetupModel) GetLogoSelection() config.LogoSelection {
-	if !m.addLogos {
+	if !m.form.State.AddLogos {
 		return config.LogoSelection{}
 	}
 	return config.LogoSelection{
-		LeftLogo:    m.leftLogo,
-		RightLogo:   m.rightLogo,
-		BottomLogo:  m.bottomLogo,
-		TitleColor:  m.titleColor,
-		GifLoopMode: m.gifLoopMode,
+		LeftLogo:    m.getLogoPath(m.form.State.SelectedLeftIdx),
+		RightLogo:   m.getLogoPath(m.form.State.SelectedRightIdx),
+		BottomLogo:  m.getLogoPath(m.form.State.SelectedBottomIdx),
+		TitleColor:  config.TitleColors[m.form.State.SelectedColorIdx],
+		GifLoopMode: config.GifLoopModes[m.form.State.SelectedGifLoopIdx],
 	}
 }
 
@@ -699,18 +285,13 @@ func (m *RecordingSetupModel) SaveLogoSelection() error {
 
 // GetRecordingPresets returns the current recording presets
 func (m *RecordingSetupModel) GetRecordingPresets() config.RecordingPresets {
-	topic := ""
-	if m.selectedTopic >= 0 && m.selectedTopic < len(m.topics) {
-		topic = m.topics[m.selectedTopic].Name
-	}
-
 	return config.RecordingPresets{
-		RecordAudio:   m.recordAudio,
-		RecordWebcam:  m.recordWebcam,
-		RecordScreen:  m.recordScreen,
-		VerticalVideo: m.verticalVideo,
-		AddLogos:      m.addLogos,
-		Topic:         topic,
+		RecordAudio:   m.form.State.RecordAudio,
+		RecordWebcam:  m.form.State.RecordWebcam,
+		RecordScreen:  m.form.State.RecordScreen,
+		VerticalVideo: m.form.State.VerticalVideo,
+		AddLogos:      m.form.State.AddLogos,
+		Topic:         m.form.GetSelectedTopic().Name,
 	}
 }
 
@@ -731,497 +312,13 @@ func (m *RecordingSetupModel) SaveAllPresets() error {
 	return config.Save(cfg)
 }
 
-// View renders the recording setup form matching the history edit view styling
+// View renders the recording setup form
 func (m *RecordingSetupModel) View() string {
-	// Styles matching history edit view
-	labelStyle := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Width(16).
-		Align(lipgloss.Right)
+	header := RenderHeader("New Recording")
+	content := m.form.View()
+	footer := RenderHelpFooter("tab/↓: next • shift+tab/↑: prev • ←/→: select • enter: confirm • esc: back", m.width)
 
-	focusedLabelStyle := lipgloss.NewStyle().
-		Foreground(ColorOrange).
-		Bold(true).
-		Width(16).
-		Align(lipgloss.Right)
-
-	dividerStyle := lipgloss.NewStyle().
-		Foreground(ColorGray)
-
-	warningStyle := lipgloss.NewStyle().
-		Foreground(ColorOrange).
-		MarginLeft(18)
-
-	// Build form rows
-	var rows []string
-
-	// Title field
-	titleLabel := labelStyle.Render("Title:")
-	if m.focusedField == fieldTitle {
-		titleLabel = focusedLabelStyle.Render("Title:")
-		if m.inputMode {
-			titleLabel = focusedLabelStyle.Render("» Title:")
-		}
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		titleLabel,
-		"  ",
-		m.titleInput.View(),
-	))
-
-	// Title spell check warnings
-	if len(m.titleIssues) > 0 {
-		titleWarning := spellcheck.FormatIssues(m.titleIssues)
-		if titleWarning != "" {
-			rows = append(rows, warningStyle.Render("⚠ "+titleWarning))
-		}
-	}
-
-	// Number field
-	numberLabel := labelStyle.Render("Number:")
-	if m.focusedField == fieldNumber {
-		numberLabel = focusedLabelStyle.Render("Number:")
-		if m.inputMode {
-			numberLabel = focusedLabelStyle.Render("» Number:")
-		}
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		numberLabel,
-		"  ",
-		m.numberInput.View(),
-	))
-
-	// Topic selector
-	topicLabel := labelStyle.Render("Topic:")
-	if m.focusedField == fieldTopic {
-		topicLabel = focusedLabelStyle.Render("Topic:")
-	}
-	var topicOptions []string
-	for i, topic := range m.topics {
-		topicStyle := lipgloss.NewStyle().
-			Padding(0, 1).
-			Margin(0, 1)
-
-		if i == m.selectedTopic {
-			if m.focusedField == fieldTopic {
-				topicStyle = topicStyle.
-					Background(ColorOrange).
-					Foreground(lipgloss.Color("#000000")).
-					Bold(true)
-			} else {
-				topicStyle = topicStyle.
-					Background(ColorGray).
-					Foreground(ColorWhite)
-			}
-		} else {
-			topicStyle = topicStyle.
-				Foreground(ColorGray)
-		}
-		topicOptions = append(topicOptions, topicStyle.Render(topic.Name))
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		topicLabel,
-		"  ",
-		lipgloss.JoinHorizontal(lipgloss.Center, topicOptions...),
-	))
-
-	// Divider - Recording Options
-	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 50)))
-	rows = append(rows, "")
-
-	// Record Audio toggle
-	audioLabel := labelStyle.Render("Record Audio:")
-	if m.focusedField == fieldRecordAudio {
-		audioLabel = focusedLabelStyle.Render("Record Audio:")
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		audioLabel,
-		"  ",
-		m.renderToggle(m.recordAudio, m.focusedField == fieldRecordAudio),
-	))
-
-	// Record Webcam toggle
-	webcamLabel := labelStyle.Render("Record Webcam:")
-	if m.focusedField == fieldRecordWebcam {
-		webcamLabel = focusedLabelStyle.Render("Record Webcam:")
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		webcamLabel,
-		"  ",
-		m.renderToggle(m.recordWebcam, m.focusedField == fieldRecordWebcam),
-	))
-
-	// Record Screen toggle
-	screenLabel := labelStyle.Render("Record Screen:")
-	if m.focusedField == fieldRecordScreen {
-		screenLabel = focusedLabelStyle.Render("Record Screen:")
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		screenLabel,
-		"  ",
-		m.renderToggle(m.recordScreen, m.focusedField == fieldRecordScreen),
-	))
-
-	// Monitor selector (only if screen recording enabled)
-	if m.recordScreen && len(m.monitors) > 0 {
-		monitorLabel := labelStyle.Render("Monitor:")
-		if m.focusedField == fieldMonitor {
-			monitorLabel = focusedLabelStyle.Render("Monitor:")
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-			monitorLabel,
-			"  ",
-			m.renderMonitorSelector(),
-		))
-	}
-
-	// Divider - Output Options
-	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 50)))
-	rows = append(rows, "")
-
-	// Vertical Video toggle
-	verticalLabel := labelStyle.Render("Vertical Video:")
-	if m.focusedField == fieldVerticalVideo {
-		verticalLabel = focusedLabelStyle.Render("Vertical Video:")
-	}
-	verticalDisabled := !m.canEnableVerticalVideo()
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		verticalLabel,
-		"  ",
-		m.renderToggleWithDisabled(m.verticalVideo, m.focusedField == fieldVerticalVideo, verticalDisabled),
-	))
-
-	// Add Logos toggle
-	logosLabel := labelStyle.Render("Add Logos:")
-	if m.focusedField == fieldAddLogos {
-		logosLabel = focusedLabelStyle.Render("Add Logos:")
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		logosLabel,
-		"  ",
-		m.renderToggle(m.addLogos, m.focusedField == fieldAddLogos),
-	))
-
-	// Logo selection fields (only show if addLogos is enabled)
-	if m.addLogos {
-		// Logo size hints
-		hintStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).MarginLeft(18)
-		rows = append(rows, hintStyle.Render("Logos: 216x216px • Banner: 1080x200px"))
-
-		leftLabel := labelStyle.Render("Left Logo:")
-		if m.focusedField == fieldLeftLogo {
-			leftLabel = focusedLabelStyle.Render("Left Logo:")
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-			leftLabel,
-			"  ",
-			m.renderLogoSelector(m.selectedLeftIdx, m.focusedField == fieldLeftLogo),
-		))
-
-		rightLabel := labelStyle.Render("Right Logo:")
-		if m.focusedField == fieldRightLogo {
-			rightLabel = focusedLabelStyle.Render("Right Logo:")
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-			rightLabel,
-			"  ",
-			m.renderLogoSelector(m.selectedRightIdx, m.focusedField == fieldRightLogo),
-		))
-
-		bottomLabel := labelStyle.Render("Bottom Banner:")
-		if m.focusedField == fieldBottomLogo {
-			bottomLabel = focusedLabelStyle.Render("Bottom Banner:")
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-			bottomLabel,
-			"  ",
-			m.renderLogoSelector(m.selectedBottomIdx, m.focusedField == fieldBottomLogo),
-		))
-
-		colorLabel := labelStyle.Render("Title Color:")
-		if m.focusedField == fieldTitleColor {
-			colorLabel = focusedLabelStyle.Render("Title Color:")
-		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-			colorLabel,
-			"  ",
-			m.renderColorSelector(m.focusedField == fieldTitleColor),
-		))
-
-		// Only show GIF loop mode if bottom logo is a GIF
-		if m.isBottomLogoGif() {
-			gifLabel := labelStyle.Render("GIF Animation:")
-			if m.focusedField == fieldGifLoopMode {
-				gifLabel = focusedLabelStyle.Render("GIF Animation:")
-			}
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-				gifLabel,
-				"  ",
-				m.renderGifLoopSelector(m.focusedField == fieldGifLoopMode),
-			))
-		}
-	}
-
-	// Divider - Description
-	rows = append(rows, "")
-	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 50)))
-	rows = append(rows, "")
-
-	// Description field
-	descLabel := labelStyle.Render("Description:")
-	if m.focusedField == fieldDescription {
-		descLabel = focusedLabelStyle.Render("Description:")
-		if m.inputMode {
-			descLabel = focusedLabelStyle.Render("» Description:")
-		}
-	}
-	rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-		descLabel,
-		"  ",
-		m.descInput.View(),
-	))
-
-	// Description spell check warnings (limit to 3)
-	if len(m.descIssues) > 0 {
-		maxIssues := 3
-		issuesToShow := m.descIssues
-		extraCount := 0
-		if len(issuesToShow) > maxIssues {
-			extraCount = len(issuesToShow) - maxIssues
-			issuesToShow = issuesToShow[:maxIssues]
-		}
-		descWarning := spellcheck.FormatIssues(issuesToShow)
-		if descWarning != "" {
-			if extraCount > 0 {
-				descWarning += fmt.Sprintf(" ... and %d more issues", extraCount)
-			}
-			rows = append(rows, warningStyle.Render("⚠ "+descWarning))
-		}
-	}
-
-	// Spacer before buttons
-	rows = append(rows, "")
-
-	// Confirm buttons
-	rows = append(rows, m.renderConfirmButtons())
-
-	// Return just the form content - app.go handles header/footer/centering
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
-}
-
-// renderConfirmButtons renders the action buttons at the bottom of the form
-func (m *RecordingSetupModel) renderConfirmButtons() string {
-	hasSource := m.hasRecordingSource()
-	hasTitle := strings.TrimSpace(m.titleInput.Value()) != ""
-	canGoLive := hasSource && hasTitle
-
-	var goLive, cancel string
-
-	if m.focusedField == fieldConfirm {
-		if m.confirmSelected {
-			if canGoLive {
-				goLive = lipgloss.NewStyle().
-					Background(ColorOrange).
-					Foreground(lipgloss.Color("#000")).
-					Bold(true).
-					Padding(0, 3).
-					Render("Go Live!")
-			} else {
-				goLive = lipgloss.NewStyle().
-					Background(ColorGray).
-					Foreground(lipgloss.Color("#666")).
-					Padding(0, 3).
-					Render("Go Live!")
-			}
-			cancel = lipgloss.NewStyle().
-				Foreground(ColorGray).
-				Padding(0, 3).
-				Render("Cancel")
-		} else {
-			if canGoLive {
-				goLive = lipgloss.NewStyle().
-					Foreground(ColorGray).
-					Padding(0, 3).
-					Render("Go Live!")
-			} else {
-				goLive = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#666")).
-					Padding(0, 3).
-					Render("Go Live!")
-			}
-			cancel = lipgloss.NewStyle().
-				Background(ColorGray).
-				Foreground(ColorWhite).
-				Bold(true).
-				Padding(0, 3).
-				Render("Cancel")
-		}
-	} else {
-		if canGoLive {
-			goLive = lipgloss.NewStyle().
-				Foreground(ColorGray).
-				Padding(0, 3).
-				Render("Go Live!")
-		} else {
-			goLive = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#666")).
-				Padding(0, 3).
-				Render("Go Live!")
-		}
-		cancel = lipgloss.NewStyle().
-			Foreground(ColorGray).
-			Padding(0, 3).
-			Render("Cancel")
-	}
-
-	buttons := fmt.Sprintf("%s    %s", goLive, cancel)
-	buttonRow := lipgloss.NewStyle().Width(62).Align(lipgloss.Center).Render(buttons)
-
-	// Show validation warnings
-	var warnings []string
-	if !hasTitle {
-		warnings = append(warnings, "Title is required")
-	}
-	if !hasSource {
-		warnings = append(warnings, "Enable at least one recording source")
-	}
-
-	if len(warnings) > 0 {
-		warningStyle := lipgloss.NewStyle().
-			Foreground(ColorRed).
-			Italic(true).
-			Align(lipgloss.Center).
-			Width(62)
-		warningText := warningStyle.Render(strings.Join(warnings, " • "))
-		return lipgloss.JoinVertical(lipgloss.Center, buttonRow, warningText)
-	}
-
-	return buttonRow
-}
-
-func (m *RecordingSetupModel) renderRow(field int, label, widget string, labelStyle, labelFocusedStyle, widgetStyle lipgloss.Style) string {
-	ls := labelStyle
-	if m.focusedField == field {
-		ls = labelFocusedStyle
-		// Show input mode indicator for text fields
-		if m.inputMode && m.isTextField() {
-			label = "» " + label
-		}
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Center, ls.Render(label), widgetStyle.Render(widget))
-}
-
-func (m *RecordingSetupModel) renderToggle(value bool, focused bool) string {
-	return m.renderToggleWithDisabled(value, focused, false)
-}
-
-func (m *RecordingSetupModel) renderToggleWithDisabled(value bool, focused bool, disabled bool) string {
-	var yes, no string
-
-	if disabled {
-		// Disabled state - show dimmed
-		yes = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Padding(0, 1).Render("Yes")
-		no = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Padding(0, 1).Render("No")
-		return fmt.Sprintf("%s  %s  (disabled)", yes, no)
-	}
-
-	if focused {
-		if value {
-			yes = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000")).Bold(true).Padding(0, 1).Render("Yes")
-			no = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 1).Render("No")
-		} else {
-			yes = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 1).Render("Yes")
-			no = lipgloss.NewStyle().Background(ColorOrange).Foreground(lipgloss.Color("#000")).Bold(true).Padding(0, 1).Render("No")
-		}
-	} else {
-		if value {
-			yes = lipgloss.NewStyle().Foreground(ColorGreen).Bold(true).Padding(0, 1).Render("Yes")
-			no = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 1).Render("No")
-		} else {
-			yes = lipgloss.NewStyle().Foreground(ColorGray).Padding(0, 1).Render("Yes")
-			no = lipgloss.NewStyle().Foreground(ColorRed).Bold(true).Padding(0, 1).Render("No")
-		}
-	}
-
-	return fmt.Sprintf("%s  %s", yes, no)
-}
-
-func (m *RecordingSetupModel) renderSelector(topics []models.Topic, selected int, getName func(models.Topic) string, focused bool) string {
-	if len(topics) == 0 {
-		return lipgloss.NewStyle().Foreground(ColorGray).Render("(none)")
-	}
-
-	name := getName(topics[selected])
-
-	if focused {
-		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
-	}
-	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
-}
-
-func (m *RecordingSetupModel) renderMonitorSelector() string {
-	if len(m.monitors) == 0 {
-		return lipgloss.NewStyle().Foreground(ColorGray).Render("(none)")
-	}
-
-	mon := m.monitors[m.selectedMonitor]
-	name := fmt.Sprintf("%s (%dx%d)", mon.Name, mon.Width, mon.Height)
-
-	if m.focusedField == fieldMonitor {
-		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
-	}
-	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
-}
-
-func (m *RecordingSetupModel) renderLogoSelector(selectedIdx int, focused bool) string {
-	if len(m.availableLogos) == 0 {
-		return lipgloss.NewStyle().Foreground(ColorGray).Render("(no logos)")
-	}
-
-	name := m.availableLogos[selectedIdx]
-
-	if focused {
-		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
-	}
-	if name == "(none)" {
-		return lipgloss.NewStyle().Foreground(ColorGray).Render(name)
-	}
-	return lipgloss.NewStyle().Foreground(ColorWhite).Render(name)
-}
-
-func (m *RecordingSetupModel) renderColorSelector(focused bool) string {
-	name := m.titleColor
-
-	// Create a color preview block - use the actual color for the block
-	// Handle both hex colors (#rrggbb) and named colors
-	colorBlock := "██"
-	var previewStyle lipgloss.Style
-	if strings.HasPrefix(m.titleColor, "#") {
-		previewStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(m.titleColor))
-	} else {
-		// Named colors - map to lipgloss colors
-		previewStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(m.titleColor))
-	}
-	preview := previewStyle.Render(colorBlock)
-
-	if focused {
-		return fmt.Sprintf("◀ %s %s ▶", preview, lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(name))
-	}
-	return fmt.Sprintf("%s %s", preview, lipgloss.NewStyle().Foreground(ColorWhite).Render(name))
-}
-
-func (m *RecordingSetupModel) renderGifLoopSelector(focused bool) string {
-	label := config.GifLoopModeLabels[m.gifLoopMode]
-	if label == "" {
-		label = string(m.gifLoopMode)
-	}
-
-	if focused {
-		return fmt.Sprintf("◀ %s ▶", lipgloss.NewStyle().Foreground(ColorOrange).Bold(true).Render(label))
-	}
-	return lipgloss.NewStyle().Foreground(ColorWhite).Render(label)
+	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
 }
 
 type recordingSetupCompleteMsg struct{}
