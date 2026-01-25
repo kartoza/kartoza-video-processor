@@ -5,6 +5,23 @@ All notable changes to Kartoza Screencaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] - 2026-01-25
+
+### Added
+
+#### Version Display in Header
+- Version number now shown in header bar: "Kartoza Video Processor vX.X.X - Page Title"
+- Development builds show next version with -dev suffix (e.g., 0.7.5-dev)
+
+### Changed
+
+#### Desktop Integration Improvements
+- Desktop launcher now starts in systray mode (`kartoza-screencaster systray`)
+- Custom application icon (icon_ready.svg) replaces generic video icon
+- Terminal=false since systray mode runs in background
+- All packaging formats updated: Nix flake, Debian, RPM, Snap, Flatpak
+- Icons installed to hicolor theme (`share/icons/hicolor/scalable/apps/`)
+
 ## [0.7.3] - 2026-01-25
 
 ### Fixed

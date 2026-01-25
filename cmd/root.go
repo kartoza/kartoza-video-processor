@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	version   = "0.7.4-dev"
+	version   = "0.7.5-dev"
 	debugMode bool
 	dataDir   string
 	noSplash  bool

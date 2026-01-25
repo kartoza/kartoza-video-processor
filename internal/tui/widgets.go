@@ -43,7 +43,7 @@ var GlobalAppState = &AppState{
 	TotalRecordings: 0,
 	Status:          "Ready",
 	BlinkOn:         true,
-	Version:         "0.7.4-dev",
+	Version:         "0.7.5-dev",
 }
 
 // ========================================
