@@ -41,6 +41,22 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version: $VERSION"
 
+      - name: Install CGO dependencies for Linux systray
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc \
+            pkg-config \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libxxf86vm-dev
+
       - name: Build binaries
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -49,19 +65,19 @@ jobs:
 
           LDFLAGS="-s -w -X main.version=${VERSION}"
 
-          echo "Building linux-amd64..."
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-linux-amd64 .
+          echo "Building linux-amd64 (with CGO for systray support)..."
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-linux-amd64 .
 
-          echo "Building linux-arm64..."
+          echo "Building linux-arm64 (no systray - CGO cross-compile not supported)..."
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-linux-arm64 .
 
-          echo "Building darwin-amd64..."
+          echo "Building darwin-amd64 (no systray - CGO cross-compile not supported)..."
           GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-darwin-amd64 .
 
-          echo "Building darwin-arm64..."
+          echo "Building darwin-arm64 (no systray - CGO cross-compile not supported)..."
           GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-darwin-arm64 .
 
-          echo "Building windows-amd64..."
+          echo "Building windows-amd64 (no systray - CGO cross-compile not supported)..."
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o release/kartoza-screencaster-windows-amd64.exe .
 
       - name: Create tarballs
@@ -122,12 +138,24 @@ jobs:
 
       - name: Build Debian package
         run: |
-          # Install build dependencies
+          # Install build dependencies (including CGO deps for systray)
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev
+          sudo apt-get install -y \
+            dpkg-dev \
+            gcc \
+            pkg-config \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libxxf86vm-dev
 
-          # Build binary
-          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-screencaster .
+          # Build binary with CGO for systray support
+          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-screencaster .
 
           # Create package structure
           mkdir -p dpkg/DEBIAN
@@ -144,7 +172,7 @@ jobs:
           Section: video
           Priority: optional
           Architecture: amd64
-          Depends: ffmpeg, pipewire | pulseaudio
+          Depends: ffmpeg, pipewire | pulseaudio, libgtk-3-0, libayatana-appindicator3-1
           Recommends: wl-clipboard, libnotify-bin
           Suggests: v4l-utils
           Maintainer: Tim Sutton <tim@kartoza.com>
@@ -217,12 +245,24 @@ jobs:
 
       - name: Build RPM package
         run: |
-          # Install build dependencies
+          # Install build dependencies (including CGO deps for systray)
           sudo apt-get update
-          sudo apt-get install -y rpm
+          sudo apt-get install -y \
+            rpm \
+            gcc \
+            pkg-config \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libxxf86vm-dev
 
-          # Build binary
-          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-screencaster .
+          # Build binary with CGO for systray support
+          CGO_ENABLED=1 go build -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o kartoza-screencaster .
 
           # Create RPM build structure
           mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
@@ -242,6 +282,8 @@ jobs:
 
           Requires:       ffmpeg
           Requires:       pipewire
+          Requires:       gtk3
+          Requires:       libayatana-appindicator-gtk3
           Recommends:     wl-clipboard
           Recommends:     libnotify
 

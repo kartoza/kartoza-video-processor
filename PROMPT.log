@@ -1077,3 +1077,24 @@ this project repo is poorly named - please rename this folder and the gh repo to
 lets commit and push these changes then update ../nix-config to poiunt the flake input to the new repo url
 make a new release with all packages and push to github
 verify that the cgo bindings are working for systray support - i am getting errors when I try to use this flake from /home/dev/nix/nix-config
+
+**Summary:** Fixed CGO bindings for systray support:
+1. Updated flake.nix:
+   - Split into mkCrossPackage (CGO_ENABLED=0) and mkNativePackage (CGO_ENABLED=1)
+   - Default package on Linux now uses CGO build with systray support
+   - Added GTK3, glib, libayatana-appindicator dependencies
+   - Added linux-native package for explicit CGO build
+   - Added proxyVendor and vendorHash for reproducible builds
+2. Updated CI release.yml:
+   - Linux amd64 binary now built with CGO_ENABLED=1 for systray
+   - Added apt packages for GTK3/AppIndicator build deps
+   - Debian package includes libgtk-3-0, libayatana-appindicator3-1 as deps
+   - RPM package includes gtk3, libayatana-appindicator-gtk3 as deps
+   - Other platforms (darwin, windows, linux-arm64) still use CGO_ENABLED=0
+
+will the binaries with systray support for other platforms be built in ci?
+
+**Response:** No - cross-compilation with CGO requires platform-specific toolchains. Options:
+1. Linux-only CGO (chosen) - simplest
+2. Native runners per platform - more CI minutes
+3. Cross-compile toolchains (zig/osxcross/mingw) - complex
