@@ -880,7 +880,7 @@ func (m *YouTubeUploadModel) renderPrompt() string {
 		textStyle.Render("Video: "+videoName),
 		textStyle.Render("Title: "+m.title),
 		"",
-		lipgloss.NewStyle().Foreground(ColorGray).Render("Press Y to upload, N to skip"),
+		lipgloss.NewStyle().Foreground(ColorGray).Render("y: upload • n: skip"),
 		"",
 		errorLine,
 	)
@@ -1175,7 +1175,7 @@ func (m *YouTubeUploadModel) renderComplete() string {
 		"",
 		playlistInfo,
 		"",
-		lipgloss.NewStyle().Foreground(ColorGray).Render("Press Enter to continue"),
+		lipgloss.NewStyle().Foreground(ColorGray).Render("enter: continue"),
 	)
 }
 
@@ -1190,7 +1190,7 @@ func (m *YouTubeUploadModel) renderError() string {
 		"",
 		lipgloss.NewStyle().Foreground(ColorWhite).Render(m.errorMessage),
 		"",
-		lipgloss.NewStyle().Foreground(ColorGray).Render("Press Enter to continue, or R to retry"),
+		lipgloss.NewStyle().Foreground(ColorGray).Render("enter: continue • r: retry"),
 	)
 }
 

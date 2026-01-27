@@ -151,12 +151,41 @@ The application automatically:
 <li>Finalizes raw recordings</li>
 <li>Normalizes audio levels</li>
 <li>Merges video and audio</li>
-<li>Adds logo overlays (if enabled)</li>
-<li>Creates vertical version (if enabled)</li>
+<li>Adds logo/banner overlays to merged video (if enabled) — visible for the first 15 seconds</li>
+<li>Creates vertical version (if enabled) with logos, banner, and title in the lower third</li>
 <li>Saves metadata</li>
 </ol>
 </div>
 </div>
+
+### Logo & Banner Placement
+
+When **Add Logos** is enabled, branding overlays are applied to both merged and vertical video outputs.
+
+#### Merged Video (Landscape)
+
+Logo and banner overlays appear for the **first 15 seconds** of the video, then fade out:
+
+- **Left logo** — scaled to 1/8 of the video width, positioned at the top-left corner
+- **Right logo** — scaled to 1/8 of the video width, positioned at the top-right corner
+- **Banner** — scaled to 1/2 of the video width, positioned at the bottom-left corner
+
+#### Vertical Video (1080×1920)
+
+The vertical video is divided into three zones:
+
+| Zone | Position | Content |
+|------|----------|---------|
+| Top third | 0–640px | Screen recording (scaled to 1080px width) |
+| Middle third | 640–1280px | Webcam feed (scaled to fit) |
+| Bottom third | 1280–1920px | Colored background with branding (configurable in Options) |
+
+The bottom third contains:
+
+- **Left logo** — scaled to 360px width, top-left of the branding zone
+- **Right logo** — scaled to 360px width, top-right of the branding zone
+- **Banner** — scaled to full 1080px width, centered above the title
+- **Title text** — centered below the banner
 
 ---
 
@@ -209,6 +238,68 @@ For professional videos:
 5. Select monitor
 6. Add description
 7. Press "Go Live"
+
+## Systray Quick-Record
+
+The system tray icon provides a streamlined recording workflow without the full setup screen.
+
+### First-Run Flow
+
+```mermaid
+graph TD
+    A[Click systray icon] -->|First time| B{Presets configured?}
+    B -->|No| C[Open TUI to Recording Presets]
+    C -->|Save| D[TUI auto-closes]
+    D --> E[Click systray icon again]
+    B -->|Yes| F[5-second countdown with beeps]
+    E --> F
+    F --> G[Start recording]
+```
+
+1. **First recording attempt**: If you haven't configured recording presets, clicking the systray icon opens the TUI directly to the Recording Presets section in Options.
+2. **Configure presets**: Toggle Audio, Webcam, Screen, Vertical Video, and Logos as desired, then press Save.
+3. **Auto-close**: The TUI closes automatically after saving.
+4. **Subsequent recordings**: Click the systray icon to begin a 5-second countdown. During the countdown, audible beeps play and the systray icon displays the current countdown number (5, 4, 3, 2, 1). Recording starts automatically when the countdown reaches zero.
+5. **Cancel countdown**: Click the systray icon again during the countdown to cancel it and return to idle.
+
+You can change your presets at any time through the Options screen in the full TUI.
+
+### Stopping a Recording
+
+When you stop a recording from the systray (single click while recording), the TUI opens directly to the recording detail edit page so you can fill in the title, description, presenter and topic. The recording is saved with a "needs metadata" status until you complete this step.
+
+### Processing Screen
+
+After processing completes, the processing screen displays the standard header and footer. The footer shows keyboard shortcuts to preview your recording output:
+
+- **v**: Play the vertical video
+- **m**: Play the merged video
+- **a**: Play the audio
+- **o**: Open the project folder in the file manager
+
+These are the same shortcuts used in the recording detail view in Recording History.
+
+### CLI Presets Mode
+
+You can also open the presets configuration directly from the command line:
+
+```bash
+kartoza-screencaster --presets
+```
+
+This opens the TUI focused on the Recording Presets section and auto-closes after saving. This is the same mode used by the systray first-run detection.
+
+### CLI Edit Recording Mode
+
+To open the TUI directly to edit the latest recording that needs metadata:
+
+```bash
+kartoza-screencaster --edit-recording
+```
+
+This is the mode used by the systray after stopping a recording.
+
+---
 
 ## Troubleshooting
 

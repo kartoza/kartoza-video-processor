@@ -184,6 +184,20 @@ Specifies the folder containing logo images for video overlays.
 
 ---
 
+### Background Color
+
+<span class="t-blue">**Background:**</span> *Color Selector*
+
+Sets the background color for the lower third branding area in vertical videos. Use ++left++ / ++right++ or ++enter++ / ++space++ to cycle through available colors.
+
+**Available Colors:**
+
+`white` (default) · `black` · `#62A4C7` · `yellow` · `orange` · `red` · `green` · `blue` · `cyan` · `magenta`
+
+This color is saved per-recording so that reprocessing uses the same setting.
+
+---
+
 ### YouTube Integration
 
 <span class="t-blue">**YouTube:**</span> *Status / Configuration*
@@ -202,11 +216,35 @@ Press ++enter++ on **[ Configure YouTube ]** to open the [YouTube Setup](youtube
 
 ---
 
+### Recording Presets
+
+<span class="t-header">**Recording Presets**</span>
+
+Configures the default recording settings used by systray quick-record. These toggles control which recording sources and features are enabled when starting a recording from the system tray icon.
+
+| Toggle | Description |
+|--------|-------------|
+| **Audio** | Record microphone audio |
+| **Webcam** | Record webcam for picture-in-picture |
+| **Screen** | Record monitor screen capture |
+| **Vertical** | Create vertical (9:16) version (requires webcam or screen) |
+| **Logos** | Add logo overlays to the recording |
+
+Each toggle shows **Yes** (green/orange when focused) or **No** (gray/orange when focused). Press ++enter++ or ++space++ to toggle.
+
+!!! note "Vertical Video Constraint"
+    The "Vertical" toggle is disabled (greyed out) when both Webcam and Screen are turned off, since vertical video requires at least one video source.
+
+!!! info "Systray First-Run"
+    The first time you attempt to start a recording from the system tray, the application opens directly to this section so you can configure your preferred defaults before recording. After saving, the TUI automatically closes and subsequent systray recordings use your saved presets.
+
+---
+
 ### Save Button
 
 <span class="t-green">**[ Save ]**</span>
 
-Saves all configuration changes to disk.
+Saves all configuration changes to disk, including recording presets.
 
 **Configuration File Location:**
 
@@ -221,7 +259,7 @@ Saves all configuration changes to disk.
 | ++tab++ / ++down++ | Next field |
 | ++shift+tab++ / ++up++ | Previous field |
 | ++j++ / ++k++ | Navigate topic list |
-| ++enter++ / ++space++ | Select / Confirm / Browse |
+| ++enter++ / ++space++ | Select / Confirm / Toggle |
 | ++c++ | Clear/reset directory (on media folder or logo directory) |
 | ++d++ / ++delete++ / ++backspace++ | Remove selected topic |
 | ++esc++ | Cancel / Back |
@@ -234,9 +272,15 @@ Saves all configuration changes to disk.
 4. Remove button
 5. Default presenter input
 6. Logo directory browse
-7. YouTube setup
-8. Syndication setup
-9. Save button
+7. Background color selector
+8. YouTube setup
+9. Syndication setup
+10. Preset: Record Audio
+11. Preset: Record Webcam
+12. Preset: Record Screen
+13. Preset: Vertical Video
+14. Preset: Add Logos
+15. Save button
 
 ## Configuration File
 
@@ -253,6 +297,7 @@ Settings are stored in JSON format:
   ],
   "default_presenter": "Tim Sketcher",
   "logo_directory": "/home/user/Pictures/logos",
+  "bg_color": "white",
   "recording_presets": {
     "record_audio": true,
     "record_webcam": true,
@@ -260,6 +305,7 @@ Settings are stored in JSON format:
     "vertical_video": true,
     "add_logos": true
   },
+  "presets_configured": true,
   "youtube": {
     "client_id": "...",
     "client_secret": "..."
@@ -275,6 +321,8 @@ Settings are stored in JSON format:
 This screen is accessed from:
 
 - **[Main Menu](main-menu.md)** → Select "Options"
+- **System tray** → First recording attempt (opens directly to Recording Presets)
+- **CLI** → `kartoza-screencaster --presets` (opens directly to Recording Presets)
 
 From here you can navigate to:
 

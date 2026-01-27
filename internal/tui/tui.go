@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kartoza/kartoza-screencaster/internal/beep"
 	"github.com/kartoza/kartoza-screencaster/internal/deps"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/monitor"
@@ -166,7 +167,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateCountdown
 				m.countdownNum = 5
 				// Play first beep
-				go playBeep(5)
+				go beep.Play(5)
 				return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
 					return countdownTickMsg{}
 				})
@@ -215,7 +216,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Play beep for counts 5-1 (not for 0/GO)
 		if m.countdownNum > 0 {
-			go playBeep(m.countdownNum)
+			go beep.Play(m.countdownNum)
 		}
 
 		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
@@ -300,7 +301,7 @@ func (m Model) View() string {
 
 	// Show processing screen if in processing state
 	if m.state == stateProcessing {
-		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame, m.processingBtn, false)
+		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame, m.processingBtn, false, nil)
 	}
 
 	// Update global app state for header
@@ -323,7 +324,7 @@ func (m Model) View() string {
 	content := m.renderContent(cursorMonitor)
 
 	// Render footer
-	helpText := "space - toggle recording | q - quit | ? - help"
+	helpText := "space: toggle recording • q: quit • ?: help"
 	footer := RenderHelpFooter(helpText, m.width)
 
 	// Use standard layout
@@ -382,7 +383,7 @@ func (m Model) renderCountdownView() string {
 	// Add cancel hint
 	hintStyle := lipgloss.NewStyle().
 		Foreground(ColorGray)
-	hint := hintStyle.Render("Press ESC to cancel")
+	hint := hintStyle.Render("esc: cancel")
 
 	// Combine content
 	content := lipgloss.JoinVertical(
@@ -594,7 +595,7 @@ func (m Model) stopAndProcess() tea.Cmd {
 }
 
 // Run starts the TUI application with optional splash screens
-func Run(noSplash bool) error {
+func Run(noSplash bool, presetsMode bool, editRecordingMode bool) error {
 	// Check for required dependencies before starting
 	missing := deps.MissingRequired()
 	if len(missing) > 0 {
@@ -602,20 +603,31 @@ func Run(noSplash bool) error {
 		return showDependencyError(missing, noSplash)
 	}
 
+	// Skip splashes for special modes
+	skipSplash := noSplash || presetsMode || editRecordingMode
+
 	// Show entry splash screen (3 seconds, skippable with any key)
-	if !noSplash {
+	if !skipSplash {
 		if err := ShowSplashScreen(3 * time.Second); err != nil {
 			// Ignore splash errors, continue to main app
 			_ = err
 		}
 	}
 
-	// Run main application with new AppModel
-	p := tea.NewProgram(NewAppModel(), tea.WithAltScreen())
+	// Run main application with appropriate model
+	var model tea.Model
+	if presetsMode {
+		model = NewAppModelWithPresets()
+	} else if editRecordingMode {
+		model = NewAppModelWithEditRecording()
+	} else {
+		model = NewAppModel()
+	}
+	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()
 
 	// Show exit splash screen (2 seconds, skippable with any key)
-	if !noSplash {
+	if !skipSplash {
 		if exitErr := ShowExitSplashScreen(2 * time.Second); exitErr != nil {
 			// Ignore splash errors
 			_ = exitErr

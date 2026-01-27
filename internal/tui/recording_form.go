@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kartoza/kartoza-screencaster/internal/config"
@@ -175,24 +176,45 @@ func NewRecordingFormState(mode RecordingFormMode) *RecordingFormState {
 
 // RecordingForm is the shared form component
 type RecordingForm struct {
-	Config *RecordingFormConfig
-	State  *RecordingFormState
-	width  int
-	height int
+	Config   *RecordingFormConfig
+	State    *RecordingFormState
+	viewport viewport.Model
+	width    int
+	height   int
+	ready    bool // viewport initialized
+
+	// Track line positions for auto-scroll
+	fieldLinePositions map[RecordingFormField]int
 }
 
 // NewRecordingForm creates a new recording form
 func NewRecordingForm(cfg *RecordingFormConfig) *RecordingForm {
+	vp := viewport.New(70, 20) // Default size, will be updated by SetSize
+	vp.Style = lipgloss.NewStyle()
+
 	return &RecordingForm{
-		Config: cfg,
-		State:  NewRecordingFormState(cfg.Mode),
+		Config:             cfg,
+		State:              NewRecordingFormState(cfg.Mode),
+		viewport:           vp,
+		fieldLinePositions: make(map[RecordingFormField]int),
 	}
 }
 
-// SetSize updates the form dimensions
+// SetSize updates the form dimensions and viewport
 func (f *RecordingForm) SetSize(width, height int) {
 	f.width = width
 	f.height = height
+
+	// Calculate viewport height (leave room for scroll indicators)
+	// The form is rendered inside a container, so we use a fixed content width
+	viewportHeight := height
+	if viewportHeight < 10 {
+		viewportHeight = 10
+	}
+
+	f.viewport.Width = 72  // Form container width + some padding
+	f.viewport.Height = viewportHeight
+	f.ready = true
 }
 
 // Focus focuses the title input
@@ -213,6 +235,7 @@ func (f *RecordingForm) Blur() {
 // Update handles input for the form
 func (f *RecordingForm) Update(msg tea.Msg) (*RecordingForm, tea.Cmd) {
 	var cmd tea.Cmd
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -226,6 +249,7 @@ func (f *RecordingForm) Update(msg tea.Msg) (*RecordingForm, tea.Cmd) {
 						f.State.InputMode = false
 						f.State.DescInput.Blur()
 						f.nextField()
+						f.scrollToFocusedField()
 					} else {
 						f.State.DescInput, cmd = f.State.DescInput.Update(msg)
 						f.State.DescIssues = f.State.SpellChecker.Check(f.State.DescInput.Value())
@@ -234,6 +258,7 @@ func (f *RecordingForm) Update(msg tea.Msg) (*RecordingForm, tea.Cmd) {
 					f.State.InputMode = false
 					f.blurCurrentInput()
 					f.nextField()
+					f.scrollToFocusedField()
 				}
 				return f, cmd
 			case "esc":
@@ -251,8 +276,10 @@ func (f *RecordingForm) Update(msg tea.Msg) (*RecordingForm, tea.Cmd) {
 		switch msg.String() {
 		case "tab", "down", "j":
 			f.nextField()
+			f.scrollToFocusedField()
 		case "shift+tab", "up", "k":
 			f.prevField()
+			f.scrollToFocusedField()
 		case "left", "h":
 			f.handleLeftRight(-1)
 		case "right", "l":
@@ -267,10 +294,48 @@ func (f *RecordingForm) Update(msg tea.Msg) (*RecordingForm, tea.Cmd) {
 			if f.Config.Mode == FormModeEditExisting && f.Config.OnConfirm != nil {
 				f.Config.OnConfirm()
 			}
+		case "pgup", "ctrl+u":
+			f.viewport.ViewUp()
+		case "pgdown", "ctrl+d":
+			f.viewport.ViewDown()
 		}
+
+	case tea.MouseMsg:
+		// Handle mouse wheel scrolling
+		f.viewport, cmd = f.viewport.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 
+	if len(cmds) > 0 {
+		return f, tea.Batch(cmds...)
+	}
 	return f, cmd
+}
+
+// scrollToFocusedField scrolls the viewport to ensure the focused field is visible
+func (f *RecordingForm) scrollToFocusedField() {
+	if !f.ready {
+		return
+	}
+
+	linePos, ok := f.fieldLinePositions[f.State.FocusedField]
+	if !ok {
+		return
+	}
+
+	// Add some padding so the field isn't right at the edge
+	padding := 2
+	viewTop := f.viewport.YOffset
+	viewBottom := viewTop + f.viewport.Height
+
+	// If field is above visible area, scroll up
+	if linePos < viewTop+padding {
+		f.viewport.SetYOffset(linePos - padding)
+	}
+	// If field is below visible area, scroll down
+	if linePos > viewBottom-padding-3 { // -3 for field height
+		f.viewport.SetYOffset(linePos - f.viewport.Height + padding + 5)
+	}
 }
 
 func (f *RecordingForm) updateFocusedInput(msg tea.Msg) tea.Cmd {
@@ -740,21 +805,10 @@ func (f *RecordingForm) View() string {
 		rows = append(rows, infoRow)
 		rows = append(rows, "")
 
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-			labelStyle.Render("Folder:"),
-			"  ",
-			infoStyle.Render(f.Config.FolderName),
-		))
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-			labelStyle.Render("Date:"),
-			"  ",
-			infoStyle.Render(f.Config.Date),
-		))
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-			labelStyle.Render("Duration:"),
-			"  ",
-			infoStyle.Render(f.Config.Duration),
-		))
+		// Show folder, date, and duration on a single line
+		infoLine := fmt.Sprintf("%s  •  %s  •  %s", f.Config.FolderName, f.Config.Date, f.Config.Duration)
+		infoLineRow := lipgloss.NewStyle().Align(lipgloss.Center).Width(62).Render(infoStyle.Render(infoLine))
+		rows = append(rows, infoLineRow)
 
 		rows = append(rows, "")
 		rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
@@ -768,6 +822,7 @@ func (f *RecordingForm) View() string {
 	rows = append(rows, "")
 
 	// Title field
+	f.fieldLinePositions[FormFieldTitle] = len(rows)
 	titleLabel := labelStyle.Render("Title:")
 	if f.State.FocusedField == FormFieldTitle {
 		titleLabel = focusedLabelStyle.Render("Title:")
@@ -791,6 +846,7 @@ func (f *RecordingForm) View() string {
 
 	// Number field (new recording only)
 	if f.Config.Mode == FormModeNewRecording {
+		f.fieldLinePositions[FormFieldNumber] = len(rows)
 		numberLabel := labelStyle.Render("Number:")
 		if f.State.FocusedField == FormFieldNumber {
 			numberLabel = focusedLabelStyle.Render("Number:")
@@ -806,6 +862,7 @@ func (f *RecordingForm) View() string {
 	}
 
 	// Topic selector
+	f.fieldLinePositions[FormFieldTopic] = len(rows)
 	topicLabel := labelStyle.Render("Topic:")
 	if f.State.FocusedField == FormFieldTopic {
 		topicLabel = focusedLabelStyle.Render("Topic:")
@@ -840,6 +897,7 @@ func (f *RecordingForm) View() string {
 	))
 
 	// Presenter field
+	f.fieldLinePositions[FormFieldPresenter] = len(rows)
 	presenterLabel := labelStyle.Render("Presenter:")
 	if f.State.FocusedField == FormFieldPresenter {
 		presenterLabel = focusedLabelStyle.Render("Presenter:")
@@ -864,6 +922,7 @@ func (f *RecordingForm) View() string {
 	rows = append(rows, "")
 
 	// Audio toggle
+	f.fieldLinePositions[FormFieldRecordAudio] = len(rows)
 	audioLabel := labelStyle.Render("Record Audio:")
 	if f.State.FocusedField == FormFieldRecordAudio {
 		audioLabel = focusedLabelStyle.Render("Record Audio:")
@@ -875,6 +934,7 @@ func (f *RecordingForm) View() string {
 	))
 
 	// Webcam toggle
+	f.fieldLinePositions[FormFieldRecordWebcam] = len(rows)
 	webcamLabel := labelStyle.Render("Record Webcam:")
 	if f.State.FocusedField == FormFieldRecordWebcam {
 		webcamLabel = focusedLabelStyle.Render("Record Webcam:")
@@ -886,6 +946,7 @@ func (f *RecordingForm) View() string {
 	))
 
 	// Screen toggle
+	f.fieldLinePositions[FormFieldRecordScreen] = len(rows)
 	screenLabel := labelStyle.Render("Record Screen:")
 	if f.State.FocusedField == FormFieldRecordScreen {
 		screenLabel = focusedLabelStyle.Render("Record Screen:")
@@ -898,6 +959,7 @@ func (f *RecordingForm) View() string {
 
 	// Monitor selector
 	if f.State.RecordScreen && len(f.Config.Monitors) > 0 {
+		f.fieldLinePositions[FormFieldMonitor] = len(rows)
 		monitorLabel := labelStyle.Render("Monitor:")
 		if f.State.FocusedField == FormFieldMonitor {
 			monitorLabel = focusedLabelStyle.Render("Monitor:")
@@ -920,6 +982,7 @@ func (f *RecordingForm) View() string {
 	rows = append(rows, "")
 
 	// Vertical Video toggle
+	f.fieldLinePositions[FormFieldVerticalVideo] = len(rows)
 	verticalLabel := labelStyle.Render("Vertical Video:")
 	if f.State.FocusedField == FormFieldVerticalVideo {
 		verticalLabel = focusedLabelStyle.Render("Vertical Video:")
@@ -932,6 +995,7 @@ func (f *RecordingForm) View() string {
 	))
 
 	// Add Logos toggle
+	f.fieldLinePositions[FormFieldAddLogos] = len(rows)
 	logosLabel := labelStyle.Render("Add Logos:")
 	if f.State.FocusedField == FormFieldAddLogos {
 		logosLabel = focusedLabelStyle.Render("Add Logos:")
@@ -947,6 +1011,7 @@ func (f *RecordingForm) View() string {
 		hintStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true).MarginLeft(18)
 		rows = append(rows, hintStyle.Render("Logos: 216x216px • Banner: 1080x200px"))
 
+		f.fieldLinePositions[FormFieldLeftLogo] = len(rows)
 		leftLabel := labelStyle.Render("Left Logo:")
 		if f.State.FocusedField == FormFieldLeftLogo {
 			leftLabel = focusedLabelStyle.Render("Left Logo:")
@@ -957,6 +1022,7 @@ func (f *RecordingForm) View() string {
 			f.renderLogoSelector(f.State.SelectedLeftIdx, f.State.FocusedField == FormFieldLeftLogo),
 		))
 
+		f.fieldLinePositions[FormFieldRightLogo] = len(rows)
 		rightLabel := labelStyle.Render("Right Logo:")
 		if f.State.FocusedField == FormFieldRightLogo {
 			rightLabel = focusedLabelStyle.Render("Right Logo:")
@@ -967,6 +1033,7 @@ func (f *RecordingForm) View() string {
 			f.renderLogoSelector(f.State.SelectedRightIdx, f.State.FocusedField == FormFieldRightLogo),
 		))
 
+		f.fieldLinePositions[FormFieldBottomLogo] = len(rows)
 		bottomLabel := labelStyle.Render("Bottom Banner:")
 		if f.State.FocusedField == FormFieldBottomLogo {
 			bottomLabel = focusedLabelStyle.Render("Bottom Banner:")
@@ -977,6 +1044,7 @@ func (f *RecordingForm) View() string {
 			f.renderLogoSelector(f.State.SelectedBottomIdx, f.State.FocusedField == FormFieldBottomLogo),
 		))
 
+		f.fieldLinePositions[FormFieldTitleColor] = len(rows)
 		colorLabel := labelStyle.Render("Title Color:")
 		if f.State.FocusedField == FormFieldTitleColor {
 			colorLabel = focusedLabelStyle.Render("Title Color:")
@@ -988,6 +1056,7 @@ func (f *RecordingForm) View() string {
 		))
 
 		if f.isBottomLogoGif() {
+			f.fieldLinePositions[FormFieldGifLoopMode] = len(rows)
 			gifLabel := labelStyle.Render("GIF Animation:")
 			if f.State.FocusedField == FormFieldGifLoopMode {
 				gifLabel = focusedLabelStyle.Render("GIF Animation:")
@@ -1005,6 +1074,7 @@ func (f *RecordingForm) View() string {
 	rows = append(rows, dividerStyle.Render(strings.Repeat("─", 62)))
 	rows = append(rows, "")
 
+	f.fieldLinePositions[FormFieldDescription] = len(rows)
 	descHeaderText := "📄 Description"
 	descHeaderStyle := sectionStyle
 	if f.State.FocusedField == FormFieldDescription {
@@ -1077,10 +1147,57 @@ func (f *RecordingForm) View() string {
 	// Confirm buttons (new recording only)
 	if f.Config.Mode == FormModeNewRecording {
 		rows = append(rows, "")
+		f.fieldLinePositions[FormFieldConfirm] = len(rows)
 		rows = append(rows, f.renderConfirmButtons())
 	}
 
-	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
+	// Join all rows into form content
+	formContent := lipgloss.JoinVertical(lipgloss.Left, rows...)
+
+	// Wrap in container
+	content := containerStyle.Render(formContent)
+
+	// If viewport is ready and content is tall, use scrolling
+	if f.ready && f.height > 0 {
+		contentLines := strings.Split(content, "\n")
+		totalLines := len(contentLines)
+
+		// Check if scrolling is needed
+		if totalLines > f.viewport.Height {
+			f.viewport.SetContent(content)
+
+			// Build output with scroll indicators
+			var output strings.Builder
+
+			// Scroll up indicator
+			if f.viewport.YOffset > 0 {
+				scrollUpStyle := lipgloss.NewStyle().
+					Foreground(ColorOrange).
+					Bold(true).
+					Width(72).
+					Align(lipgloss.Center)
+				output.WriteString(scrollUpStyle.Render("▲ more above (pgup/ctrl+u)"))
+				output.WriteString("\n")
+			}
+
+			// Viewport content
+			output.WriteString(f.viewport.View())
+
+			// Scroll down indicator
+			if f.viewport.YOffset < totalLines-f.viewport.Height {
+				scrollDownStyle := lipgloss.NewStyle().
+					Foreground(ColorOrange).
+					Bold(true).
+					Width(72).
+					Align(lipgloss.Center)
+				output.WriteString("\n")
+				output.WriteString(scrollDownStyle.Render("▼ more below (pgdn/ctrl+d)"))
+			}
+
+			return output.String()
+		}
+	}
+
 	return content
 }
 

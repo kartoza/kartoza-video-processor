@@ -4,9 +4,11 @@ package systray
 
 import (
 	"bytes"
+	"image/color"
 	_ "embed"
 	"fmt"
 	"image"
+	"image/draw"
 	"image/png"
 	"math"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"fyne.io/systray"
+	"github.com/kartoza/kartoza-screencaster/internal/beep"
 	"github.com/kartoza/kartoza-screencaster/internal/config"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/recorder"
@@ -38,6 +41,7 @@ const (
 	StateRecording
 	StatePaused
 	StateProcessing
+	StateCountdown
 )
 
 // RecordingInfo contains details about the current recording for tooltip display
@@ -91,6 +95,13 @@ type Manager struct {
 
 	// Double-click detection
 	lastClickTime time.Time
+
+	// Countdown icons (digits 1-5 overlaid on ready icon)
+	countdownIcons [6][]byte // index 1-5 = digit icons, 0 unused
+
+	// Countdown cancellation
+	cancelCountdown chan struct{}
+	isCountingDown  bool
 }
 
 // New creates a new systray manager
@@ -144,6 +155,17 @@ func (m *Manager) loadAndPrepareIcons() {
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, img); err == nil {
 			m.iconPaused = buf.Bytes()
+		}
+	}
+
+	// Generate countdown digit icons (1-5) by overlaying digits on the ready icon
+	if readyImg, err := png.Decode(bytes.NewReader(iconReadyData)); err == nil {
+		for digit := 1; digit <= 5; digit++ {
+			digitIcon := renderDigitOverlay(readyImg, digit)
+			var buf bytes.Buffer
+			if err := png.Encode(&buf, digitIcon); err == nil {
+				m.countdownIcons[digit] = buf.Bytes()
+			}
 		}
 	}
 }
@@ -252,6 +274,12 @@ func (m *Manager) OnReady() {
 		isDoubleClick := now.Sub(m.lastClickTime) < 400*time.Millisecond
 		m.lastClickTime = now
 
+		// If counting down, cancel on any click
+		if m.isCountingDown {
+			m.CancelCountdown()
+			return
+		}
+
 		status := m.recorder.GetStatus()
 
 		if isDoubleClick && (status.IsRecording || status.IsPaused) {
@@ -273,7 +301,7 @@ func (m *Manager) OnReady() {
 			default:
 			}
 		} else {
-			// Single click while idle: start recording
+			// Single click while idle: start recording with countdown
 			select {
 			case m.startChan <- struct{}{}:
 			default:
@@ -311,6 +339,11 @@ func (m *Manager) handleClicks() {
 	for {
 		select {
 		case <-m.mStartStop.ClickedCh:
+			// If counting down, cancel
+			if m.isCountingDown {
+				m.CancelCountdown()
+				continue
+			}
 			status := m.recorder.GetStatus()
 			if status.IsRecording || status.IsPaused {
 				// Stop recording
@@ -319,7 +352,7 @@ func (m *Manager) handleClicks() {
 				default:
 				}
 			} else {
-				// Start recording
+				// Start recording with countdown
 				select {
 				case m.startChan <- struct{}{}:
 				default:
@@ -377,6 +410,11 @@ func (m *Manager) stopStatusPolling() {
 
 // updateStatus updates the tray based on current recording status
 func (m *Manager) updateStatus() {
+	// Don't update status during countdown - the countdown goroutine manages state
+	if m.isCountingDown {
+		return
+	}
+
 	status := m.recorder.GetStatus()
 
 	// Check if status changed
@@ -554,6 +592,265 @@ func (m *Manager) stopIconRotation() {
 	}
 }
 
+// renderDigitOverlay creates an icon with a large digit rendered over a dimmed version of the base icon
+func renderDigitOverlay(base image.Image, digit int) image.Image {
+	bounds := base.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+
+	// Draw dimmed base icon
+	draw.Draw(dst, dst.Bounds(), base, bounds.Min, draw.Src)
+
+	// Dim the base icon to ~40% opacity by blending with dark background
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			r, g, b, a := dst.At(x, y).RGBA()
+			// Dim to 40%
+			dst.Set(x, y, color.RGBA{
+				R: uint8((r >> 8) * 40 / 100),
+				G: uint8((g >> 8) * 40 / 100),
+				B: uint8((b >> 8) * 40 / 100),
+				A: uint8(a >> 8),
+			})
+		}
+	}
+
+	// Render digit using a simple bitmap font
+	// For a ~57x60 icon, we want digits that fill most of the space
+	digitBitmap := getDigitBitmap(digit)
+	if digitBitmap == nil {
+		return dst
+	}
+
+	// Calculate the size of the digit bitmap
+	bitmapH := len(digitBitmap)
+	bitmapW := 0
+	if bitmapH > 0 {
+		bitmapW = len(digitBitmap[0])
+	}
+
+	// Center the digit on the icon
+	offsetX := (w - bitmapW) / 2
+	offsetY := (h - bitmapH) / 2
+
+	// Choose color based on digit (orange for 5,4; dark orange for 3,2; red for 1)
+	var digitColor color.RGBA
+	switch digit {
+	case 5, 4:
+		digitColor = color.RGBA{R: 255, G: 165, B: 0, A: 255} // Orange
+	case 3, 2:
+		digitColor = color.RGBA{R: 255, G: 140, B: 0, A: 255} // Dark orange
+	case 1:
+		digitColor = color.RGBA{R: 255, G: 50, B: 50, A: 255} // Red
+	default:
+		digitColor = color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	}
+
+	// Draw the digit
+	for row := 0; row < bitmapH; row++ {
+		for col := 0; col < bitmapW; col++ {
+			if digitBitmap[row][col] {
+				px := offsetX + col
+				py := offsetY + row
+				if px >= 0 && px < w && py >= 0 && py < h {
+					dst.Set(px, py, digitColor)
+				}
+			}
+		}
+	}
+
+	return dst
+}
+
+// getDigitBitmap returns a boolean bitmap for a digit (1-5)
+// Each bitmap is designed for ~57x60 pixel icons
+// Uses ASCII '#' for filled pixels, ' ' for empty - avoids multi-byte rune issues
+func getDigitBitmap(digit int) [][]bool {
+	// Block-style digits, 24 wide x 19 tall
+	patterns := map[int][]string{
+		5: {
+			"########################",
+			"########################",
+			"########################",
+			"####                    ",
+			"####                    ",
+			"####                    ",
+			"####                    ",
+			"####                    ",
+			"########################",
+			"########################",
+			"########################",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"########################",
+			"########################",
+			"########################",
+		},
+		4: {
+			"####                ####",
+			"####                ####",
+			"####                ####",
+			"####                ####",
+			"####                ####",
+			"####                ####",
+			"####                ####",
+			"####                ####",
+			"########################",
+			"########################",
+			"########################",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+		},
+		3: {
+			"########################",
+			"########################",
+			"########################",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"########################",
+			"########################",
+			"########################",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"########################",
+			"########################",
+			"########################",
+		},
+		2: {
+			"########################",
+			"########################",
+			"########################",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"                    ####",
+			"########################",
+			"########################",
+			"########################",
+			"####                    ",
+			"####                    ",
+			"####                    ",
+			"####                    ",
+			"####                    ",
+			"########################",
+			"########################",
+			"########################",
+		},
+		1: {
+			"        ########        ",
+			"        ########        ",
+			"    ############        ",
+			"    ############        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"        ########        ",
+			"    ################    ",
+			"    ################    ",
+			"    ################    ",
+		},
+	}
+
+	pattern, ok := patterns[digit]
+	if !ok {
+		return nil
+	}
+
+	bitmap := make([][]bool, len(pattern))
+	for i, row := range pattern {
+		bitmap[i] = make([]bool, len(row))
+		for j, ch := range row {
+			bitmap[i][j] = ch != ' '
+		}
+	}
+
+	return bitmap
+}
+
+// StartRecordingWithCountdown starts recording after a 5-second countdown with beeps and icon updates
+func (m *Manager) StartRecordingWithCountdown() error {
+	if m.recorder.IsRecording() {
+		return fmt.Errorf("recording already in progress")
+	}
+
+	if m.isCountingDown {
+		return fmt.Errorf("countdown already in progress")
+	}
+
+	m.isCountingDown = true
+	m.cancelCountdown = make(chan struct{})
+	m.currentState = StateCountdown
+
+	go func() {
+		defer func() {
+			m.isCountingDown = false
+		}()
+
+		// Countdown from 5 to 1
+		for count := 5; count >= 1; count-- {
+			// Set countdown icon
+			if count >= 1 && count <= 5 && m.countdownIcons[count] != nil {
+				systray.SetIcon(m.countdownIcons[count])
+			}
+			systray.SetTooltip(fmt.Sprintf("Recording starts in %d...", count))
+			m.mStatus.SetTitle(fmt.Sprintf("Starting in %d...", count))
+
+			// Play beep
+			go beep.Play(count)
+
+			// Wait 1 second or cancel
+			select {
+			case <-m.cancelCountdown:
+				// Cancelled - restore idle state
+				m.SetIdle()
+				return
+			case <-time.After(1 * time.Second):
+				// Continue countdown
+			}
+		}
+
+		// Countdown finished - start recording
+		if err := m.StartRecording(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to start recording: %v\n", err)
+			m.SetIdle()
+		}
+	}()
+
+	return nil
+}
+
+// CancelCountdown cancels an in-progress countdown
+func (m *Manager) CancelCountdown() {
+	if m.isCountingDown && m.cancelCountdown != nil {
+		close(m.cancelCountdown)
+	}
+}
+
 // StartRecording starts a quick recording without metadata
 func (m *Manager) StartRecording() error {
 	if m.recorder.IsRecording() {
@@ -564,6 +861,11 @@ func (m *Manager) StartRecording() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// First-run check: if presets haven't been configured, open TUI to presets
+	if !cfg.PresetsConfigured {
+		return m.OpenTUIToPresets()
 	}
 
 	baseDir := cfg.OutputDir
@@ -587,13 +889,8 @@ func (m *Manager) StartRecording() error {
 		FolderName:  tempFolderName,
 	}
 
-	// Get recording presets - use defaults if user hasn't saved any yet
+	// Get recording presets
 	presets := cfg.RecordingPresets
-	presetsExist := presets.RecordAudio || presets.RecordWebcam ||
-		presets.RecordScreen || presets.VerticalVideo || presets.AddLogos
-	if !presetsExist {
-		presets = config.DefaultRecordingPresets()
-	}
 
 	recordingInfo := models.NewRecordingInfo(metadata, "", "")
 	recordingInfo.Files.FolderPath = outputDir
@@ -658,24 +955,45 @@ func (m *Manager) PauseRecording() error {
 	return fmt.Errorf("no recording to pause/resume")
 }
 
-// OpenTUI opens the TUI for metadata entry
+// OpenTUI opens the TUI for metadata entry, going directly to the recording edit screen
 func (m *Manager) OpenTUI() error {
-	// Launch the TUI in a new terminal
-	// Try different terminal emulators
+	return m.openTUIWithArgs("--edit-recording", "--nosplash")
+}
+
+// OpenTUIMain opens the normal TUI (main menu)
+func (m *Manager) OpenTUIMain() error {
+	return m.openTUIWithArgs()
+}
+
+// openTUIWithArgs launches the TUI in a terminal with the given extra arguments
+func (m *Manager) openTUIWithArgs(extraArgs ...string) error {
+	baseArgs := []string{"kartoza-screencaster"}
+	baseArgs = append(baseArgs, extraArgs...)
+
 	terminals := []struct {
-		cmd  string
-		args []string
+		cmd     string
+		argsFmt func(args []string) []string
 	}{
-		{"foot", []string{"--title=Kartoza Screencaster", "-e", "kartoza-screencaster"}},
-		{"kitty", []string{"--title=Kartoza Screencaster", "kartoza-screencaster"}},
-		{"alacritty", []string{"--title", "Kartoza Screencaster", "-e", "kartoza-screencaster"}},
-		{"gnome-terminal", []string{"--title=Kartoza Screencaster", "--", "kartoza-screencaster"}},
-		{"xterm", []string{"-T", "Kartoza Screencaster", "-e", "kartoza-screencaster"}},
+		{"foot", func(args []string) []string {
+			return append([]string{"--title=Kartoza Screencaster", "-e"}, args...)
+		}},
+		{"kitty", func(args []string) []string {
+			return append([]string{"--title=Kartoza Screencaster"}, args...)
+		}},
+		{"alacritty", func(args []string) []string {
+			return append([]string{"--title", "Kartoza Screencaster", "-e"}, args...)
+		}},
+		{"gnome-terminal", func(args []string) []string {
+			return append([]string{"--title=Kartoza Screencaster", "--"}, args...)
+		}},
+		{"xterm", func(args []string) []string {
+			return append([]string{"-T", "Kartoza Screencaster", "-e"}, args...)
+		}},
 	}
 
 	for _, term := range terminals {
 		if _, err := exec.LookPath(term.cmd); err == nil {
-			cmd := exec.Command(term.cmd, term.args...)
+			cmd := exec.Command(term.cmd, term.argsFmt(baseArgs)...)
 			cmd.Stdin = nil
 			cmd.Stdout = nil
 			cmd.Stderr = nil
@@ -684,6 +1002,11 @@ func (m *Manager) OpenTUI() error {
 	}
 
 	return fmt.Errorf("no supported terminal emulator found")
+}
+
+// OpenTUIToPresets opens the TUI directly to the recording presets configuration
+func (m *Manager) OpenTUIToPresets() error {
+	return m.openTUIWithArgs("--presets")
 }
 
 // formatDuration formats a duration as HH:MM:SS or MM:SS
@@ -715,7 +1038,7 @@ func RunWithHandler() {
 	for {
 		select {
 		case <-manager.StartChan():
-			if err := manager.StartRecording(); err != nil {
+			if err := manager.StartRecordingWithCountdown(); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to start recording: %v\n", err)
 			}
 		case <-manager.StopChan():
@@ -732,7 +1055,7 @@ func RunWithHandler() {
 				fmt.Fprintf(os.Stderr, "Failed to pause/resume: %v\n", err)
 			}
 		case <-manager.TUIChan():
-			if err := manager.OpenTUI(); err != nil {
+			if err := manager.OpenTUIMain(); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to open TUI: %v\n", err)
 			}
 		case <-manager.QuitChan():

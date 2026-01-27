@@ -42,10 +42,14 @@ func (m *Manager) SetRecordingActive(string, time.Time) {}
 func (m *Manager) SetRecordingPaused()               {}
 func (m *Manager) SetIdle()                          {}
 func (m *Manager) SetProcessing()                    {}
-func (m *Manager) StartRecording() error             { return fmt.Errorf("systray not available: built without CGO") }
-func (m *Manager) StopRecording() error              { return fmt.Errorf("systray not available: built without CGO") }
-func (m *Manager) PauseRecording() error             { return fmt.Errorf("systray not available: built without CGO") }
-func (m *Manager) OpenTUI() error                    { return fmt.Errorf("systray not available: built without CGO") }
+func (m *Manager) StartRecording() error              { return fmt.Errorf("systray not available: built without CGO") }
+func (m *Manager) StartRecordingWithCountdown() error { return fmt.Errorf("systray not available: built without CGO") }
+func (m *Manager) CancelCountdown()                   {}
+func (m *Manager) StopRecording() error               { return fmt.Errorf("systray not available: built without CGO") }
+func (m *Manager) PauseRecording() error              { return fmt.Errorf("systray not available: built without CGO") }
+func (m *Manager) OpenTUI() error                     { return fmt.Errorf("systray not available: built without CGO") }
+func (m *Manager) OpenTUIMain() error                  { return fmt.Errorf("systray not available: built without CGO") }
+func (m *Manager) OpenTUIToPresets() error             { return fmt.Errorf("systray not available: built without CGO") }
 
 func Run() {
 	fmt.Println("System tray not available: this build was compiled without CGO support.")

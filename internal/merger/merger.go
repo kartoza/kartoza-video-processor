@@ -148,6 +148,7 @@ type MergeOptions struct {
 	CompanyLogo    string             // Path to company logo (lower third)
 	VideoTitle     string             // Title for lower third overlay
 	TitleColor     string             // Color for title text (e.g., "white", "black", "yellow")
+	BgColor        string             // Background color for vertical video lower third
 	GifLoopMode    config.GifLoopMode // How to loop animated GIFs
 	OutputDir      string             // Directory for output files
 
@@ -162,6 +163,7 @@ type MergeResult struct {
 	MergedFile       string
 	VerticalFile     string
 	NormalizeApplied bool
+	VerticalError    error // Non-nil if vertical video creation was attempted but failed
 }
 
 // concatenateParts concatenates multiple video or audio parts into a single file
@@ -361,19 +363,19 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 	case hasVideo && hasAudio:
 		// Standard merge: video + audio
 		_ = notify.ProcessingStep("Merging video and audio...")
-		mergeErr = m.mergeVideoAudio(opts.VideoFile, normalizedAudio, outputFile)
+		mergeErr = m.mergeVideoAudio(opts.VideoFile, normalizedAudio, outputFile, &opts)
 	case hasVideo && !hasAudio:
 		// Video only: copy/re-encode video without audio
 		_ = notify.ProcessingStep("Processing video (no audio)...")
-		mergeErr = m.processVideoOnly(opts.VideoFile, outputFile)
+		mergeErr = m.processVideoOnly(opts.VideoFile, outputFile, &opts)
 	case !hasVideo && hasWebcam && hasAudio:
 		// Webcam + audio only (no screen video)
 		_ = notify.ProcessingStep("Merging webcam and audio...")
-		mergeErr = m.mergeVideoAudio(opts.WebcamFile, normalizedAudio, outputFile)
+		mergeErr = m.mergeVideoAudio(opts.WebcamFile, normalizedAudio, outputFile, &opts)
 	case !hasVideo && hasWebcam && !hasAudio:
 		// Webcam only: copy/re-encode webcam without audio
 		_ = notify.ProcessingStep("Processing webcam video (no audio)...")
-		mergeErr = m.processVideoOnly(opts.WebcamFile, outputFile)
+		mergeErr = m.processVideoOnly(opts.WebcamFile, outputFile, &opts)
 	}
 
 	if mergeErr != nil {
@@ -398,6 +400,7 @@ func (m *Merger) Merge(opts MergeOptions) (*MergeResult, error) {
 		}
 
 		if verticalErr != nil {
+			result.VerticalError = verticalErr
 			m.reportProgress(StepCreatingVertical, true, true, verticalErr)
 			_ = notify.Warning("Vertical Video Warning", "Failed to create vertical video")
 		} else {
@@ -421,10 +424,37 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// processVideoOnly re-encodes a video file without audio
-func (m *Merger) processVideoOnly(videoFile, outputFile string) error {
+// processVideoOnly re-encodes a video file without audio, optionally with logo overlays
+func (m *Merger) processVideoOnly(videoFile, outputFile string, opts *MergeOptions) error {
 	durationUs := getVideoDurationUs(videoFile)
 
+	// Check if we need logo overlays
+	hasLogos := opts != nil && opts.AddLogos && opts.OutputDir != ""
+	if hasLogos {
+		videoWidth, _, _ := webcam.GetVideoInfo(videoFile)
+		if videoWidth > 0 {
+			inputs := []string{"-y", "-i", videoFile}
+			setup, inputs := m.prepareMergedLogos(opts, inputs, 1) // logos start at input 1
+
+			if setup.logo1Path != "" || setup.logo2Path != "" || setup.bannerPath != "" {
+				filter := buildMergedOverlayFilter(setup, videoWidth)
+				args := append(inputs,
+					"-filter_complex", filter,
+					"-map", "[outv]",
+					"-c:v", "libx264",
+					"-preset", "medium",
+					"-crf", "18",
+					"-r", "30",
+					"-pix_fmt", "yuv420p",
+					"-an",
+					outputFile,
+				)
+				return m.runFFmpegWithProgress(StepMerging, durationUs, args...)
+			}
+		}
+	}
+
+	// Simple re-encode without overlays
 	args := []string{
 		"-y",
 		"-i", videoFile,
@@ -439,14 +469,40 @@ func (m *Merger) processVideoOnly(videoFile, outputFile string) error {
 	return m.runFFmpegWithProgress(StepMerging, durationUs, args...)
 }
 
-// mergeVideoAudio merges video and audio using ffmpeg
-func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string) error {
-	// Get video duration for progress calculation
+// mergeVideoAudio merges video and audio using ffmpeg, optionally with logo overlays
+func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string, opts *MergeOptions) error {
 	durationUs := getVideoDurationUs(videoFile)
 
-	// CRF 18 = high quality, preset medium = good speed/quality balance
-	// 30fps for smaller files and faster encoding
-	// AAC at 320k for highest audio quality
+	// Check if we need logo overlays
+	hasLogos := opts != nil && opts.AddLogos && opts.OutputDir != ""
+	if hasLogos {
+		videoWidth, _, _ := webcam.GetVideoInfo(videoFile)
+		if videoWidth > 0 {
+			inputs := []string{"-y", "-i", videoFile, "-i", audioFile}
+			setup, inputs := m.prepareMergedLogos(opts, inputs, 2) // logos start at input 2
+
+			if setup.logo1Path != "" || setup.logo2Path != "" || setup.bannerPath != "" {
+				filter := buildMergedOverlayFilter(setup, videoWidth)
+				args := append(inputs,
+					"-filter_complex", filter,
+					"-map", "[outv]",
+					"-map", "1:a",
+					"-c:v", "libx264",
+					"-preset", "medium",
+					"-crf", "18",
+					"-r", "30",
+					"-pix_fmt", "yuv420p",
+					"-c:a", "aac",
+					"-b:a", "320k",
+					"-shortest",
+					outputFile,
+				)
+				return m.runFFmpegWithProgress(StepMerging, durationUs, args...)
+			}
+		}
+	}
+
+	// Simple merge without overlays
 	args := []string{
 		"-y",
 		"-i", videoFile,
@@ -470,199 +526,37 @@ const (
 	YouTubeShortsHeight = 1920
 )
 
-// createVerticalVideo creates a vertical video with webcam at the bottom
+// createVerticalVideo creates a vertical video with webcam and branding
+// Layout: screen (top) | webcam (middle) | white branding area (bottom third)
 // Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
 func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFile string, opts *MergeOptions) error {
 	_ = notify.ProcessingStep("Creating vertical video (1080x1920) with webcam...")
 
-	// Get screen video dimensions
-	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
+	filterComplex, inputs, err := m.buildVerticalFilterComplex(videoFile, webcamFile, opts, 3)
 	if err != nil {
-		return fmt.Errorf("failed to get screen dimensions: %w", err)
+		return err
 	}
-
-	// Get webcam dimensions
-	webcamWidth, webcamHeight, err := webcam.GetVideoInfo(webcamFile)
-	if err != nil {
-		return fmt.Errorf("failed to get webcam dimensions: %w", err)
-	}
-
-	// Calculate layout for 1080x1920 output
-	// Screen takes top portion, webcam takes bottom portion
-	// Scale screen to fit 1080 width while maintaining aspect ratio
-	scaledScreenWidth := YouTubeShortsWidth
-	scaledScreenHeight := screenHeight * YouTubeShortsWidth / screenWidth
-
-	// Calculate remaining height for webcam
-	remainingHeight := YouTubeShortsHeight - scaledScreenHeight
-
-	// Scale webcam to fit remaining space while maintaining aspect ratio
-	// First try fitting to width
-	scaledWebcamWidth := YouTubeShortsWidth
-	scaledWebcamHeight := webcamHeight * YouTubeShortsWidth / webcamWidth
-
-	// If webcam is too tall, scale to fit height instead
-	if scaledWebcamHeight > remainingHeight {
-		scaledWebcamHeight = remainingHeight
-		scaledWebcamWidth = webcamWidth * remainingHeight / webcamHeight
-	}
-
-	// Calculate padding needed to center webcam horizontally
-	webcamPadX := (YouTubeShortsWidth - scaledWebcamWidth) / 2
 
 	// Build inputs list
-	inputs := []string{"-y", "-i", videoFile, "-i", webcamFile, "-i", audioFile}
-
-	// Copy logos to output directory if needed
-	var logo1Path, logo2Path, companyLogoPath string
-	gifLoopMode := config.GifLoopContinuous // Default to continuous
-	if opts != nil && opts.GifLoopMode != "" {
-		gifLoopMode = opts.GifLoopMode
-	}
-	if opts != nil && opts.AddLogos && opts.OutputDir != "" {
-		if opts.ProductLogo1 != "" {
-			logo1Path = m.copyLogoToOutputDir(opts.ProductLogo1, opts.OutputDir, "product_logo_1")
-			if logo1Path != "" {
-				inputs = appendLogoInput(inputs, logo1Path, gifLoopMode)
-			}
-		}
-		if opts.ProductLogo2 != "" {
-			logo2Path = m.copyLogoToOutputDir(opts.ProductLogo2, opts.OutputDir, "product_logo_2")
-			if logo2Path != "" {
-				inputs = appendLogoInput(inputs, logo2Path, gifLoopMode)
-			}
-		}
-		if opts.CompanyLogo != "" {
-			companyLogoPath = m.copyLogoToOutputDir(opts.CompanyLogo, opts.OutputDir, "company_logo")
-			if companyLogoPath != "" {
-				inputs = appendLogoInput(inputs, companyLogoPath, gifLoopMode)
-			}
-		}
-	}
-
-	// Build filter complex for 1080x1920 output
-	// 1. Scale screen to fit width (1080)
-	// 2. Scale webcam to fit remaining height
-	// 3. Create black canvas of 1080x1920
-	// 4. Overlay screen at top
-	// 5. Overlay webcam at bottom (centered)
-	filterComplex := fmt.Sprintf(
-		// Scale screen video to 1080 width
-		"[0:v]scale=%d:%d:flags=lanczos[screen];"+
-			// Scale webcam to fit
-			"[1:v]scale=%d:%d:flags=lanczos[webcam];"+
-			// Create black background canvas
-			"color=black:size=%dx%d:duration=99999[bg];"+
-			// Overlay screen at top center
-			"[bg][screen]overlay=(W-w)/2:0[with_screen];"+
-			// Overlay webcam at bottom center
-			"[with_screen][webcam]overlay=%d:%d[stacked]",
-		scaledScreenWidth, scaledScreenHeight,
-		scaledWebcamWidth, scaledWebcamHeight,
-		YouTubeShortsWidth, YouTubeShortsHeight,
-		webcamPadX, scaledScreenHeight,
-	)
-
-	currentOutput := "[stacked]"
-	logoInputIndex := 3 // Start after video, webcam, audio
-
-	// Determine title color (default to white if not specified)
-	titleColor := "white"
-	if opts != nil && opts.TitleColor != "" {
-		titleColor = opts.TitleColor
-	}
-
-	// Add logo overlays if logos are provided
-	// Using eof_action=repeat ensures logos stay visible for the full video duration
-	// For GIFs, we add a white background using split and overlay to handle transparency
-	if logo1Path != "" {
-		// Product logo 1 in top-left of webcam area
-		logoY := scaledScreenHeight + 10 // Position in webcam area
-		if isGif(logo1Path) {
-			// For GIFs: create white background, then overlay the GIF on it
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo1_raw];"+
-					"[logo1_raw]split[logo1_a][logo1_b];"+
-					"[logo1_a]drawbox=c=white:t=fill[logo1_bg];"+
-					"[logo1_bg][logo1_b]overlay=0:0:format=auto[logo1];"+
-					"%s[logo1]overlay=10:%d:format=auto:eof_action=repeat[out1]",
-				logoInputIndex, currentOutput, logoY,
-			)
-		} else {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:eof_action=repeat[out1]",
-				logoInputIndex, currentOutput, logoY,
-			)
-		}
-		currentOutput = "[out1]"
-		logoInputIndex++
-	}
-
-	if logo2Path != "" {
-		// Product logo 2 in top-right of webcam area
-		logoY := scaledScreenHeight + 10
-		if isGif(logo2Path) {
-			// For GIFs: create white background, then overlay the GIF on it
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo2_raw];"+
-					"[logo2_raw]split[logo2_a][logo2_b];"+
-					"[logo2_a]drawbox=c=white:t=fill[logo2_bg];"+
-					"[logo2_bg][logo2_b]overlay=0:0:format=auto[logo2];"+
-					"%s[logo2]overlay=W-w-10:%d:format=auto:eof_action=repeat[out2]",
-				logoInputIndex, currentOutput, logoY,
-			)
-		} else {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:eof_action=repeat[out2]",
-				logoInputIndex, currentOutput, logoY,
-			)
-		}
-		currentOutput = "[out2]"
-		logoInputIndex++
-	}
-
-	if companyLogoPath != "" && opts != nil && opts.VideoTitle != "" {
-		// Company logo as lower third with title overlay
-		// Title text is horizontally centered using (w-text_w)/2
-		lowerThirdY := YouTubeShortsHeight - 100 // Position near bottom
-		if isGif(companyLogoPath) {
-			// For GIFs: create white background, then overlay the GIF on it
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=200:-1[complogo_raw];"+
-					"[complogo_raw]split[complogo_a][complogo_b];"+
-					"[complogo_a]drawbox=c=white:t=fill[complogo_bg];"+
-					"[complogo_bg][complogo_b]overlay=0:0:format=auto[complogo];"+
-					"%s[complogo]overlay=10:%d:format=auto:eof_action=repeat[out3];"+
-					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
-				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
-			)
-		} else {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:eof_action=repeat[out3];"+
-					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
-				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
-			)
-		}
-	} else {
-		filterComplex += fmt.Sprintf(";%s[outv]", currentOutput)
-	}
+	allInputs := []string{"-y", "-i", videoFile, "-i", webcamFile, "-i", audioFile}
+	allInputs = append(allInputs, inputs...)
 
 	// Get video duration for progress calculation and to set output duration
 	durationUs := getVideoDurationUs(videoFile)
 	durationSecs := float64(durationUs) / 1000000.0
 
-	args := append(inputs,
+	args := append(allInputs,
 		"-filter_complex", filterComplex,
 		"-map", "[outv]",
 		"-map", "2:a",
 		"-c:v", "libx264",
 		"-preset", "medium",
 		"-crf", "18",
-		"-r", "30", // 30fps for smaller files and faster encoding
+		"-r", "30",
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "320k",
-		"-t", fmt.Sprintf("%.3f", durationSecs), // Match screen recording duration
+		"-t", fmt.Sprintf("%.3f", durationSecs),
 		outputFile,
 	)
 
@@ -670,160 +564,24 @@ func (m *Merger) createVerticalVideo(videoFile, webcamFile, audioFile, outputFil
 }
 
 // createVerticalVideoNoAudio creates a vertical video with webcam but without audio
+// Layout: screen (top) | webcam (middle) | white branding area (bottom third)
 // Output is always 1080x1920 (9:16) for YouTube Shorts compatibility
 func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile string, opts *MergeOptions) error {
 	_ = notify.ProcessingStep("Creating vertical video (1080x1920) with webcam (no audio)...")
 
-	// Get screen video dimensions
-	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
+	filterComplex, inputs, err := m.buildVerticalFilterComplex(videoFile, webcamFile, opts, 2)
 	if err != nil {
-		return fmt.Errorf("failed to get screen dimensions: %w", err)
+		return err
 	}
-
-	// Get webcam dimensions
-	webcamWidth, webcamHeight, err := webcam.GetVideoInfo(webcamFile)
-	if err != nil {
-		return fmt.Errorf("failed to get webcam dimensions: %w", err)
-	}
-
-	// Calculate layout (same as createVerticalVideo)
-	scaledScreenWidth := YouTubeShortsWidth
-	scaledScreenHeight := screenHeight * YouTubeShortsWidth / screenWidth
-	remainingHeight := YouTubeShortsHeight - scaledScreenHeight
-	scaledWebcamWidth := YouTubeShortsWidth
-	scaledWebcamHeight := webcamHeight * YouTubeShortsWidth / webcamWidth
-
-	if scaledWebcamHeight > remainingHeight {
-		scaledWebcamHeight = remainingHeight
-		scaledWebcamWidth = webcamWidth * remainingHeight / webcamHeight
-	}
-
-	webcamPadX := (YouTubeShortsWidth - scaledWebcamWidth) / 2
 
 	// Build inputs list (no audio input)
-	inputs := []string{"-y", "-i", videoFile, "-i", webcamFile}
+	allInputs := []string{"-y", "-i", videoFile, "-i", webcamFile}
+	allInputs = append(allInputs, inputs...)
 
-	// Copy logos to output directory if needed
-	var logo1Path, logo2Path, companyLogoPath string
-	gifLoopMode := config.GifLoopContinuous // Default to continuous
-	if opts != nil && opts.GifLoopMode != "" {
-		gifLoopMode = opts.GifLoopMode
-	}
-	if opts != nil && opts.AddLogos && opts.OutputDir != "" {
-		if opts.ProductLogo1 != "" {
-			logo1Path = m.copyLogoToOutputDir(opts.ProductLogo1, opts.OutputDir, "product_logo_1")
-			if logo1Path != "" {
-				inputs = appendLogoInput(inputs, logo1Path, gifLoopMode)
-			}
-		}
-		if opts.ProductLogo2 != "" {
-			logo2Path = m.copyLogoToOutputDir(opts.ProductLogo2, opts.OutputDir, "product_logo_2")
-			if logo2Path != "" {
-				inputs = appendLogoInput(inputs, logo2Path, gifLoopMode)
-			}
-		}
-		if opts.CompanyLogo != "" {
-			companyLogoPath = m.copyLogoToOutputDir(opts.CompanyLogo, opts.OutputDir, "company_logo")
-			if companyLogoPath != "" {
-				inputs = appendLogoInput(inputs, companyLogoPath, gifLoopMode)
-			}
-		}
-	}
-
-	// Build filter complex (same as createVerticalVideo but without audio mapping)
-	filterComplex := fmt.Sprintf(
-		"[0:v]scale=%d:%d:flags=lanczos[screen];"+
-			"[1:v]scale=%d:%d:flags=lanczos[webcam];"+
-			"color=black:size=%dx%d:duration=99999[bg];"+
-			"[bg][screen]overlay=(W-w)/2:0[with_screen];"+
-			"[with_screen][webcam]overlay=%d:%d[stacked]",
-		scaledScreenWidth, scaledScreenHeight,
-		scaledWebcamWidth, scaledWebcamHeight,
-		YouTubeShortsWidth, YouTubeShortsHeight,
-		webcamPadX, scaledScreenHeight,
-	)
-
-	currentOutput := "[stacked]"
-	logoInputIndex := 2 // Start after video, webcam (no audio)
-
-	titleColor := "white"
-	if opts != nil && opts.TitleColor != "" {
-		titleColor = opts.TitleColor
-	}
-
-	// Add logo overlays (same logic as createVerticalVideo)
-	// Using eof_action=repeat ensures logos stay visible for the full video duration
-	if logo1Path != "" {
-		logoY := scaledScreenHeight + 10
-		if isGif(logo1Path) {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo1_raw];"+
-					"[logo1_raw]split[logo1_a][logo1_b];"+
-					"[logo1_a]drawbox=c=white:t=fill[logo1_bg];"+
-					"[logo1_bg][logo1_b]overlay=0:0:format=auto[logo1];"+
-					"%s[logo1]overlay=10:%d:format=auto:eof_action=repeat[out1]",
-				logoInputIndex, currentOutput, logoY,
-			)
-		} else {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo1];%s[logo1]overlay=10:%d:format=auto:eof_action=repeat[out1]",
-				logoInputIndex, currentOutput, logoY,
-			)
-		}
-		currentOutput = "[out1]"
-		logoInputIndex++
-	}
-
-	if logo2Path != "" {
-		logoY := scaledScreenHeight + 10
-		if isGif(logo2Path) {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo2_raw];"+
-					"[logo2_raw]split[logo2_a][logo2_b];"+
-					"[logo2_a]drawbox=c=white:t=fill[logo2_bg];"+
-					"[logo2_bg][logo2_b]overlay=0:0:format=auto[logo2];"+
-					"%s[logo2]overlay=W-w-10:%d:format=auto:eof_action=repeat[out2]",
-				logoInputIndex, currentOutput, logoY,
-			)
-		} else {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=iw/4:-1[logo2];%s[logo2]overlay=W-w-10:%d:format=auto:eof_action=repeat[out2]",
-				logoInputIndex, currentOutput, logoY,
-			)
-		}
-		currentOutput = "[out2]"
-		logoInputIndex++
-	}
-
-	if companyLogoPath != "" && opts != nil && opts.VideoTitle != "" {
-		lowerThirdY := YouTubeShortsHeight - 100
-		if isGif(companyLogoPath) {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=200:-1[complogo_raw];"+
-					"[complogo_raw]split[complogo_a][complogo_b];"+
-					"[complogo_a]drawbox=c=white:t=fill[complogo_bg];"+
-					"[complogo_bg][complogo_b]overlay=0:0:format=auto[complogo];"+
-					"%s[complogo]overlay=10:%d:format=auto:eof_action=repeat[out3];"+
-					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
-				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
-			)
-		} else {
-			filterComplex += fmt.Sprintf(
-				";[%d:v]scale=200:-1[complogo];%s[complogo]overlay=10:%d:format=auto:eof_action=repeat[out3];"+
-					"[out3]drawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
-				logoInputIndex, currentOutput, lowerThirdY, escapeFFmpegText(opts.VideoTitle), titleColor, lowerThirdY+30,
-			)
-		}
-	} else {
-		filterComplex += fmt.Sprintf(";%s[outv]", currentOutput)
-	}
-
-	// Get video duration for progress calculation and to set output duration
 	durationUs := getVideoDurationUs(videoFile)
 	durationSecs := float64(durationUs) / 1000000.0
 
-	// Build args without audio mapping
-	args := append(inputs,
+	args := append(allInputs,
 		"-filter_complex", filterComplex,
 		"-map", "[outv]",
 		"-c:v", "libx264",
@@ -831,12 +589,146 @@ func (m *Merger) createVerticalVideoNoAudio(videoFile, webcamFile, outputFile st
 		"-crf", "18",
 		"-r", "30",
 		"-pix_fmt", "yuv420p",
-		"-an", // No audio
-		"-t", fmt.Sprintf("%.3f", durationSecs), // Match screen recording duration
+		"-an",
+		"-t", fmt.Sprintf("%.3f", durationSecs),
 		outputFile,
 	)
 
 	return m.runFFmpegWithProgress(StepCreatingVertical, durationUs, args...)
+}
+
+// lowerThirdY is the Y coordinate where the bottom third starts in the vertical video
+const lowerThirdY = YouTubeShortsHeight * 2 / 3 // 1280
+
+// buildVerticalFilterComplex builds the shared FFmpeg filter_complex for vertical video.
+// Layout: screen (top third) | webcam (middle third) | white branding area (bottom third)
+// logoStartIndex is the FFmpeg input index where logo inputs begin (3 with audio, 2 without).
+// Returns: (filterComplex string, additional FFmpeg inputs for logos, error)
+func (m *Merger) buildVerticalFilterComplex(videoFile, webcamFile string, opts *MergeOptions, logoStartIndex int) (string, []string, error) {
+	// Get screen video dimensions
+	screenWidth, screenHeight, err := webcam.GetVideoInfo(videoFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get screen dimensions: %w", err)
+	}
+
+	// Get webcam dimensions
+	webcamWidth, webcamHeight, err := webcam.GetVideoInfo(webcamFile)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get webcam dimensions: %w", err)
+	}
+
+	// Calculate layout for 1080x1920 output
+	// Screen takes top portion, webcam fills the middle area (between screen and lower third)
+	scaledScreenWidth := YouTubeShortsWidth
+	scaledScreenHeight := screenHeight * YouTubeShortsWidth / screenWidth
+
+	// Webcam fills the space between screen and the lower third branding area
+	webcamAreaHeight := lowerThirdY - scaledScreenHeight
+	if webcamAreaHeight < 0 {
+		webcamAreaHeight = 0
+	}
+
+	// Scale webcam to fit the webcam area while maintaining aspect ratio
+	scaledWebcamWidth := YouTubeShortsWidth
+	scaledWebcamHeight := webcamHeight * YouTubeShortsWidth / webcamWidth
+
+	if scaledWebcamHeight > webcamAreaHeight {
+		scaledWebcamHeight = webcamAreaHeight
+		scaledWebcamWidth = webcamWidth * webcamAreaHeight / webcamHeight
+	}
+
+	webcamPadX := (YouTubeShortsWidth - scaledWebcamWidth) / 2
+
+	// Prepare logo inputs
+	var logoInputs []string
+	setup, logoInputs := m.prepareMergedLogos(opts, logoInputs, logoStartIndex)
+
+	// Determine background color for the lower third
+	bgColor := config.DefaultBgColor
+	if opts != nil && opts.BgColor != "" {
+		bgColor = opts.BgColor
+	}
+
+	// Build filter complex for 1080x1920 output
+	// 1. Scale screen to fit width (1080)
+	// 2. Scale webcam to fit middle area
+	// 3. Create black canvas, then draw colored lower third
+	// 4. Overlay screen at top, webcam in middle
+	filterComplex := fmt.Sprintf(
+		"[0:v]scale=%d:%d:flags=lanczos[screen];"+
+			"[1:v]scale=%d:%d:flags=lanczos[webcam];"+
+			"color=black:size=%dx%d:duration=99999[bg];"+
+			// Draw background for the bottom third
+			"[bg]drawbox=y=%d:w=%d:h=%d:c=%s:t=fill[canvas];"+
+			// Overlay screen at top center
+			"[canvas][screen]overlay=(W-w)/2:0[with_screen];"+
+			// Overlay webcam in middle area (centered)
+			"[with_screen][webcam]overlay=%d:%d[stacked]",
+		scaledScreenWidth, scaledScreenHeight,
+		scaledWebcamWidth, scaledWebcamHeight,
+		YouTubeShortsWidth, YouTubeShortsHeight,
+		lowerThirdY, YouTubeShortsWidth, YouTubeShortsHeight-lowerThirdY, bgColor,
+		webcamPadX, scaledScreenHeight,
+	)
+
+	currentOutput := "[stacked]"
+	inputIdx := logoStartIndex
+
+	// Determine title color (default to white if not specified)
+	titleColor := "white"
+	if opts != nil && opts.TitleColor != "" {
+		titleColor = opts.TitleColor
+	}
+
+	// Add logo overlays in the bottom third (white branding area)
+	// Left logo: 1/3 of output width (360px), top-left of bottom third
+	if setup.logo1Path != "" {
+		fragment, out := buildLogoOverlay(inputIdx, "logo1", "360:-1", "0", fmt.Sprintf("%d", lowerThirdY), currentOutput, setup.logo1Path, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Right logo: 1/3 of output width (360px), top-right of bottom third
+	if setup.logo2Path != "" {
+		fragment, out := buildLogoOverlay(inputIdx, "logo2", "360:-1", "W-w", fmt.Sprintf("%d", lowerThirdY), currentOutput, setup.logo2Path, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Banner: full width (1080px), positioned above title text in the lower third
+	if setup.bannerPath != "" {
+		// Place banner in the lower portion of the bottom third, above the title
+		// Banner is at the middle of the lower third area, title text below it
+		bannerY := lowerThirdY + (YouTubeShortsHeight-lowerThirdY)/2 - 60 // Centered vertically with room for title below
+		fragment, out := buildLogoOverlay(inputIdx, "banner", fmt.Sprintf("%d:-1", YouTubeShortsWidth), "(W-w)/2", fmt.Sprintf("%d", bannerY), currentOutput, setup.bannerPath, "")
+		filterComplex += ";" + fragment
+		currentOutput = out
+
+		// Add title text below the banner
+		if opts != nil && opts.VideoTitle != "" {
+			titleY := bannerY + 80 // Position below the banner
+			filterComplex += fmt.Sprintf(
+				";%sdrawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+				currentOutput, escapeFFmpegText(opts.VideoTitle), titleColor, titleY,
+			)
+			return filterComplex, logoInputs, nil
+		}
+	} else if opts != nil && opts.VideoTitle != "" {
+		// Title text without banner, centered in lower third
+		titleY := lowerThirdY + (YouTubeShortsHeight-lowerThirdY)/2
+		filterComplex += fmt.Sprintf(
+			";%sdrawtext=text='%s':fontcolor=%s:fontsize=36:x=(w-text_w)/2:y=%d[outv]",
+			currentOutput, escapeFFmpegText(opts.VideoTitle), titleColor, titleY,
+		)
+		return filterComplex, logoInputs, nil
+	}
+
+	// Final null filter to create [outv] label
+	filterComplex += fmt.Sprintf(";%snull[outv]", currentOutput)
+
+	return filterComplex, logoInputs, nil
 }
 
 // copyLogoToOutputDir copies a logo file to the output directory
@@ -912,4 +804,144 @@ func appendLogoInput(inputs []string, logoPath string, gifLoopMode config.GifLoo
 		}
 	}
 	return append(inputs, "-i", logoPath)
+}
+
+// buildLogoOverlay builds an FFmpeg filter fragment for a single logo overlay.
+// It handles both static images and GIFs (with white background for transparency).
+// Parameters:
+//   - inputIdx: FFmpeg input index for the logo
+//   - label: unique label suffix (e.g., "logo1", "logo2", "banner")
+//   - scaleExpr: scale expression (e.g., "360:-1")
+//   - xExpr: x position expression (e.g., "0", "W-w")
+//   - yExpr: y position expression (e.g., "0", "1280")
+//   - currentOutput: current filter chain output label (e.g., "[stacked]")
+//   - logoPath: path to logo file (to check if GIF)
+//   - enableExpr: optional enable expression (e.g., "between(t,0,15)"), empty for always visible
+//
+// Returns: (filterFragment, newOutputLabel)
+func buildLogoOverlay(inputIdx int, label, scaleExpr, xExpr, yExpr, currentOutput, logoPath, enableExpr string) (string, string) {
+	outLabel := fmt.Sprintf("[out_%s]", label)
+	enableClause := ""
+	if enableExpr != "" {
+		enableClause = fmt.Sprintf(":enable='%s'", enableExpr)
+	}
+
+	if isGif(logoPath) {
+		// For GIFs: create white background, then overlay the GIF on it
+		fragment := fmt.Sprintf(
+			"[%d:v]scale=%s[%s_raw];"+
+				"[%s_raw]split[%s_a][%s_b];"+
+				"[%s_a]drawbox=c=white:t=fill[%s_bg];"+
+				"[%s_bg][%s_b]overlay=0:0:format=auto[%s_final];"+
+				"%s[%s_final]overlay=%s:%s:format=auto:eof_action=repeat%s%s",
+			inputIdx, scaleExpr, label,
+			label, label, label,
+			label, label,
+			label, label, label,
+			currentOutput, label, xExpr, yExpr, enableClause, outLabel,
+		)
+		return fragment, outLabel
+	}
+
+	fragment := fmt.Sprintf(
+		"[%d:v]scale=%s[%s];%s[%s]overlay=%s:%s:format=auto:eof_action=repeat%s%s",
+		inputIdx, scaleExpr, label, currentOutput, label, xExpr, yExpr, enableClause, outLabel,
+	)
+	return fragment, outLabel
+}
+
+// logoSetup holds the paths and input indices for logo overlays
+type logoSetup struct {
+	logo1Path       string
+	logo2Path       string
+	bannerPath      string
+	gifLoopMode     config.GifLoopMode
+	startInputIndex int // FFmpeg input index where logos start
+}
+
+// prepareMergedLogos copies logos to the output directory and appends inputs.
+// Returns the logoSetup and updated inputs slice.
+func (m *Merger) prepareMergedLogos(opts *MergeOptions, inputs []string, startIndex int) (logoSetup, []string) {
+	setup := logoSetup{startInputIndex: startIndex}
+	if opts == nil || !opts.AddLogos || opts.OutputDir == "" {
+		return setup, inputs
+	}
+
+	setup.gifLoopMode = config.GifLoopContinuous
+	if opts.GifLoopMode != "" {
+		setup.gifLoopMode = opts.GifLoopMode
+	}
+
+	if opts.ProductLogo1 != "" {
+		setup.logo1Path = m.copyLogoToOutputDir(opts.ProductLogo1, opts.OutputDir, "product_logo_1")
+		if setup.logo1Path != "" {
+			inputs = appendLogoInput(inputs, setup.logo1Path, setup.gifLoopMode)
+		}
+	}
+	if opts.ProductLogo2 != "" {
+		setup.logo2Path = m.copyLogoToOutputDir(opts.ProductLogo2, opts.OutputDir, "product_logo_2")
+		if setup.logo2Path != "" {
+			inputs = appendLogoInput(inputs, setup.logo2Path, setup.gifLoopMode)
+		}
+	}
+	if opts.CompanyLogo != "" {
+		setup.bannerPath = m.copyLogoToOutputDir(opts.CompanyLogo, opts.OutputDir, "company_logo")
+		if setup.bannerPath != "" {
+			inputs = appendLogoInput(inputs, setup.bannerPath, setup.gifLoopMode)
+		}
+	}
+
+	return setup, inputs
+}
+
+// buildMergedOverlayFilter builds the FFmpeg filter_complex for logo overlays on the merged video.
+// All overlays are timed to show for the first 15 seconds only.
+// videoWidth is the width of the input video in pixels.
+func buildMergedOverlayFilter(setup logoSetup, videoWidth int) string {
+	filter := ""
+	currentOutput := "[0:v]"
+	inputIdx := setup.startInputIndex
+	enableExpr := "between(t,0,15)"
+
+	// Left logo: 1/8 of video width, top-left corner
+	if setup.logo1Path != "" {
+		scaleW := videoWidth / 8
+		fragment, out := buildLogoOverlay(inputIdx, "logo1", fmt.Sprintf("%d:-1", scaleW), "0", "0", currentOutput, setup.logo1Path, enableExpr)
+		if filter != "" {
+			filter += ";"
+		}
+		filter += fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Right logo: 1/8 of video width, top-right corner
+	if setup.logo2Path != "" {
+		scaleW := videoWidth / 8
+		fragment, out := buildLogoOverlay(inputIdx, "logo2", fmt.Sprintf("%d:-1", scaleW), "W-w", "0", currentOutput, setup.logo2Path, enableExpr)
+		if filter != "" {
+			filter += ";"
+		}
+		filter += fragment
+		currentOutput = out
+		inputIdx++
+	}
+
+	// Banner: half video width, bottom-left corner
+	if setup.bannerPath != "" {
+		scaleW := videoWidth / 2
+		fragment, out := buildLogoOverlay(inputIdx, "banner", fmt.Sprintf("%d:-1", scaleW), "0", "H-h", currentOutput, setup.bannerPath, enableExpr)
+		if filter != "" {
+			filter += ";"
+		}
+		filter += fragment
+		currentOutput = out
+	}
+
+	// Rename final output to [outv]
+	if filter != "" {
+		filter += fmt.Sprintf(";%snull[outv]", currentOutput)
+	}
+
+	return filter
 }

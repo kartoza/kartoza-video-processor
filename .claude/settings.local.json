@@ -12,7 +12,9 @@
       "Bash(git tag:*)",
       "Bash(ffprobe:*)",
       "Bash(mkdir:*)",
-      "Bash(/home/timlinux/dev/go/kartoza-screencaster/PROMPT.log)"
+      "Bash(/home/timlinux/dev/go/kartoza-screencaster/PROMPT.log)",
+      "Bash(git -C /home/timlinux/dev/go/kartoza-screencaster log --oneline --all --format=\"%h %ai %s\")",
+      "Bash(CGO_ENABLED=0 go build:*)"
     ],
     "deny": [],
     "ask": []

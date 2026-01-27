@@ -93,6 +93,16 @@ func (r *Recorder) SetRecordingInfo(info *models.RecordingInfo) {
 	r.recordingInfo = info
 	if info != nil {
 		r.createVertical = info.Settings.VerticalEnabled
+		// Restore logo selection from saved settings so processing can find them
+		if info.Settings.LogosEnabled {
+			r.logoSelection = config.LogoSelection{
+				LeftLogo:    info.Settings.LeftLogo,
+				RightLogo:   info.Settings.RightLogo,
+				BottomLogo:  info.Settings.BottomLogo,
+				TitleColor:  info.Settings.TitleColor,
+				GifLoopMode: config.GifLoopMode(info.Settings.GifLoopMode),
+			}
+		}
 	}
 }
 
@@ -875,6 +885,13 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		}
 	}
 
+	// Clear previous processing errors (in case of reprocessing)
+	if r.recordingInfo != nil {
+		r.recordingInfo.Processing.Errors = nil
+		r.recordingInfo.Processing.ErrorDetail = ""
+		r.recordingInfo.Processing.Traceback = ""
+	}
+
 	// Get file paths from recording info or fallback to path files
 	var videoFile, audioFile, webcamFile string
 	if r.recordingInfo != nil {
@@ -932,7 +949,6 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 		WebcamFile:     webcamFile,
 		CreateVertical: r.createVertical && webcamFile != "",
 	}
-
 	// Add part files if available (for pause/resume support)
 	if r.recordingInfo != nil && len(r.recordingInfo.Files.VideoParts) > 0 {
 		mergeOpts.VideoParts = r.recordingInfo.Files.VideoParts
@@ -959,7 +975,12 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 	}
 	// Check if any logos are configured
 	mergeOpts.AddLogos = mergeOpts.ProductLogo1 != "" || mergeOpts.ProductLogo2 != "" || mergeOpts.CompanyLogo != ""
-
+	// Set background color: prefer saved recording setting, fall back to config
+	if r.recordingInfo != nil && r.recordingInfo.Settings.BgColor != "" {
+		mergeOpts.BgColor = r.recordingInfo.Settings.BgColor
+	} else if r.config != nil && r.config.BgColor != "" {
+		mergeOpts.BgColor = r.config.BgColor
+	}
 	// Get video title and output directory from recording info
 	if r.recordingInfo != nil {
 		mergeOpts.VideoTitle = r.recordingInfo.Metadata.Title
@@ -991,6 +1012,11 @@ func (r *Recorder) ProcessWithProgress(progressChan chan<- ProgressUpdate) {
 			}
 			r.recordingInfo.Processing.NormalizeApplied = mergeResult.NormalizeApplied
 			r.recordingInfo.Processing.VerticalCreated = mergeResult.VerticalFile != ""
+			// Capture vertical video errors (these were previously lost)
+			if mergeResult.VerticalError != nil {
+				r.recordingInfo.Processing.Errors = append(r.recordingInfo.Processing.Errors,
+					"vertical video: "+mergeResult.VerticalError.Error())
+			}
 		}
 		r.recordingInfo.Processing.ProcessedAt = time.Now()
 		r.recordingInfo.UpdateFileSizes()

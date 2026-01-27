@@ -72,6 +72,9 @@ type HistoryModel struct {
 
 	// Error detail view scroll position
 	errorViewScrollOffset int
+
+	// When true, automatically navigate to edit the latest needs_metadata recording on load
+	editRecordingOnLoad bool
 }
 
 // NewHistoryModel creates a new history model
@@ -121,6 +124,14 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		h.width = msg.Width
 		h.height = msg.Height
+		// Update edit form size if it exists
+		if h.editForm != nil {
+			contentHeight := h.height - 8
+			if contentHeight < 10 {
+				contentHeight = 10
+			}
+			h.editForm.SetSize(h.width, contentHeight)
+		}
 
 	case tea.KeyMsg:
 		switch h.mode {
@@ -146,6 +157,20 @@ func (h *HistoryModel) Update(msg tea.Msg) (*HistoryModel, tea.Cmd) {
 		h.loading = false
 		h.recordings = msg.recordings
 		h.err = msg.err
+
+		// If edit-recording mode, find and open the latest needs_metadata recording
+		if h.editRecordingOnLoad && msg.err == nil && len(msg.recordings) > 0 {
+			h.editRecordingOnLoad = false
+			for i, rec := range h.recordings {
+				if rec.Status == models.StatusNeedsMetadata {
+					h.cursor = i
+					h.selectedRecording = &h.recordings[i]
+					h.mode = HistoryEditMode
+					h.initEditForm()
+					return h, textinput.Blink
+				}
+			}
+		}
 
 	case recordingSavedMsg:
 		h.isSaving = false
@@ -848,6 +873,13 @@ func (h *HistoryModel) initEditForm() {
 		}
 	}
 
+	// Set form size (account for header ~6 lines and footer ~2 lines)
+	contentHeight := h.height - 8
+	if contentHeight < 10 {
+		contentHeight = 10
+	}
+	h.editForm.SetSize(h.width, contentHeight)
+
 	// Focus the title field
 	h.editForm.Focus()
 }
@@ -864,6 +896,18 @@ func findLogoIndex(logos []string, logoPath string) int {
 		}
 	}
 	return 0
+}
+
+// resolveLogoPath converts a form logo index to a full file path
+func (h *HistoryModel) resolveLogoPath(idx int) string {
+	if h.editForm == nil || idx <= 0 || idx > len(h.editForm.Config.Logos) {
+		return ""
+	}
+	cfg, _ := config.Load()
+	if cfg == nil || cfg.LogoDirectory == "" {
+		return ""
+	}
+	return filepath.Join(cfg.LogoDirectory, h.editForm.Config.Logos[idx-1])
 }
 
 // saveRecording saves the edited recording
@@ -885,6 +929,22 @@ func (h *HistoryModel) saveRecording() tea.Cmd {
 	h.selectedRecording.Metadata.Description = h.editForm.GetDescription()
 	h.selectedRecording.Metadata.Presenter = h.editForm.GetPresenter()
 	h.selectedRecording.Metadata.Topic = h.editForm.GetSelectedTopic().Name
+
+	// Update recording settings from form
+	h.selectedRecording.Settings.AudioEnabled = h.editForm.State.RecordAudio
+	h.selectedRecording.Settings.WebcamEnabled = h.editForm.State.RecordWebcam
+	h.selectedRecording.Settings.ScreenEnabled = h.editForm.State.RecordScreen
+	h.selectedRecording.Settings.VerticalEnabled = h.editForm.State.VerticalVideo
+	h.selectedRecording.Settings.LogosEnabled = h.editForm.State.AddLogos
+	h.selectedRecording.Settings.LeftLogo = h.resolveLogoPath(h.editForm.State.SelectedLeftIdx)
+	h.selectedRecording.Settings.RightLogo = h.resolveLogoPath(h.editForm.State.SelectedRightIdx)
+	h.selectedRecording.Settings.BottomLogo = h.resolveLogoPath(h.editForm.State.SelectedBottomIdx)
+	if h.editForm.State.SelectedColorIdx >= 0 && h.editForm.State.SelectedColorIdx < len(config.TitleColors) {
+		h.selectedRecording.Settings.TitleColor = config.TitleColors[h.editForm.State.SelectedColorIdx]
+	}
+	if h.editForm.State.SelectedGifLoopIdx >= 0 && h.editForm.State.SelectedGifLoopIdx < len(config.GifLoopModes) {
+		h.selectedRecording.Settings.GifLoopMode = string(config.GifLoopModes[h.editForm.State.SelectedGifLoopIdx])
+	}
 
 	rec := h.selectedRecording
 	return func() tea.Msg {
@@ -986,7 +1046,7 @@ func (h *HistoryModel) renderListView() string {
 		return lipgloss.JoinVertical(
 			lipgloss.Left,
 			centeredMain,
-			helpStyle.Render("Press 'r' to retry, Esc to go back"),
+			helpStyle.Render("r: retry • esc: back"),
 		)
 	}
 
@@ -1021,7 +1081,7 @@ func (h *HistoryModel) renderListView() string {
 		return lipgloss.JoinVertical(
 			lipgloss.Left,
 			centeredMain,
-			helpStyle.Render("Press Esc to go back"),
+			helpStyle.Render("esc: back"),
 		)
 	}
 
@@ -1063,7 +1123,7 @@ func (h *HistoryModel) renderListView() string {
 		Width(h.width).
 		Align(lipgloss.Center)
 
-	helpText := "↑/↓: Navigate • Enter: View Details • d: Delete • r: Refresh • Esc/q: Back"
+	helpText := "↑/↓: navigate • enter: view details • d: delete • r: refresh • esc/q: back"
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -1369,27 +1429,27 @@ func (h *HistoryModel) renderDetailView() string {
 
 	var helpText string
 	if rec.Status == models.StatusFailed {
-		helpText = "o: Open Folder • e: Edit • r: Reprocess • v: View Error Details • Esc: Back"
+		helpText = "o: open folder • e: edit • r: reprocess • v: view error details • esc: back"
 	} else if rec.Status == models.StatusCompleted {
 		// Build video playback options based on available files
 		var videoOptions string
 		hasVertical := rec.Files.VerticalFile != ""
 		hasMerged := rec.Files.MergedFile != ""
 		if hasVertical && hasMerged {
-			videoOptions = "v: Vertical • m: Merged"
+			videoOptions = "v: vertical • m: merged"
 		} else if hasVertical {
-			videoOptions = "v: Vertical"
+			videoOptions = "v: vertical"
 		} else if hasMerged {
-			videoOptions = "v: Play • m: Merged"
+			videoOptions = "v: play • m: merged"
 		}
 
 		if rec.Metadata.IsPublishedToYouTube() {
-			helpText = videoOptions + " • a: Audio • o: Folder • e: Edit • r: Reprocess • p: Privacy • x: Del YT • Esc"
+			helpText = videoOptions + " • a: audio • o: folder • e: edit • r: reprocess • p: privacy • x: del YT • esc"
 		} else {
-			helpText = videoOptions + " • a: Audio • o: Folder • e: Edit • r: Reprocess • u: Upload • Esc"
+			helpText = videoOptions + " • a: audio • o: folder • e: edit • r: reprocess • u: upload • esc"
 		}
 	} else {
-		helpText = "o: Open Folder • e: Edit • r: Reprocess • Esc: Back"
+		helpText = "o: open folder • e: edit • r: reprocess • esc: back"
 	}
 
 	mainSection := lipgloss.JoinVertical(
@@ -1556,7 +1616,7 @@ func (h *HistoryModel) renderDeleteConfirmView() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		centeredMain,
-		helpFooter.Render(helpStyle.Render("Y: Confirm Delete • N/Esc: Cancel")),
+		helpFooter.Render(helpStyle.Render("y: confirm delete • n/esc: cancel")),
 	)
 }
 
@@ -1968,7 +2028,7 @@ func (h *HistoryModel) renderYouTubePrivacyView() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		centeredMain,
-		helpFooter.Render(helpStyle.Render("←/→: Select • Enter: Confirm • Esc: Cancel")),
+		helpFooter.Render(helpStyle.Render("←/→: select • enter: confirm • esc: cancel")),
 	)
 }
 
@@ -2105,7 +2165,7 @@ func (h *HistoryModel) renderYouTubeDeleteConfirmView() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		centeredMain,
-		helpFooter.Render(helpStyle.Render("Y: Confirm Delete • N/Esc: Cancel")),
+		helpFooter.Render(helpStyle.Render("y: confirm delete • n/esc: cancel")),
 	)
 }
 
@@ -2248,7 +2308,7 @@ func (h *HistoryModel) renderErrorDetailView() string {
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		centeredMain,
-		helpFooter.Render(helpStyle.Render("↑/↓: Scroll • PgUp/PgDn: Page • r: Reprocess • Esc: Back")),
+		helpFooter.Render(helpStyle.Render("↑/↓: scroll • pgup/pgdn: page • r: reprocess • esc: back")),
 	)
 }
 
@@ -2344,7 +2404,7 @@ func (h *HistoryModel) renderReprocessConfirmView() string {
 		rows = append(rows, "")
 	}
 
-	rows = append(rows, grayStyle.Render("Press Y to confirm, N or Esc to cancel"))
+	rows = append(rows, grayStyle.Render("y: confirm • n/esc: cancel"))
 
 	content := containerStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 
@@ -2352,7 +2412,7 @@ func (h *HistoryModel) renderReprocessConfirmView() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Y: Confirm reprocess • N/Esc: Cancel")
+	helpText := helpStyle.Render("y: confirm reprocess • n/esc: cancel")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,

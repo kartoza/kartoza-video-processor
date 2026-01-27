@@ -2,11 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kartoza/kartoza-screencaster/internal/models"
 )
 
 // ProcessingStep represents a single processing step
@@ -221,7 +225,8 @@ const (
 )
 
 // RenderProcessingView renders the processing screen with donut indicators
-func RenderProcessingView(state *ProcessingState, width, height int, frame int, selectedButton ProcessingButton, youtubeConnected bool) string {
+// Uses standard header/footer layout. When complete, footer shows media preview shortcuts.
+func RenderProcessingView(state *ProcessingState, width, height int, frame int, selectedButton ProcessingButton, youtubeConnected bool, recordingInfo *models.RecordingInfo) string {
 	if state == nil {
 		return ""
 	}
@@ -229,6 +234,9 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int, 
 	// Update global app state to show Processing status
 	GlobalAppState.IsRecording = false
 	GlobalAppState.Status = "Processing"
+
+	// Standard header
+	header := RenderHeader("Processing")
 
 	// Title
 	titleStyle := lipgloss.NewStyle().
@@ -271,7 +279,6 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int, 
 
 	// Buttons (only shown when processing is complete and no error)
 	var buttonsRow string
-	var hint string
 	if !state.IsProcessing && state.Error == nil {
 		buttonStyle := lipgloss.NewStyle().
 			Padding(0, 2).
@@ -308,23 +315,11 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int, 
 		} else {
 			buttonsRow = menuBtn
 		}
-
-		hintStyle := lipgloss.NewStyle().
-			Foreground(ColorGray).
-			MarginTop(1)
-		hint = hintStyle.Render("←/→: select • enter: confirm")
-	} else {
-		// Hint during processing
-		hintStyle := lipgloss.NewStyle().
-			Foreground(ColorGray).
-			MarginTop(2)
-		hint = hintStyle.Render("Recording controls disabled during processing")
 	}
 
-	// Combine all elements
+	// Combine content elements
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,
-		"",
 		title,
 		elapsedStr,
 		"",
@@ -333,17 +328,49 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int, 
 		statusMsg,
 		"",
 		buttonsRow,
-		hint,
 	)
 
-	// Center on screen
-	return lipgloss.Place(
-		width,
-		height,
-		lipgloss.Center,
-		lipgloss.Center,
-		content,
-	)
+	// Build footer help text
+	var helpText string
+	if !state.IsProcessing && state.Error == nil {
+		// Processing complete - show media shortcuts and button navigation
+		helpText = buildProcessingCompleteFooter(recordingInfo)
+	} else if state.Error != nil {
+		helpText = "q: quit"
+	} else {
+		helpText = "Please wait..."
+	}
+	footer := RenderHelpFooter(helpText, width)
+
+	return LayoutWithHeaderFooter(header, content, footer, width, height)
+}
+
+// buildProcessingCompleteFooter builds the footer help text for the processing complete screen
+func buildProcessingCompleteFooter(info *models.RecordingInfo) string {
+	var parts []string
+
+	if info != nil {
+		hasVertical := info.Files.VerticalFile != ""
+		hasMerged := info.Files.MergedFile != ""
+		hasAudio := info.Files.AudioFile != ""
+		hasFolder := info.Files.FolderPath != ""
+
+		if hasVertical {
+			parts = append(parts, "v: vertical")
+		}
+		if hasMerged {
+			parts = append(parts, "m: merged")
+		}
+		if hasAudio {
+			parts = append(parts, "a: audio")
+		}
+		if hasFolder {
+			parts = append(parts, "o: folder")
+		}
+	}
+
+	parts = append(parts, "←/→: select", "enter: confirm", "q: quit")
+	return strings.Join(parts, " • ")
 }
 
 // Progress bar characters
@@ -421,4 +448,66 @@ func renderStepLine(step ProcessingStep, isCurrent bool, frame int) string {
 	}
 
 	return fmt.Sprintf("  %s %s%s", indicator, nameStyle.Render(step.Name), suffix)
+}
+
+// openFileCmd opens a file with the system default application
+func openFileCmd(filePath string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("xdg-open", filePath)
+		_ = cmd.Start()
+		return nil
+	}
+}
+
+// openFolderCmd opens a folder in the system file manager
+func openFolderCmd(folderPath string) tea.Cmd {
+	return func() tea.Msg {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", folderPath)
+		case "windows":
+			cmd = exec.Command("explorer", folderPath)
+		default:
+			cmd = exec.Command("xdg-open", folderPath)
+		}
+		_ = cmd.Start()
+		return nil
+	}
+}
+
+// HandleProcessingMediaKey handles v/m/a/o key presses on the processing complete screen.
+// Returns a tea.Cmd if the key was handled, nil otherwise.
+func HandleProcessingMediaKey(key string, info *models.RecordingInfo) tea.Cmd {
+	if info == nil {
+		return nil
+	}
+	switch key {
+	case "v":
+		if info.Files.VerticalFile != "" {
+			return openFileCmd(info.Files.VerticalFile)
+		}
+		// Fall back to merged if no vertical
+		if info.Files.MergedFile != "" {
+			return openFileCmd(info.Files.MergedFile)
+		}
+	case "m":
+		if info.Files.MergedFile != "" {
+			return openFileCmd(info.Files.MergedFile)
+		}
+	case "a":
+		if info.Files.AudioFile != "" {
+			// Try normalized audio first
+			normalizedPath := strings.TrimSuffix(info.Files.AudioFile, ".wav") + "-normalized.wav"
+			if _, err := os.Stat(normalizedPath); err == nil {
+				return openFileCmd(normalizedPath)
+			}
+			return openFileCmd(info.Files.AudioFile)
+		}
+	case "o":
+		if info.Files.FolderPath != "" {
+			return openFolderCmd(info.Files.FolderPath)
+		}
+	}
+	return nil
 }

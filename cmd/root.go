@@ -8,10 +8,12 @@ import (
 )
 
 var (
-	version   = "0.7.5-dev"
-	debugMode bool
-	dataDir   string
-	noSplash  bool
+	version           = "0.7.5-dev"
+	debugMode         bool
+	dataDir           string
+	noSplash          bool
+	presetsMode       bool
+	editRecordingMode bool
 )
 
 // SetVersion sets the application version (called from main)
@@ -52,6 +54,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "Enable debug mode")
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", "", "Data directory (default: ~/.config/kartoza-screencaster)")
 	rootCmd.PersistentFlags().BoolVar(&noSplash, "nosplash", false, "Skip splash screens on startup and exit")
+	rootCmd.PersistentFlags().BoolVar(&presetsMode, "presets", false, "Open directly to recording presets configuration")
+	rootCmd.PersistentFlags().BoolVar(&editRecordingMode, "edit-recording", false, "Open to edit the latest recording that needs metadata")
 
 	// Add subcommands
 	rootCmd.AddCommand(toggleCmd)
@@ -66,5 +70,5 @@ func init() {
 
 func runTUI() error {
 	// Import and run the TUI application
-	return runTUIApp(noSplash)
+	return runTUIApp(noSplash, presetsMode)
 }

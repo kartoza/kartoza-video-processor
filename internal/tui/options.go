@@ -31,8 +31,14 @@ const (
 	OptionsFieldRemoveTopic
 	OptionsFieldDefaultPresenter
 	OptionsFieldLogoDirectory
+	OptionsFieldBgColor
 	OptionsFieldYouTubeSetup
 	OptionsFieldSyndicationSetup
+	OptionsFieldPresetRecordAudio
+	OptionsFieldPresetRecordWebcam
+	OptionsFieldPresetRecordScreen
+	OptionsFieldPresetVerticalVideo
+	OptionsFieldPresetAddLogos
 	OptionsFieldSave
 )
 
@@ -77,6 +83,9 @@ type OptionsModel struct {
 	// Logo directory path
 	logoDirectory string
 
+	// Background color for vertical video lower third
+	bgColorIdx int
+
 	// Custom file browser (for selecting logo directory or output directory)
 	showFileBrowser      bool
 	selectingDirectory   bool // true when selecting directory, not file
@@ -88,9 +97,17 @@ type OptionsModel struct {
 	browserPathInput     textinput.Model
 	browserField         FileBrowserField
 
+	// Recording presets (for systray quick-record)
+	presetRecordAudio   bool
+	presetRecordWebcam  bool
+	presetRecordScreen  bool
+	presetVerticalVideo bool
+	presetAddLogos      bool
+
 	// State
-	message string
-	err     error
+	savedSuccess bool // set on successful save (for presets-mode auto-close)
+	message      string
+	err          error
 }
 
 // NewOptionsModel creates a new options model
@@ -137,20 +154,43 @@ func NewOptionsModel() *OptionsModel {
 		outputDir = config.GetDefaultVideosDir()
 	}
 
+	// Load recording presets
+	presets := cfg.RecordingPresets
+	if !cfg.PresetsConfigured {
+		presets = config.DefaultRecordingPresets()
+	}
+
+	// Find background color index
+	bgColorIdx := 0
+	if cfg.BgColor != "" {
+		for i, c := range config.BgColors {
+			if c == cfg.BgColor {
+				bgColorIdx = i
+				break
+			}
+		}
+	}
+
 	return &OptionsModel{
-		config:             cfg,
-		topics:             topics,
-		selectedTopic:      0,
-		focusedField:       OptionsFieldOutputDirectory,
-		newTopicInput:      newTopicInput,
-		presenterInput:     presenterInput,
-		outputDirectory:    outputDir,
-		logoDirectory:      cfg.LogoDirectory,
-		showFileBrowser:    false,
-		selectingDirectory: false,
-		browserCurrentDir:  browserDir,
-		browserPathInput:   pathInput,
-		browserField:       FileBrowserFieldList,
+		config:              cfg,
+		topics:              topics,
+		selectedTopic:       0,
+		focusedField:        OptionsFieldOutputDirectory,
+		newTopicInput:       newTopicInput,
+		presenterInput:      presenterInput,
+		outputDirectory:     outputDir,
+		logoDirectory:       cfg.LogoDirectory,
+		bgColorIdx:          bgColorIdx,
+		showFileBrowser:     false,
+		selectingDirectory:  false,
+		browserCurrentDir:   browserDir,
+		browserPathInput:    pathInput,
+		browserField:        FileBrowserFieldList,
+		presetRecordAudio:   presets.RecordAudio,
+		presetRecordWebcam:  presets.RecordWebcam,
+		presetRecordScreen:  presets.RecordScreen,
+		presetVerticalVideo: presets.VerticalVideo,
+		presetAddLogos:      presets.AddLogos,
 	}
 }
 
@@ -296,6 +336,24 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 				return m, nil
 			}
 
+		case "left":
+			if m.focusedField == OptionsFieldBgColor {
+				m.bgColorIdx--
+				if m.bgColorIdx < 0 {
+					m.bgColorIdx = len(config.BgColors) - 1
+				}
+				return m, nil
+			}
+
+		case "right":
+			if m.focusedField == OptionsFieldBgColor {
+				m.bgColorIdx++
+				if m.bgColorIdx >= len(config.BgColors) {
+					m.bgColorIdx = 0
+				}
+				return m, nil
+			}
+
 		case "enter", " ":
 			switch m.focusedField {
 			case OptionsFieldOutputDirectory:
@@ -310,10 +368,43 @@ func (m *OptionsModel) Update(msg tea.Msg) (*OptionsModel, tea.Cmd) {
 			case OptionsFieldLogoDirectory:
 				m.openDirectoryBrowser(BrowserTargetLogo)
 				return m, nil
+			case OptionsFieldBgColor:
+				// Cycle to next color on enter/space
+				m.bgColorIdx++
+				if m.bgColorIdx >= len(config.BgColors) {
+					m.bgColorIdx = 0
+				}
+				return m, nil
 			case OptionsFieldYouTubeSetup:
 				return m, func() tea.Msg { return goToYouTubeSetupMsg{} }
 			case OptionsFieldSyndicationSetup:
 				return m, func() tea.Msg { return goToSyndicationSetupMsg{} }
+			case OptionsFieldPresetRecordAudio:
+				m.presetRecordAudio = !m.presetRecordAudio
+				return m, nil
+			case OptionsFieldPresetRecordWebcam:
+				m.presetRecordWebcam = !m.presetRecordWebcam
+				// Auto-disable vertical video if both webcam and screen are off
+				if !m.presetRecordWebcam && !m.presetRecordScreen {
+					m.presetVerticalVideo = false
+				}
+				return m, nil
+			case OptionsFieldPresetRecordScreen:
+				m.presetRecordScreen = !m.presetRecordScreen
+				// Auto-disable vertical video if both webcam and screen are off
+				if !m.presetRecordWebcam && !m.presetRecordScreen {
+					m.presetVerticalVideo = false
+				}
+				return m, nil
+			case OptionsFieldPresetVerticalVideo:
+				// Only allow if webcam or screen is enabled
+				if m.presetRecordWebcam || m.presetRecordScreen {
+					m.presetVerticalVideo = !m.presetVerticalVideo
+				}
+				return m, nil
+			case OptionsFieldPresetAddLogos:
+				m.presetAddLogos = !m.presetAddLogos
+				return m, nil
 			case OptionsFieldSave:
 				m.save()
 				return m, nil
@@ -456,12 +547,24 @@ func (m *OptionsModel) save() {
 	m.config.DefaultPresenter = strings.TrimSpace(m.presenterInput.Value())
 	m.config.OutputDir = m.outputDirectory
 	m.config.LogoDirectory = m.logoDirectory
+	m.config.BgColor = config.BgColors[m.bgColorIdx]
+
+	// Save recording presets
+	m.config.RecordingPresets = config.RecordingPresets{
+		RecordAudio:   m.presetRecordAudio,
+		RecordWebcam:  m.presetRecordWebcam,
+		RecordScreen:  m.presetRecordScreen,
+		VerticalVideo: m.presetVerticalVideo,
+		AddLogos:      m.presetAddLogos,
+	}
+	m.config.PresetsConfigured = true
 
 	if err := config.Save(m.config); err != nil {
 		m.err = err
 		return
 	}
 
+	m.savedSuccess = true
 	m.message = "Settings saved successfully"
 }
 
@@ -598,6 +701,28 @@ func (m *OptionsModel) View() string {
 	logoDirRow := lipgloss.JoinHorizontal(lipgloss.Center, logoDirLabel, logoDirValue)
 	logoDirHint := hintStyle.Render("                    logos selected per-recording")
 
+	// Background Color
+	bgLabel := labelStyle.Render("Background: ")
+	if m.focusedField == OptionsFieldBgColor {
+		bgLabel = labelActiveStyle.Render("Background: ")
+	}
+	var bgColorPills []string
+	for i, c := range config.BgColors {
+		pillStyle := lipgloss.NewStyle().Padding(0, 1)
+		if i == m.bgColorIdx {
+			if m.focusedField == OptionsFieldBgColor {
+				pillStyle = pillStyle.Background(ColorOrange).Foreground(lipgloss.Color("#000")).Bold(true)
+			} else {
+				pillStyle = pillStyle.Background(ColorGreen).Foreground(ColorWhite)
+			}
+		} else {
+			pillStyle = pillStyle.Foreground(ColorGray)
+		}
+		bgColorPills = append(bgColorPills, pillStyle.Render(c))
+	}
+	bgColorRow := lipgloss.JoinHorizontal(lipgloss.Center, bgLabel, strings.Join(bgColorPills, " "))
+	bgColorHint := hintStyle.Render("                    ←/→: change • lower third background")
+
 	// YouTube Section
 	youtubeSection := sectionStyle.Render("YouTube")
 	youtubeLabel := labelStyle.Render("Status: ")
@@ -659,6 +784,46 @@ func (m *OptionsModel) View() string {
 	syndicationStatusStyled := lipgloss.NewStyle().Foreground(syndicationStatusColor).Render(syndicationStatusText)
 	syndicationRow := lipgloss.JoinHorizontal(lipgloss.Center, syndicationLabel, syndicationStatusStyled)
 
+	// Recording Presets Section
+	presetSection := sectionStyle.Render("Recording Presets")
+	presetHint := hintStyle.Render("                    defaults for systray quick-record")
+
+	audioPresetLabel := labelStyle.Render("Audio: ")
+	if m.focusedField == OptionsFieldPresetRecordAudio {
+		audioPresetLabel = labelActiveStyle.Render("Audio: ")
+	}
+	audioPresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		audioPresetLabel, m.renderPresetToggle(m.presetRecordAudio, m.focusedField == OptionsFieldPresetRecordAudio))
+
+	webcamPresetLabel := labelStyle.Render("Webcam: ")
+	if m.focusedField == OptionsFieldPresetRecordWebcam {
+		webcamPresetLabel = labelActiveStyle.Render("Webcam: ")
+	}
+	webcamPresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		webcamPresetLabel, m.renderPresetToggle(m.presetRecordWebcam, m.focusedField == OptionsFieldPresetRecordWebcam))
+
+	screenPresetLabel := labelStyle.Render("Screen: ")
+	if m.focusedField == OptionsFieldPresetRecordScreen {
+		screenPresetLabel = labelActiveStyle.Render("Screen: ")
+	}
+	screenPresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		screenPresetLabel, m.renderPresetToggle(m.presetRecordScreen, m.focusedField == OptionsFieldPresetRecordScreen))
+
+	verticalDisabled := !m.presetRecordWebcam && !m.presetRecordScreen
+	verticalPresetLabel := labelStyle.Render("Vertical: ")
+	if m.focusedField == OptionsFieldPresetVerticalVideo {
+		verticalPresetLabel = labelActiveStyle.Render("Vertical: ")
+	}
+	verticalPresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		verticalPresetLabel, m.renderPresetToggleWithDisabled(m.presetVerticalVideo, m.focusedField == OptionsFieldPresetVerticalVideo, verticalDisabled))
+
+	logosPresetLabel := labelStyle.Render("Logos: ")
+	if m.focusedField == OptionsFieldPresetAddLogos {
+		logosPresetLabel = labelActiveStyle.Render("Logos: ")
+	}
+	logosPresetRow := lipgloss.JoinHorizontal(lipgloss.Center,
+		logosPresetLabel, m.renderPresetToggle(m.presetAddLogos, m.focusedField == OptionsFieldPresetAddLogos))
+
 	// Save button
 	saveLabel := labelStyle.Render("")
 	saveBtn := inactiveButtonStyle.Render("Save")
@@ -695,15 +860,57 @@ func (m *OptionsModel) View() string {
 		logoSection,
 		logoDirRow,
 		logoDirHint,
+		bgColorRow,
+		bgColorHint,
 		youtubeSection,
 		youtubeRow,
 		syndicationSection,
 		syndicationRow,
+		presetSection,
+		presetHint,
+		audioPresetRow,
+		webcamPresetRow,
+		screenPresetRow,
+		verticalPresetRow,
+		logosPresetRow,
 		"",
 		saveRow,
 		"",
 		statusLine,
 	)
+}
+
+// renderPresetToggle renders a Yes/No toggle pill for preset fields
+func (m *OptionsModel) renderPresetToggle(value bool, focused bool) string {
+	yesStyle := lipgloss.NewStyle().Padding(0, 1)
+	noStyle := lipgloss.NewStyle().Padding(0, 1)
+
+	if value {
+		if focused {
+			yesStyle = yesStyle.Background(ColorOrange).Foreground(lipgloss.Color("#000")).Bold(true)
+		} else {
+			yesStyle = yesStyle.Background(ColorGreen).Foreground(ColorWhite)
+		}
+		noStyle = noStyle.Foreground(ColorGray)
+	} else {
+		yesStyle = yesStyle.Foreground(ColorGray)
+		if focused {
+			noStyle = noStyle.Background(ColorOrange).Foreground(lipgloss.Color("#000")).Bold(true)
+		} else {
+			noStyle = noStyle.Background(ColorGray).Foreground(ColorWhite)
+		}
+	}
+
+	return yesStyle.Render("Yes") + " " + noStyle.Render("No")
+}
+
+// renderPresetToggleWithDisabled renders a toggle or disabled hint
+func (m *OptionsModel) renderPresetToggleWithDisabled(value bool, focused bool, disabled bool) string {
+	if disabled {
+		disabledStyle := lipgloss.NewStyle().Foreground(ColorGray).Italic(true)
+		return disabledStyle.Render("(requires webcam or screen)")
+	}
+	return m.renderPresetToggle(value, focused)
 }
 
 // updateFileBrowser handles messages when the file browser is active

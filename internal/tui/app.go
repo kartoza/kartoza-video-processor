@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kartoza/kartoza-screencaster/internal/beep"
 	"github.com/kartoza/kartoza-screencaster/internal/config"
 	"github.com/kartoza/kartoza-screencaster/internal/models"
 	"github.com/kartoza/kartoza-screencaster/internal/monitor"
@@ -83,6 +84,12 @@ type AppModel struct {
 	// External recording detection
 	externalRecordingActive bool
 	externalRecordingPIDs   []string
+
+	// Presets mode - opens directly to recording presets, auto-closes on save
+	presetsMode bool
+
+	// Edit recording mode - opens directly to history with latest needs_metadata recording
+	editRecordingMode bool
 }
 
 // countRecordings counts the number of valid recordings in the screencasts folder
@@ -212,15 +219,48 @@ func NewAppModel() AppModel {
 	}
 }
 
+// NewAppModelWithPresets creates an app model that opens directly to the presets section
+// of the Options screen. Used when launched with --presets flag (e.g. from systray first-run).
+func NewAppModelWithPresets() AppModel {
+	m := NewAppModel()
+	m.presetsMode = true
+	m.screen = ScreenOptions
+	m.options = NewOptionsModel()
+	m.options.focusedField = OptionsFieldPresetRecordAudio
+	return m
+}
+
+// NewAppModelWithEditRecording creates an app model that opens directly to the history
+// screen with the latest needs_metadata recording in edit mode.
+// Used when launched with --edit-recording flag (e.g. from systray after stopping a recording).
+func NewAppModelWithEditRecording() AppModel {
+	m := NewAppModel()
+	m.editRecordingMode = true
+	m.screen = ScreenHistory
+	m.history = NewHistoryModel()
+	m.history.editRecordingOnLoad = true
+	return m
+}
+
 // Init initializes the application
 func (m AppModel) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.spinner.Tick,
 		tickCmd(),
 		blinkCmd(),
 		updateStatus(m.recorder),
 		updateMonitors(),
-	)
+	}
+
+	// Initialize the active screen's sub-model if needed
+	if m.screen == ScreenHistory && m.history != nil {
+		cmds = append(cmds, m.history.Init())
+	}
+	if m.screen == ScreenOptions && m.options != nil {
+		cmds = append(cmds, m.options.Init())
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // Update handles messages
@@ -234,13 +274,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = ScreenRecording
 		m.state = stateCountdown
 		m.countdownNum = 5
-		go playBeep(5)
+		go beep.Play(5)
 		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
 			return countdownTickMsg{}
 		})
 	case backToMenuMsg:
 		m.screen = ScreenMenu
-		m.recordingSetup = NewRecordingSetupModel()
+		// Don't recreate recordingSetup — preserve form state so logos/toggles
+		// persist when the user returns to the recording form
 		// Refresh YouTube status when returning to menu
 		updateGlobalAppState(m.status.IsRecording, m.blinkOn, GlobalAppState.Status)
 		return m, nil
@@ -338,10 +379,34 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.menu.width = msg.Width
 		m.menu.height = msg.Height
-		// Also update recording setup dimensions
+		// Also update sub-model dimensions
 		if m.recordingSetup != nil {
 			m.recordingSetup.width = msg.Width
 			m.recordingSetup.height = msg.Height
+		}
+		if m.history != nil {
+			m.history.width = msg.Width
+			m.history.height = msg.Height
+		}
+		if m.options != nil {
+			m.options.width = msg.Width
+			m.options.height = msg.Height
+		}
+		if m.youtubeSetup != nil {
+			m.youtubeSetup.width = msg.Width
+			m.youtubeSetup.height = msg.Height
+		}
+		if m.youtubeUpload != nil {
+			m.youtubeUpload.width = msg.Width
+			m.youtubeUpload.height = msg.Height
+		}
+		if m.syndicationSetup != nil {
+			m.syndicationSetup.width = msg.Width
+			m.syndicationSetup.height = msg.Height
+		}
+		if m.syndicationPost != nil {
+			m.syndicationPost.width = msg.Width
+			m.syndicationPost.height = msg.Height
 		}
 		return m, nil
 
@@ -461,6 +526,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case processingDoneMsg:
 		m.state = stateReady
 		m.processing.Reset()
+		// Reset recording setup so next recording starts with a fresh form
+		m.recordingSetup = nil
 		// Update global state - recording complete, refresh count
 		updateGlobalAppState(false, true, "Ready")
 
@@ -503,7 +570,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = ScreenRecording
 		m.state = stateCountdown
 		m.countdownNum = 5
-		go playBeep(5)
+		go beep.Play(5)
 		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
 			return countdownTickMsg{}
 		})
@@ -710,6 +777,12 @@ func (m AppModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					updateGlobalAppState(false, true, "Ready")
 					return m, nil
 				}
+			case "v", "m", "a", "o":
+				// Media preview shortcuts
+				if cmd := HandleProcessingMediaKey(msg.String(), m.recordingInfo); cmd != nil {
+					return m, cmd
+				}
+				return m, nil
 			}
 		}
 		return m, nil
@@ -914,8 +987,11 @@ func (m AppModel) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleOptionsKeys handles keys on the options screen
 func (m AppModel) handleOptionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle escape to go back
+	// Handle escape - in presets mode, quit the app; otherwise go back to menu
 	if key.Matches(msg, key.NewBinding(key.WithKeys("esc"))) {
+		if m.presetsMode {
+			return m, tea.Quit
+		}
 		m.screen = ScreenMenu
 		return m, nil
 	}
@@ -928,6 +1004,12 @@ func (m AppModel) handleOptionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Update the options form
 	newOptions, cmd := m.options.Update(msg)
 	m.options = newOptions
+
+	// In presets mode, auto-close after successful save
+	if m.presetsMode && m.options.savedSuccess {
+		return m, tea.Quit
+	}
+
 	return m, cmd
 }
 
@@ -935,12 +1017,15 @@ func (m AppModel) handleOptionsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m AppModel) handleMenuAction(action MenuItem) (tea.Model, tea.Cmd) {
 	switch action {
 	case MenuNewRecording:
-		// Go to recording setup screen first
+		// Go to recording setup screen — reuse existing model to preserve form state
 		m.screen = ScreenRecordingSetup
-		m.recordingSetup = NewRecordingSetupModel()
-		m.recordingSetup.width = m.width
-		m.recordingSetup.height = m.height
-		return m, m.recordingSetup.Init()
+		if m.recordingSetup == nil {
+			m.recordingSetup = NewRecordingSetupModel()
+			m.recordingSetup.width = m.width
+			m.recordingSetup.height = m.height
+			return m, m.recordingSetup.Init()
+		}
+		return m, nil
 
 	case MenuRecordingHistory:
 		m.screen = ScreenHistory
@@ -1021,6 +1106,12 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 			m.recordingInfo.Settings.BottomLogo = logoSelection.BottomLogo
 			m.recordingInfo.Settings.TitleColor = logoSelection.TitleColor
 			m.recordingInfo.Settings.GifLoopMode = string(logoSelection.GifLoopMode)
+
+			// Save background color from global config
+			cfg, _ := config.Load()
+			if cfg != nil && cfg.BgColor != "" {
+				m.recordingInfo.Settings.BgColor = cfg.BgColor
+			}
 		}
 
 		// Save initial recording.json
@@ -1060,7 +1151,7 @@ func (m AppModel) handleCountdownTick() (tea.Model, tea.Cmd) {
 
 	// Play beep for counts 5-1 (not for 0/GO)
 	if m.countdownNum > 0 {
-		go playBeep(m.countdownNum)
+		go beep.Play(m.countdownNum)
 	}
 
 	return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
@@ -1124,7 +1215,7 @@ func (m AppModel) View() string {
 	if m.state == stateProcessing {
 		cfg, _ := config.Load()
 		youtubeConnected := cfg.IsYouTubeConnected()
-		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame, m.processingBtn, youtubeConnected)
+		return RenderProcessingView(m.processing, m.width, m.height, m.processingFrame, m.processingBtn, youtubeConnected, m.recordingInfo)
 	}
 
 	// Render based on current screen
@@ -1262,7 +1353,7 @@ func (m AppModel) renderRecordingContent(cursorMonitor string) string {
 		pausedStyle := lipgloss.NewStyle().
 			Foreground(ColorOrange).
 			Bold(true)
-		pausedText := pausedStyle.Render("▶ PAUSED - Press P to resume")
+		pausedText := pausedStyle.Render("▶ PAUSED - press p to resume")
 		sections = append(sections, "", pausedText)
 	}
 
@@ -1426,7 +1517,7 @@ func (m AppModel) renderCountdownView() string {
 
 	hintStyle := lipgloss.NewStyle().
 		Foreground(ColorGray)
-	hint := hintStyle.Render("Press ESC to cancel")
+	hint := hintStyle.Render("esc: cancel")
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,

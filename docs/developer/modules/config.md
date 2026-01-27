@@ -33,6 +33,7 @@ type Config struct {
     Topics           []models.Topic    `json:"topics"`
     DefaultPresenter string            `json:"default_presenter"`
     LogoDirectory    string            `json:"logo_directory"`
+    BgColor          string            `json:"bg_color"`  // Background color for vertical video lower third
     YouTube          YouTubeConfig     `json:"youtube"`
     Recording        RecordingDefaults `json:"recording"`
 }
@@ -55,20 +56,26 @@ type YouTubeConfig struct {
 }
 ```
 
-### RecordingDefaults
+### RecordingPresets
 
-Default recording settings:
+Recording presets saved between sessions (used by systray quick-record):
 
 ```go
-type RecordingDefaults struct {
+type RecordingPresets struct {
     RecordAudio   bool   `json:"record_audio"`
     RecordWebcam  bool   `json:"record_webcam"`
     RecordScreen  bool   `json:"record_screen"`
     VerticalVideo bool   `json:"vertical_video"`
     AddLogos      bool   `json:"add_logos"`
-    TitleColor    string `json:"title_color"`
+    Topic         string `json:"topic,omitempty"`
 }
 ```
+
+### PresetsConfigured
+
+The `Config` struct includes a `PresetsConfigured bool` field that distinguishes "never configured" from "configured with all toggles off." This is used by the systray to detect first-run and prompt the user to configure recording presets before their first recording.
+
+When `PresetsConfigured` is `false`, the systray `StartRecording()` method blocks recording and opens the TUI to the presets configuration section instead. After the user saves, `PresetsConfigured` is set to `true` and subsequent recordings use the saved presets.
 
 ### GifLoopMode
 

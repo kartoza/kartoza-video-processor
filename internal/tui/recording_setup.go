@@ -184,7 +184,12 @@ func (m *RecordingSetupModel) Update(msg tea.Msg) (*RecordingSetupModel, tea.Cmd
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.form.SetSize(msg.Width, msg.Height)
+		// Account for header ~6 lines and footer ~2 lines
+		contentHeight := msg.Height - 8
+		if contentHeight < 10 {
+			contentHeight = 10
+		}
+		m.form.SetSize(msg.Width, contentHeight)
 
 	case tea.KeyMsg:
 		// Check for confirm/cancel actions
@@ -305,6 +310,7 @@ func (m *RecordingSetupModel) SaveAllPresets() error {
 
 	// Save recording presets (toggles and topic)
 	cfg.RecordingPresets = m.GetRecordingPresets()
+	cfg.PresetsConfigured = true
 
 	// Save logo selection
 	cfg.LastUsedLogos = m.GetLogoSelection()
@@ -312,13 +318,9 @@ func (m *RecordingSetupModel) SaveAllPresets() error {
 	return config.Save(cfg)
 }
 
-// View renders the recording setup form
+// View renders the recording setup form content (layout is handled by app.go)
 func (m *RecordingSetupModel) View() string {
-	header := RenderHeader("New Recording")
-	content := m.form.View()
-	footer := RenderHelpFooter("tab/↓: next • shift+tab/↑: prev • ←/→: select • enter: confirm • esc: back", m.width)
-
-	return LayoutWithHeaderFooter(header, content, footer, m.width, m.height)
+	return m.form.View()
 }
 
 type recordingSetupCompleteMsg struct{}

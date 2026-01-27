@@ -106,9 +106,15 @@ func DefaultRecordingPresets() RecordingPresets {
 // DefaultTitleColor is the default color for title text (Kartoza blue)
 const DefaultTitleColor = "#62A4C7"
 
+// DefaultBgColor is the default background color for the vertical video lower third
+const DefaultBgColor = "white"
+
 // Available title colors for the user to choose from
 // Includes named colors and can accept #RRGGBB hex values
 var TitleColors = []string{"#62A4C7", "white", "black", "yellow", "orange", "red", "green", "blue", "cyan", "magenta"}
+
+// BgColors is the list of available background colors for the vertical video lower third
+var BgColors = []string{"white", "black", "#62A4C7", "yellow", "orange", "red", "green", "blue", "cyan", "magenta"}
 
 // Config holds the application configuration
 type Config struct {
@@ -121,9 +127,11 @@ type Config struct {
 	// Logo settings
 	LogoDirectory  string        `json:"logo_directory,omitempty"`   // Directory to browse for logos
 	LastUsedLogos  LogoSelection `json:"last_used_logos,omitempty"`  // Last used logo selection
+	BgColor        string        `json:"bg_color,omitempty"`         // Background color for vertical video lower third
 
 	// Recording presets (saved between sessions)
-	RecordingPresets RecordingPresets `json:"recording_presets,omitempty"`
+	RecordingPresets  RecordingPresets `json:"recording_presets,omitempty"`
+	PresetsConfigured bool             `json:"presets_configured,omitempty"` // Whether user has explicitly configured presets
 
 	// YouTube integration settings
 	YouTube youtube.Config `json:"youtube,omitempty"`

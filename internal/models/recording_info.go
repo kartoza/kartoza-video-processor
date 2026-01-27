@@ -129,6 +129,7 @@ type RecordingSettings struct {
 	BottomLogo  string `json:"bottom_logo,omitempty"`
 	TitleColor  string `json:"title_color,omitempty"`
 	GifLoopMode string `json:"gif_loop_mode,omitempty"`
+	BgColor     string `json:"bg_color,omitempty"` // Background color for vertical video lower third
 }
 
 // ProcessingInfo contains information about post-processing

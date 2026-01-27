@@ -1091,7 +1091,7 @@ Features:
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Press Enter to continue • Esc to go back")
+	helpText := helpStyle.Render("enter: continue • esc: back")
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -1181,7 +1181,7 @@ func (m *YouTubeSetupModel) renderInstructions() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Press C to continue to credentials • Esc to go back")
+	helpText := helpStyle.Render("c: continue to credentials • esc: back")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -1255,7 +1255,7 @@ func (m *YouTubeSetupModel) renderCredentials() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Tab: switch field • Enter: connect • Esc: cancel")
+	helpText := helpStyle.Render("tab: switch field • enter: connect • esc: cancel")
 
 	footer := RenderHelpFooter(helpText, m.width)
 
@@ -1382,17 +1382,17 @@ func (m *YouTubeSetupModel) renderConnected() string {
 		Foreground(ColorGray)
 
 	optionsText := lipgloss.JoinVertical(lipgloss.Center,
-		optionStyle.Render("Press A to manage accounts"),
-		optionStyle.Render("Press P to manage playlists"),
-		optionStyle.Render("Press V to verify credentials"),
-		optionStyle.Render("Press D to disconnect account"),
+		optionStyle.Render("a: manage accounts"),
+		optionStyle.Render("p: manage playlists"),
+		optionStyle.Render("v: verify credentials"),
+		optionStyle.Render("d: disconnect account"),
 	)
 
 	helpStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Enter: Menu • A: Accounts • P: Playlists • V: Verify • D: Disconnect")
+	helpText := helpStyle.Render("enter: menu • a: accounts • p: playlists • v: verify • d: disconnect")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -1452,7 +1452,7 @@ func (m *YouTubeSetupModel) renderError() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Press R or Enter to retry • Esc to go back")
+	helpText := helpStyle.Render("r/enter: retry • esc: back")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -1565,7 +1565,7 @@ func (m *YouTubeSetupModel) renderVerified() string {
 			Foreground(ColorGray).
 			Italic(true)
 
-		helpText := helpStyle.Render("Enter/B: Back to settings • Esc: Menu")
+		helpText := helpStyle.Render("enter/b: back to settings • esc: menu")
 
 		fullContent := lipgloss.JoinVertical(
 			lipgloss.Center,
@@ -1662,9 +1662,9 @@ func (m *YouTubeSetupModel) renderVerified() string {
 
 	var helpText string
 	if len(m.playlists) > 5 {
-		helpText = helpStyle.Render("↑/↓: Scroll playlists • Enter/B: Back • Esc: Menu")
+		helpText = helpStyle.Render("↑/↓: scroll playlists • enter/b: back • esc: menu")
 	} else {
-		helpText = helpStyle.Render("Enter/B: Back to settings • Esc: Menu")
+		helpText = helpStyle.Render("enter/b: back to settings • esc: menu")
 	}
 
 	fullContent := lipgloss.JoinVertical(
@@ -1738,7 +1738,7 @@ func (m *YouTubeSetupModel) renderPlaylists() string {
 			Foreground(ColorGray).
 			Italic(true)
 
-		helpText := helpStyle.Render("R: Retry • N: New playlist • Enter/B: Back • Esc: Menu")
+		helpText := helpStyle.Render("r: retry • n: new playlist • enter/b: back • esc: menu")
 
 		fullContent := lipgloss.JoinVertical(
 			lipgloss.Center,
@@ -1759,7 +1759,7 @@ func (m *YouTubeSetupModel) renderPlaylists() string {
 	if len(m.playlists) == 0 {
 		rows = append(rows, labelStyle.Render("No playlists found"))
 		rows = append(rows, "")
-		rows = append(rows, labelStyle.Render("Press N to create your first playlist"))
+		rows = append(rows, labelStyle.Render("n: create your first playlist"))
 	} else {
 		// Show playlists with pagination (10 per page)
 		startIdx := m.playlistPage * 10
@@ -1791,7 +1791,7 @@ func (m *YouTubeSetupModel) renderPlaylists() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("N: New playlist • R: Refresh • Enter/B: Back • Esc: Menu")
+	helpText := helpStyle.Render("n: new playlist • r: refresh • enter/b: back • esc: menu")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -1909,7 +1909,7 @@ func (m *YouTubeSetupModel) renderCreatePlaylist() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Tab: Next field • ←/→: Change privacy • Enter: Create • Esc: Cancel")
+	helpText := helpStyle.Render("tab: next field • ←/→: change privacy • enter: create • esc: cancel")
 
 	footer := RenderHelpFooter(helpText, m.width)
 
@@ -1997,7 +1997,7 @@ func (m *YouTubeSetupModel) renderAccounts() string {
 	if len(m.accounts) == 0 {
 		rows = append(rows, labelStyle.Render("No accounts configured"))
 		rows = append(rows, "")
-		rows = append(rows, labelStyle.Render("Press N to add your first account"))
+		rows = append(rows, labelStyle.Render("n: add your first account"))
 	} else {
 		configDir := config.GetConfigDir()
 		for i, acc := range m.accounts {
@@ -2055,7 +2055,7 @@ func (m *YouTubeSetupModel) renderAccounts() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("N: Add • E: Edit • D: Delete • C: Connect • Enter: Back")
+	helpText := helpStyle.Render("n: add • e: edit • d: delete • c: connect • enter: back")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -2147,7 +2147,7 @@ func (m *YouTubeSetupModel) renderAccountForm() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Tab: Next field • Enter: Save • Esc: Cancel")
+	helpText := helpStyle.Render("tab: next field • enter: save • esc: cancel")
 
 	footer := RenderHelpFooter(helpText, m.width)
 
@@ -2221,7 +2221,7 @@ func (m *YouTubeSetupModel) renderAccountDelete() string {
 		Foreground(ColorGray).
 		Italic(true)
 
-	helpText := helpStyle.Render("Y: Confirm delete • N/Esc: Cancel")
+	helpText := helpStyle.Render("y: confirm delete • n/esc: cancel")
 
 	fullContent := lipgloss.JoinVertical(
 		lipgloss.Center,
