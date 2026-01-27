@@ -39,6 +39,7 @@ type ProcessingState struct {
 	CurrentStep  int
 	IsProcessing bool
 	StartTime    time.Time
+	EndTime      time.Time
 	Error        error
 }
 
@@ -163,6 +164,7 @@ func (p *ProcessingState) FailStep(err error) {
 		p.Steps[p.CurrentStep].Status = StepFailed
 		p.Steps[p.CurrentStep].EndTime = time.Now()
 	}
+	p.EndTime = time.Now()
 	p.Error = err
 }
 
@@ -172,6 +174,7 @@ func (p *ProcessingState) Complete() {
 		p.Steps[p.CurrentStep].Status = StepComplete
 		p.Steps[p.CurrentStep].EndTime = time.Now()
 	}
+	p.EndTime = time.Now()
 	p.IsProcessing = false
 }
 
@@ -184,6 +187,8 @@ func (p *ProcessingState) Reset() {
 	}
 	p.CurrentStep = -1
 	p.IsProcessing = false
+	p.StartTime = time.Time{}
+	p.EndTime = time.Time{}
 	p.Error = nil
 }
 
@@ -246,8 +251,13 @@ func RenderProcessingView(state *ProcessingState, width, height int, frame int, 
 
 	title := titleStyle.Render("Processing Recording...")
 
-	// Elapsed time
-	elapsed := time.Since(state.StartTime).Round(time.Second)
+	// Elapsed time — freeze when processing completes or fails
+	var elapsed time.Duration
+	if !state.IsProcessing && !state.EndTime.IsZero() {
+		elapsed = state.EndTime.Sub(state.StartTime).Round(time.Second)
+	} else {
+		elapsed = time.Since(state.StartTime).Round(time.Second)
+	}
 	timeStyle := lipgloss.NewStyle().
 		Foreground(ColorGray).
 		Italic(true)

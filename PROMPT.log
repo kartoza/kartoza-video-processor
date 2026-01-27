@@ -1178,3 +1178,42 @@ Prompt: it literally needs to be the same code that renders both
 
 Build successful.
 ---
+[2026-01-27T17:00:44+00:00] Can you tell me why vertical video is not being generated? e.g. from this recording session ~/Videos/Screencasts/recording-20260127-101217
+[2026-01-27T17:42:32+00:00] Continuation session: Implement systray recording presets in Options screen - Steps 2-6 (add presets section to options.go, --presets CLI flag, presets mode in TUI app, systray first-run detection, documentation updates)
+[2026-01-27T21:06:19+00:00] Debug and fix vertical video not being created from systray recordings. Root cause: FFmpeg filter_complex had missing 'null' filter between stream labels when no logos present (';[stacked][outv]' instead of ';[stacked]null[outv]'). Also fixed: vertical video errors now captured in recording.json, and processing errors cleared on reprocess.
+when starting from the systray there should be an audible countdown from 5 like in the tui and the systray icon should show the countdown in it
+when the user stops recording from the systray and then the tui opens, it should open in the recording detail page ready for the user to fill in the title etc.
+
+The processing recording screen should have our standard dry header (anchored to the top of the page) and standard dry footer anchored to the page bottom.
+
+The footer should have shortcuts to preview the vertical (v), merged video (m), audio (a) or open the project folder in the users os file manager (o)
+
+just make sure the same footer mnemonic shortcuts are used consistently through out the app and if not, fix
+
+now the tui does not start - it just says Loading...
+(to be clear, the systray loads and when I try to open the tui from its content menu it just says loading... in my case I had not made a recording)
+
+Rework logo/banner overlays in merger.go:
+- Merged video: left logo (1/8 width, top-left), right logo (1/8 width, top-right), banner (1/2 width, bottom-left), all visible for first 15 seconds only
+- Vertical video: white lower third (y=1280), left logo (360px, top-left of bottom third), right logo (360px, top-right of bottom third), banner (1080px full width, centered above title), title text centered below banner
+- DRY: extracted buildLogoOverlay helper for shared GIF/static logo handling, buildVerticalFilterComplex shared by both audio/no-audio vertical functions, prepareMergedLogos + buildMergedOverlayFilter for merged overlays
+- Refactored mergeVideoAudio and processVideoOnly to accept *MergeOptions with AddLogos flag
+
+the background colour should be a setting in options
+I tried a few times and could not any logos to render in their specified locations - can you check why
+I think it is not persistently storing the logo options in the history record
+- Fix: buildLogoOverlay was prepending leading semicolons to filter fragments, causing invalid FFmpeg filter_complex syntax (e.g., ";[2:v]scale=..."). Moved semicolons to call sites.
+- Fix: SetRecordingInfo now restores logoSelection from saved RecordingSettings so reprocessing and systray post-recording processing can find logo paths
+- Feature: added configurable background color for vertical video lower third (Options screen, config.json, per-recording settings). Defaults to white.
+
+on the recording info form, when I edit then set the logos then esc then return to the form, the logos are all reset to (none)
+- Fix: backToMenuMsg was recreating the RecordingSetupModel from scratch, destroying all form state including logo selections. Now the model is preserved across esc/re-entry. A fresh model is only created when none exists (first entry) or after a recording completes (processingDoneMsg sets it to nil).
+
+on the recording info form, when I edit then set the logos then esc then return to the form, the logos are all reset to (none) (history edit flow: systray -> tui -> history -> open item -> edit -> set logos -> ctrl-s -> esc -> return to item -> logos reset)
+- Fix: history saveRecording() was only saving metadata (title/description/presenter/topic) but not recording settings (logos, toggles, color, gif mode). Now saveRecording() writes all form state back to selectedRecording.Settings before saving to disk. Added resolveLogoPath() helper to convert form logo indices back to full file paths.
+
+the elapsed time in Processing Recording... never stops - it should end after the rendering is done
+- Fix: ProcessingState now has EndTime field, set by Complete() and FailStep(). The elapsed display uses EndTime.Sub(StartTime) when processing is done instead of time.Since(StartTime) which kept ticking.
+
+Add circular webcam overlay to merged video: Generate a circle whose height matches the webcam video height, fill it with the title text colour as alpha mask, apply to webcam video keeping pixels inside circle and making outside transparent, scale to 250x250px, overlay on merged recording bottom-right with 20px margin. Skip if webcam recording unchecked. Full duration visibility. Fold into merge step (no new processing step).
+- Implementation: Added buildWebcamCircleOverlay() helper using FFmpeg geq filter with format=yuva420p for circular alpha masking. Added webcamOverlayOpts struct and constants (250px size, 20px margin). Modified buildMergedOverlayFilter() to accept webcam overlay params and render after logo overlays. Modified mergeVideoAudio() and processVideoOnly() to detect webcam overlay availability, add webcam as FFmpeg input after logos, and pass overlay opts to the filter builder. The overlay only applies when both screen and webcam are recorded (not when webcam is the primary video). Updated recording-workflow.md docs.

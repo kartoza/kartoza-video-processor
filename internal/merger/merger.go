@@ -424,20 +424,48 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-// processVideoOnly re-encodes a video file without audio, optionally with logo overlays
+// processVideoOnly re-encodes a video file without audio, optionally with logo and webcam overlays
 func (m *Merger) processVideoOnly(videoFile, outputFile string, opts *MergeOptions) error {
 	durationUs := getVideoDurationUs(videoFile)
 
-	// Check if we need logo overlays
+	// Check if we need overlays (logos or circular webcam)
 	hasLogos := opts != nil && opts.AddLogos && opts.OutputDir != ""
-	if hasLogos {
+	hasWebcamOverlay := opts != nil && opts.WebcamFile != "" && opts.WebcamFile != videoFile && fileExists(opts.WebcamFile)
+
+	if hasLogos || hasWebcamOverlay {
 		videoWidth, _, _ := webcam.GetVideoInfo(videoFile)
 		if videoWidth > 0 {
 			inputs := []string{"-y", "-i", videoFile}
-			setup, inputs := m.prepareMergedLogos(opts, inputs, 1) // logos start at input 1
+			nextIdx := 1 // next FFmpeg input index
 
-			if setup.logo1Path != "" || setup.logo2Path != "" || setup.bannerPath != "" {
-				filter := buildMergedOverlayFilter(setup, videoWidth)
+			// Add logo inputs
+			var setup logoSetup
+			if hasLogos {
+				setup, inputs = m.prepareMergedLogos(opts, inputs, nextIdx)
+				// Count how many logo inputs were added
+				if setup.logo1Path != "" {
+					nextIdx++
+				}
+				if setup.logo2Path != "" {
+					nextIdx++
+				}
+				if setup.bannerPath != "" {
+					nextIdx++
+				}
+			} else {
+				setup = logoSetup{startInputIndex: nextIdx}
+			}
+
+			// Add webcam input for circular overlay
+			webcam := webcamOverlayOpts{inputIdx: -1, size: webcamOverlaySize, margin: webcamOverlayMargin}
+			if hasWebcamOverlay {
+				inputs = append(inputs, "-i", opts.WebcamFile)
+				webcam.inputIdx = nextIdx
+			}
+
+			hasAnyLogos := setup.logo1Path != "" || setup.logo2Path != "" || setup.bannerPath != ""
+			if hasAnyLogos || webcam.inputIdx >= 0 {
+				filter := buildMergedOverlayFilter(setup, videoWidth, webcam)
 				args := append(inputs,
 					"-filter_complex", filter,
 					"-map", "[outv]",
@@ -469,20 +497,48 @@ func (m *Merger) processVideoOnly(videoFile, outputFile string, opts *MergeOptio
 	return m.runFFmpegWithProgress(StepMerging, durationUs, args...)
 }
 
-// mergeVideoAudio merges video and audio using ffmpeg, optionally with logo overlays
+// mergeVideoAudio merges video and audio using ffmpeg, optionally with logo and webcam overlays
 func (m *Merger) mergeVideoAudio(videoFile, audioFile, outputFile string, opts *MergeOptions) error {
 	durationUs := getVideoDurationUs(videoFile)
 
-	// Check if we need logo overlays
+	// Check if we need overlays (logos or circular webcam)
 	hasLogos := opts != nil && opts.AddLogos && opts.OutputDir != ""
-	if hasLogos {
+	hasWebcamOverlay := opts != nil && opts.WebcamFile != "" && opts.WebcamFile != videoFile && fileExists(opts.WebcamFile)
+
+	if hasLogos || hasWebcamOverlay {
 		videoWidth, _, _ := webcam.GetVideoInfo(videoFile)
 		if videoWidth > 0 {
 			inputs := []string{"-y", "-i", videoFile, "-i", audioFile}
-			setup, inputs := m.prepareMergedLogos(opts, inputs, 2) // logos start at input 2
+			nextIdx := 2 // next FFmpeg input index
 
-			if setup.logo1Path != "" || setup.logo2Path != "" || setup.bannerPath != "" {
-				filter := buildMergedOverlayFilter(setup, videoWidth)
+			// Add logo inputs
+			var setup logoSetup
+			if hasLogos {
+				setup, inputs = m.prepareMergedLogos(opts, inputs, nextIdx)
+				// Count how many logo inputs were added
+				if setup.logo1Path != "" {
+					nextIdx++
+				}
+				if setup.logo2Path != "" {
+					nextIdx++
+				}
+				if setup.bannerPath != "" {
+					nextIdx++
+				}
+			} else {
+				setup = logoSetup{startInputIndex: nextIdx}
+			}
+
+			// Add webcam input for circular overlay
+			webcam := webcamOverlayOpts{inputIdx: -1, size: webcamOverlaySize, margin: webcamOverlayMargin}
+			if hasWebcamOverlay {
+				inputs = append(inputs, "-i", opts.WebcamFile)
+				webcam.inputIdx = nextIdx
+			}
+
+			hasAnyLogos := setup.logo1Path != "" || setup.logo2Path != "" || setup.bannerPath != ""
+			if hasAnyLogos || webcam.inputIdx >= 0 {
+				filter := buildMergedOverlayFilter(setup, videoWidth, webcam)
 				args := append(inputs,
 					"-filter_complex", filter,
 					"-map", "[outv]",
@@ -894,10 +950,12 @@ func (m *Merger) prepareMergedLogos(opts *MergeOptions, inputs []string, startIn
 	return setup, inputs
 }
 
-// buildMergedOverlayFilter builds the FFmpeg filter_complex for logo overlays on the merged video.
-// All overlays are timed to show for the first 15 seconds only.
+// buildMergedOverlayFilter builds the FFmpeg filter_complex for logo overlays and
+// circular webcam overlay on the merged video.
+// All logo overlays are timed to show for the first 15 seconds only.
+// The webcam circle overlay is shown for the full duration.
 // videoWidth is the width of the input video in pixels.
-func buildMergedOverlayFilter(setup logoSetup, videoWidth int) string {
+func buildMergedOverlayFilter(setup logoSetup, videoWidth int, webcam webcamOverlayOpts) string {
 	filter := ""
 	currentOutput := "[0:v]"
 	inputIdx := setup.startInputIndex
@@ -938,10 +996,52 @@ func buildMergedOverlayFilter(setup logoSetup, videoWidth int) string {
 		currentOutput = out
 	}
 
+	// Circular webcam overlay: bottom-right corner, full duration
+	if webcam.inputIdx >= 0 {
+		fragment, out := buildWebcamCircleOverlay(webcam.inputIdx, webcam.size, webcam.margin, currentOutput)
+		if filter != "" {
+			filter += ";"
+		}
+		filter += fragment
+		currentOutput = out
+	}
+
 	// Rename final output to [outv]
 	if filter != "" {
 		filter += fmt.Sprintf(";%snull[outv]", currentOutput)
 	}
 
 	return filter
+}
+
+// Circular webcam overlay constants
+const (
+	webcamOverlaySize   = 250 // Circular webcam overlay diameter in pixels
+	webcamOverlayMargin = 20  // Margin from bottom-right corner
+)
+
+// webcamOverlayOpts holds parameters for the circular webcam overlay on merged video
+type webcamOverlayOpts struct {
+	inputIdx int // FFmpeg input index for webcam file; -1 means no webcam overlay
+	size     int // diameter in pixels
+	margin   int // margin from bottom-right corner in pixels
+}
+
+// buildWebcamCircleOverlay builds an FFmpeg filter fragment for a circular webcam overlay.
+// It scales the webcam to the given size, applies a circular alpha mask using the geq filter,
+// and overlays it at the bottom-right of the video with the specified margin.
+// Returns: (filterFragment, newOutputLabel)
+func buildWebcamCircleOverlay(inputIdx, size, margin int, currentOutput string) (string, string) {
+	radius := size / 2
+	outLabel := "[out_webcam]"
+	fragment := fmt.Sprintf(
+		"[%d:v]scale=%d:%d,format=yuva420p,"+
+			"geq=lum='p(X,Y)':cb='p(X,Y)':cr='p(X,Y)':"+
+			"a='if(gt((X-%d)*(X-%d)+(Y-%d)*(Y-%d),%d*%d),0,255)'[webcam_circle];"+
+			"%s[webcam_circle]overlay=W-w-%d:H-h-%d%s",
+		inputIdx, size, size,
+		radius, radius, radius, radius, radius, radius,
+		currentOutput, margin, margin, outLabel,
+	)
+	return fragment, outLabel
 }

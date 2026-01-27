@@ -170,6 +170,8 @@ Logo and banner overlays appear for the **first 15 seconds** of the video, then 
 - **Right logo** — scaled to 1/8 of the video width, positioned at the top-right corner
 - **Banner** — scaled to 1/2 of the video width, positioned at the bottom-left corner
 
+**Circular webcam overlay** — when both screen and webcam are recorded, the webcam feed is shown as a 250px circular overlay in the bottom-right corner with a 20px margin. The overlay is visible for the full duration of the video. If webcam recording is disabled, this overlay is skipped.
+
 #### Vertical Video (1080×1920)
 
 The vertical video is divided into three zones:
